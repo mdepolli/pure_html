@@ -68,7 +68,9 @@ defmodule PureHtml.Test.Html5libTokenizerTests do
   end
 
   defp normalize_token(["DOCTYPE", name, public_id, system_id, correctness], _) do
-    {:doctype, name, public_id, system_id, correctness}
+    # HTML5lib uses "correctness" (true=no quirks), we use "force_quirks" (true=quirks)
+    # These are inverse semantics
+    {:doctype, name, public_id, system_id, not correctness}
   end
 
   defp normalize_token(["StartTag", name, attrs], _) do

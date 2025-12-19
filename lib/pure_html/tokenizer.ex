@@ -57,6 +57,7 @@ defmodule PureHtml.Tokenizer do
   # Guards
   defguardp is_ascii_alpha(c) when c in ?a..?z or c in ?A..?Z
   defguardp is_ascii_upper(c) when c in ?A..?Z
+  defguardp is_ascii_digit(c) when c in ?0..?9
   defguardp is_ascii_whitespace(c) when c in ~c[\t\n\f ]
   defguardp is_ascii_hex_digit(c) when c in ?0..?9 or c in ?a..?f or c in ?A..?F
 
@@ -785,6 +786,404 @@ defmodule PureHtml.Tokenizer do
     |> continue(state: :bogus_doctype)
   end
 
+  # After DOCTYPE public keyword state
+  defp step(%{state: :after_doctype_public_keyword, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    continue(state, state: :before_doctype_public_identifier, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_keyword, input: <<?", rest::binary>>} = state) do
+    state
+    |> set_doctype_public_id("")
+    |> continue(state: :doctype_public_identifier_double_quoted, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_keyword, input: <<?', rest::binary>>} = state) do
+    state
+    |> set_doctype_public_id("")
+    |> continue(state: :doctype_public_identifier_single_quoted, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_keyword, input: <<?>, rest::binary>>} = state) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_keyword, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :after_doctype_public_keyword, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
+  # Before DOCTYPE public identifier state
+  defp step(%{state: :before_doctype_public_identifier, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    continue(state, input: rest)
+  end
+
+  defp step(%{state: :before_doctype_public_identifier, input: <<?", rest::binary>>} = state) do
+    state
+    |> set_doctype_public_id("")
+    |> continue(state: :doctype_public_identifier_double_quoted, input: rest)
+  end
+
+  defp step(%{state: :before_doctype_public_identifier, input: <<?', rest::binary>>} = state) do
+    state
+    |> set_doctype_public_id("")
+    |> continue(state: :doctype_public_identifier_single_quoted, input: rest)
+  end
+
+  defp step(%{state: :before_doctype_public_identifier, input: <<?>, rest::binary>>} = state) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :before_doctype_public_identifier, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :before_doctype_public_identifier, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
+  # DOCTYPE public identifier (double-quoted) state
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<?", rest::binary>>} = state
+       ) do
+    continue(state, state: :after_doctype_public_identifier, input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<0, rest::binary>>} = state
+       ) do
+    state
+    |> append_to_doctype_public_id(<<0xFFFD::utf8>>)
+    |> continue(input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<?>, rest::binary>>} = state
+       ) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :doctype_public_identifier_double_quoted, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<c::utf8, rest::binary>>} =
+           state
+       ) do
+    state
+    |> append_to_doctype_public_id(<<c::utf8>>)
+    |> continue(input: rest)
+  end
+
+  # DOCTYPE public identifier (single-quoted) state
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<?', rest::binary>>} = state
+       ) do
+    continue(state, state: :after_doctype_public_identifier, input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<0, rest::binary>>} = state
+       ) do
+    state
+    |> append_to_doctype_public_id(<<0xFFFD::utf8>>)
+    |> continue(input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<?>, rest::binary>>} = state
+       ) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :doctype_public_identifier_single_quoted, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<c::utf8, rest::binary>>} =
+           state
+       ) do
+    state
+    |> append_to_doctype_public_id(<<c::utf8>>)
+    |> continue(input: rest)
+  end
+
+  # After DOCTYPE public identifier state
+  defp step(%{state: :after_doctype_public_identifier, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    continue(state, state: :between_doctype_public_and_system_identifiers, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_identifier, input: <<?>, rest::binary>>} = state) do
+    emit(state, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_identifier, input: <<?", rest::binary>>} = state) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_identifier, input: <<?', rest::binary>>} = state) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_public_identifier, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :after_doctype_public_identifier, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
+  # Between DOCTYPE public and system identifiers state
+  defp step(
+         %{state: :between_doctype_public_and_system_identifiers, input: <<c, rest::binary>>} =
+           state
+       )
+       when is_ascii_whitespace(c) do
+    continue(state, input: rest)
+  end
+
+  defp step(
+         %{state: :between_doctype_public_and_system_identifiers, input: <<?>, rest::binary>>} =
+           state
+       ) do
+    emit(state, input: rest)
+  end
+
+  defp step(
+         %{state: :between_doctype_public_and_system_identifiers, input: <<?", rest::binary>>} =
+           state
+       ) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
+  end
+
+  defp step(
+         %{state: :between_doctype_public_and_system_identifiers, input: <<?', rest::binary>>} =
+           state
+       ) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
+  end
+
+  defp step(%{state: :between_doctype_public_and_system_identifiers, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :between_doctype_public_and_system_identifiers, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
+  # After DOCTYPE system keyword state
+  defp step(%{state: :after_doctype_system_keyword, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    continue(state, state: :before_doctype_system_identifier, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_system_keyword, input: <<?", rest::binary>>} = state) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_system_keyword, input: <<?', rest::binary>>} = state) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_system_keyword, input: <<?>, rest::binary>>} = state) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :after_doctype_system_keyword, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :after_doctype_system_keyword, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
+  # Before DOCTYPE system identifier state
+  defp step(%{state: :before_doctype_system_identifier, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    continue(state, input: rest)
+  end
+
+  defp step(%{state: :before_doctype_system_identifier, input: <<?", rest::binary>>} = state) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
+  end
+
+  defp step(%{state: :before_doctype_system_identifier, input: <<?', rest::binary>>} = state) do
+    state
+    |> set_doctype_system_id("")
+    |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
+  end
+
+  defp step(%{state: :before_doctype_system_identifier, input: <<?>, rest::binary>>} = state) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :before_doctype_system_identifier, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :before_doctype_system_identifier, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
+  # DOCTYPE system identifier (double-quoted) state
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<?", rest::binary>>} = state
+       ) do
+    continue(state, state: :after_doctype_system_identifier, input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<0, rest::binary>>} = state
+       ) do
+    state
+    |> append_to_doctype_system_id(<<0xFFFD::utf8>>)
+    |> continue(input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<?>, rest::binary>>} = state
+       ) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :doctype_system_identifier_double_quoted, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<c::utf8, rest::binary>>} =
+           state
+       ) do
+    state
+    |> append_to_doctype_system_id(<<c::utf8>>)
+    |> continue(input: rest)
+  end
+
+  # DOCTYPE system identifier (single-quoted) state
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<?', rest::binary>>} = state
+       ) do
+    continue(state, state: :after_doctype_system_identifier, input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<0, rest::binary>>} = state
+       ) do
+    state
+    |> append_to_doctype_system_id(<<0xFFFD::utf8>>)
+    |> continue(input: rest)
+  end
+
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<?>, rest::binary>>} = state
+       ) do
+    state
+    |> set_force_quirks()
+    |> emit(input: rest)
+  end
+
+  defp step(%{state: :doctype_system_identifier_single_quoted, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<c::utf8, rest::binary>>} =
+           state
+       ) do
+    state
+    |> append_to_doctype_system_id(<<c::utf8>>)
+    |> continue(input: rest)
+  end
+
+  # After DOCTYPE system identifier state
+  defp step(%{state: :after_doctype_system_identifier, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    continue(state, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_system_identifier, input: <<?>, rest::binary>>} = state) do
+    emit(state, input: rest)
+  end
+
+  defp step(%{state: :after_doctype_system_identifier, input: ""} = state) do
+    state
+    |> set_force_quirks()
+    |> emit([])
+  end
+
+  defp step(%{state: :after_doctype_system_identifier, input: _} = state) do
+    state
+    |> set_force_quirks()
+    |> continue(state: :bogus_doctype)
+  end
+
   # Bogus comment state
   defp step(%{state: :bogus_comment, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
@@ -819,68 +1218,18 @@ defmodule PureHtml.Tokenizer do
     continue(state, input: rest)
   end
 
-  # Simplified character reference handling (TODO: full implementation)
-  defp step(%{state: :character_reference, input: <<?&, rest::binary>>} = state) do
-    # Skip the '&' and look for the reference
-    continue(state, input: rest, buffer: "", state: :named_character_reference)
+  # Character reference state - handles &entities;
+  defp step(%{state: :character_reference, input: <<"&#", rest::binary>>} = state) do
+    continue(state, input: rest, buffer: "", state: :numeric_character_reference)
   end
 
-  defp step(%{state: :character_reference, input: _} = state) do
-    # Fallback - emit '&' and return to previous state
-    case state.return_state do
-      return_state when is_attribute_value_state(return_state) ->
-        continue(state,
-          attr_value: state.attr_value <> "&",
-          state: state.return_state,
-          return_state: nil
-        )
+  defp step(%{state: :character_reference, input: <<?&, _::binary>> = input} = state) do
+    case PureHtml.Entities.lookup(input) do
+      {chars, rest} -> flush_char_ref(state, chars, rest)
 
-      :data ->
-        emit_char(state, "&", state: :data, return_state: nil)
-    end
-  end
-
-  # Simplified named character reference (TODO: full entity table)
-  defp step(%{state: :named_character_reference, input: <<"amp;", rest::binary>>} = state) do
-    handle_entity_match(state, "&", rest)
-  end
-
-  defp step(%{state: :named_character_reference, input: <<"lt;", rest::binary>>} = state) do
-    handle_entity_match(state, "<", rest)
-  end
-
-  defp step(%{state: :named_character_reference, input: <<"gt;", rest::binary>>} = state) do
-    handle_entity_match(state, ">", rest)
-  end
-
-  defp step(%{state: :named_character_reference, input: <<"quot;", rest::binary>>} = state) do
-    handle_entity_match(state, "\"", rest)
-  end
-
-  defp step(%{state: :named_character_reference, input: <<"apos;", rest::binary>>} = state) do
-    handle_entity_match(state, "'", rest)
-  end
-
-  defp step(%{state: :named_character_reference, input: <<"nbsp;", rest::binary>>} = state) do
-    handle_entity_match(state, <<0xA0::utf8>>, rest)
-  end
-
-  defp step(%{state: :named_character_reference, input: <<"#", rest::binary>>} = state) do
-    continue(state, input: rest, state: :numeric_character_reference)
-  end
-
-  defp step(%{state: :named_character_reference, input: _} = state) do
-    # No match - emit '&' and return
-    case state.return_state do
-      return_state when is_attribute_value_state(return_state) ->
-        continue(state,
-          attr_value: state.attr_value <> "&",
-          state: state.return_state,
-          return_state: nil
-        )
-
-      :data ->
-        emit_char(state, "&", state: :data, return_state: nil)
+      nil ->
+        <<_, rest::binary>> = input
+        flush_char_ref(state, "&", rest)
     end
   end
 
@@ -896,7 +1245,7 @@ defmodule PureHtml.Tokenizer do
 
   # Decimal character reference start
   defp step(%{state: :decimal_character_reference_start, input: <<c, _::binary>>} = state)
-       when c in ?0..?9 do
+       when is_ascii_digit(c) do
     continue(state, state: :decimal_character_reference)
   end
 
@@ -907,7 +1256,7 @@ defmodule PureHtml.Tokenizer do
 
   # Decimal character reference
   defp step(%{state: :decimal_character_reference, input: <<c, rest::binary>>} = state)
-       when c in ?0..?9 do
+       when is_ascii_digit(c) do
     continue(state, input: rest, buffer: state.buffer <> <<c>>)
   end
 
@@ -1058,6 +1407,22 @@ defmodule PureHtml.Tokenizer do
 
   defp set_force_quirks(state), do: state
 
+  defp set_doctype_public_id(%{token: {:doctype, name, _pub, sys, quirks}} = state, value) do
+    %{state | token: {:doctype, name, value, sys, quirks}}
+  end
+
+  defp append_to_doctype_public_id(%{token: {:doctype, name, pub, sys, quirks}} = state, char) do
+    %{state | token: {:doctype, name, (pub || "") <> char, sys, quirks}}
+  end
+
+  defp set_doctype_system_id(%{token: {:doctype, name, pub, _sys, quirks}} = state, value) do
+    %{state | token: {:doctype, name, pub, value, quirks}}
+  end
+
+  defp append_to_doctype_system_id(%{token: {:doctype, name, pub, sys, quirks}} = state, char) do
+    %{state | token: {:doctype, name, pub, (sys || "") <> char, quirks}}
+  end
+
   defp append_to_comment(%{token: {:comment, data}} = state, char) do
     %{state | token: {:comment, data <> char}}
   end
@@ -1068,18 +1433,17 @@ defmodule PureHtml.Tokenizer do
 
   defp maybe_update_last_start_tag(state), do: state
 
-  defp handle_entity_match(state, replacement, rest) do
-    case state.return_state do
-      return_state when is_attribute_value_state(return_state) ->
-        continue(state,
-          input: rest,
-          attr_value: state.attr_value <> replacement,
-          state: state.return_state,
-          return_state: nil
-        )
+  defp flush_char_ref(%{return_state: return_state} = state, chars, rest)
+       when is_attribute_value_state(return_state) do
+    continue(state,
+      input: rest,
+      attr_value: state.attr_value <> chars,
+      state: return_state,
+      return_state: nil
+    )
+  end
 
-      :data ->
-        emit_char(state, replacement, input: rest, state: :data, return_state: nil)
-    end
+  defp flush_char_ref(state, chars, rest) do
+    emit_char(state, chars, input: rest, state: state.return_state, return_state: nil)
   end
 end
