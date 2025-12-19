@@ -33,10 +33,10 @@ defmodule PureHtml.TokenizerTest do
   end
 
   describe "character handling" do
-    test "emits character tokens" do
+    test "emits coalesced character tokens" do
       tokens = Tokenizer.tokenize("abc") |> Enum.to_list()
 
-      assert [{:character, "a"}, {:character, "b"}, {:character, "c"}] = tokens
+      assert [{:character, "abc"}] = tokens
     end
   end
 

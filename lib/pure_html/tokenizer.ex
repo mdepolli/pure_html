@@ -43,7 +43,11 @@ defmodule PureHtml.Tokenizer do
     # for appropriate end tag checks
     :last_start_tag,
     # accumulated errors (emitted with tokens)
-    :errors
+    :errors,
+    # pending character data (for coalescing)
+    :pending_chars,
+    # deferred token (to emit after flushing pending chars)
+    :deferred_token
   ]
 
   @type t :: %__MODULE__{}
@@ -109,7 +113,9 @@ defmodule PureHtml.Tokenizer do
       attr_name: "",
       attr_value: "",
       last_start_tag: last_start_tag,
-      errors: []
+      errors: [],
+      pending_chars: [],
+      deferred_token: nil
     }
 
     Stream.unfold(tokenizer, &next_token/1)
@@ -120,17 +126,47 @@ defmodule PureHtml.Tokenizer do
   # --------------------------------------------------------------------------
 
   # Returns {token, updated_tokenizer} or nil when done
-  defp next_token(%__MODULE__{input: "", state: :data} = _state) do
-    # End of input in data state - we're done
+  # First, check for a deferred token from previous flush
+  defp next_token(%__MODULE__{deferred_token: token} = state) when token != nil do
+    {token, %{state | deferred_token: nil}}
+  end
+
+  defp next_token(%__MODULE__{input: "", state: :data, pending_chars: []} = _state) do
     nil
+  end
+
+  defp next_token(%__MODULE__{input: "", state: :data, pending_chars: pending} = state) do
+    # Flush pending chars at EOF
+    {flush_pending(pending), %{state | pending_chars: []}}
   end
 
   defp next_token(%__MODULE__{} = state) do
     case step(state) do
-      {:emit, token, new_state} -> {token, new_state}
-      {:continue, new_state} -> next_token(new_state)
-      nil -> nil
+      {:emit_char, chars, new_state} ->
+        # Accumulate characters instead of emitting immediately
+        next_token(%{new_state | pending_chars: [chars | new_state.pending_chars]})
+
+      {:emit, token, new_state} ->
+        # Flush pending chars before emitting non-char token
+        case new_state.pending_chars do
+          [] ->
+            {token, new_state}
+
+          pending ->
+            # Emit chars now, defer the non-char token
+            {flush_pending(pending), %{new_state | pending_chars: [], deferred_token: token}}
+        end
+
+      {:continue, new_state} ->
+        next_token(new_state)
+
+      nil ->
+        nil
     end
+  end
+
+  defp flush_pending(pending) do
+    {:character, pending |> Enum.reverse() |> IO.iodata_to_binary()}
   end
 
   # --------------------------------------------------------------------------
@@ -151,14 +187,10 @@ defmodule PureHtml.Tokenizer do
     emit_char(state, <<0>>, input: rest)
   end
 
-  defp step(%{state: :data, input: <<c::utf8, rest::binary>>} = state) do
-    # Regular character - emit it
-    emit_char(state, <<c::utf8>>, input: rest)
-  end
-
-  defp step(%{state: :data, input: <<byte, rest::binary>>} = state) do
-    # Invalid UTF-8 byte - emit as-is (parse error in real impl)
-    emit_char(state, <<byte>>, input: rest)
+  defp step(%{state: :data, input: input} = state) when input != "" do
+    # Read ahead until we hit <, &, null, or end - emit coalesced characters
+    {chars, rest} = chars_until(input, [?<, ?&, 0])
+    emit_char(state, chars, input: rest)
   end
 
   defp step(%{state: :data, input: ""} = _state) do
@@ -1414,7 +1446,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp emit_char(state, char, updates) do
-    {:emit, {:character, char}, struct!(state, updates)}
+    {:emit_char, char, struct!(state, updates)}
   end
 
   defp append_to_tag_name(%{token: {:start_tag, name, attrs, sc}} = state, char) do
@@ -1530,4 +1562,31 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp consumable_entity?(_, _, _), do: true
+
+  # Read characters until we hit one of the stop characters
+  # Returns {collected_chars, remaining_input}
+  defp chars_until(input, stop_chars) do
+    chars_until(input, stop_chars, [])
+  end
+
+  defp chars_until(<<c, rest::binary>>, stop_chars, acc) when c in [?<, ?&, 0] do
+    if c in stop_chars do
+      {acc |> Enum.reverse() |> IO.iodata_to_binary(), <<c, rest::binary>>}
+    else
+      chars_until(rest, stop_chars, [c | acc])
+    end
+  end
+
+  defp chars_until(<<c::utf8, rest::binary>>, stop_chars, acc) do
+    chars_until(rest, stop_chars, [<<c::utf8>> | acc])
+  end
+
+  defp chars_until(<<byte, rest::binary>>, stop_chars, acc) do
+    # Invalid UTF-8 byte
+    chars_until(rest, stop_chars, [byte | acc])
+  end
+
+  defp chars_until("", _stop_chars, acc) do
+    {acc |> Enum.reverse() |> IO.iodata_to_binary(), ""}
+  end
 end

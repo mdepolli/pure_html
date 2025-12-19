@@ -13,16 +13,6 @@ defmodule PureHtml.Html5libTokenizerTest do
     "PLAINTEXT state" => :plaintext
   }
 
-  # Merge consecutive character tokens (html5lib expects them merged)
-  defp merge_chars(tokens) do
-    tokens
-    |> Enum.reduce([], fn
-      {:character, c}, [{:character, acc} | rest] -> [{:character, acc <> c} | rest]
-      token, acc -> [token | acc]
-    end)
-    |> Enum.reverse()
-  end
-
   for path <- H5.list_test_files() do
     filename = Path.basename(path, ".test")
 
@@ -55,11 +45,8 @@ defmodule PureHtml.Html5libTokenizerTest do
                 normalized.input
                 |> Tokenizer.tokenize(opts)
                 |> Enum.to_list()
-                |> merge_chars()
 
-              expected = merge_chars(normalized.expected_tokens)
-
-              assert actual == expected
+              assert actual == normalized.expected_tokens
             end
           end
         end
