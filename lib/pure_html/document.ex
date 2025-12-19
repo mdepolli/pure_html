@@ -1,7 +1,7 @@
 defmodule PureHtml.Document do
   @moduledoc false
 
-  defstruct [:nodes, :by_tag, :by_id, :by_class, :root_id, :next_id, :doctype]
+  defstruct [:nodes, :by_tag, :by_id, :by_class, :root_id, :next_id, :doctype, :before_html]
 
   def new do
     %__MODULE__{
@@ -11,8 +11,16 @@ defmodule PureHtml.Document do
       by_class: %{},
       root_id: nil,
       next_id: 0,
-      doctype: nil
+      doctype: nil,
+      before_html: []
     }
+  end
+
+  def add_comment_before_html(doc, content) do
+    id = doc.next_id
+    node = %{type: :comment, id: id, content: content, parent_id: nil}
+    nodes = Map.put(doc.nodes, id, node)
+    %{doc | nodes: nodes, next_id: id + 1, before_html: [id | doc.before_html]}
   end
 
   def set_doctype(doc, name, public_id, system_id) do

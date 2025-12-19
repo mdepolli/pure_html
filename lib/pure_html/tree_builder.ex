@@ -106,9 +106,14 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process(state, {:comment, text}) do
-    parent_id = List.first(state.stack) || state.document.root_id
-    {document, _id} = Document.add_comment(state.document, text, parent_id)
-    %{state | document: document}
+    if state.document.root_id == nil do
+      document = Document.add_comment_before_html(state.document, text)
+      %{state | document: document}
+    else
+      parent_id = List.first(state.stack) || state.document.root_id
+      {document, _id} = Document.add_comment(state.document, text, parent_id)
+      %{state | document: document}
+    end
   end
 
   defp process(state, {:doctype, name, public_id, system_id, _force_quirks}) do

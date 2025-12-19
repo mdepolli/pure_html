@@ -83,13 +83,19 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
   def serialize_document(document) do
     doctype = serialize_doctype(document.doctype)
 
+    before_html =
+      document.before_html
+      |> Enum.reverse()
+      |> Enum.map(&serialize_node(document, &1, 0))
+      |> Enum.join()
+
     tree =
       case document.root_id do
         nil -> ""
         root_id -> serialize_node(document, root_id, 0)
       end
 
-    doctype <> tree
+    doctype <> before_html <> tree
   end
 
   defp serialize_doctype(nil), do: ""
