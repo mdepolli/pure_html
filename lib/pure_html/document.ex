@@ -76,7 +76,10 @@ defmodule PureHtml.Document do
         content
 
       %{type: :element, children_ids: ids} ->
-        ids |> Enum.map(&text(doc, &1)) |> Enum.join()
+        ids
+        |> Enum.reverse()
+        |> Enum.map(&text(doc, &1))
+        |> IO.iodata_to_binary()
 
       nil ->
         ""
@@ -86,20 +89,27 @@ defmodule PureHtml.Document do
   def children(doc, id) do
     case get_node(doc, id) do
       %{type: :element, children_ids: ids} ->
-        ids
-        |> Enum.map(&get_node(doc, &1))
-        |> Enum.filter(&(&1.type == :element))
-        |> Enum.map(& &1.id)
+        for child_id <- Enum.reverse(ids),
+            node = get_node(doc, child_id),
+            node.type == :element,
+            do: node.id
 
       _ ->
         []
     end
   end
 
+  def get_children_ids(doc, id) do
+    case get_node(doc, id) do
+      %{children_ids: ids} -> Enum.reverse(ids)
+      _ -> []
+    end
+  end
+
   defp add_to_parent(nodes, nil, _child_id), do: nodes
 
   defp add_to_parent(nodes, parent_id, child_id) do
-    update_in(nodes, [parent_id, :children_ids], &(&1 ++ [child_id]))
+    update_in(nodes, [parent_id, :children_ids], &[child_id | &1])
   end
 
   defp index_add(index, key, id) do

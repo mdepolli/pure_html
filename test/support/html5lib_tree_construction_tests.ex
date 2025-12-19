@@ -119,7 +119,8 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
           |> Enum.join()
 
         children_lines =
-          node.children_ids
+          document
+          |> PureHtml.Document.get_children_ids(node_id)
           |> Enum.map(&serialize_node(document, &1, depth + 1))
           |> Enum.join()
 

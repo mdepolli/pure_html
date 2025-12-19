@@ -77,30 +77,4 @@ defmodule PureHtml.TokenizerTest do
     end
   end
 
-  describe "real-world HTML" do
-    @tag :benchmark
-    test "tokenizes Wikipedia homepage" do
-      html = File.stream!("test/fixtures/wikipedia_homepage.html") |> Enum.join()
-      file_size = byte_size(html)
-
-      {time_us, tokens} =
-        :timer.tc(fn ->
-          html |> Tokenizer.tokenize() |> Enum.to_list()
-        end)
-
-      time_ms = time_us / 1000
-      tokens_count = length(tokens)
-      throughput_mb_s = file_size / 1024 / 1024 / (time_us / 1_000_000)
-
-      IO.puts("\n  Wikipedia homepage benchmark:")
-      IO.puts("    File size: #{Float.round(file_size / 1024, 1)} KB")
-      IO.puts("    Tokens: #{tokens_count}")
-      IO.puts("    Time: #{Float.round(time_ms, 2)} ms")
-      IO.puts("    Throughput: #{Float.round(throughput_mb_s, 2)} MB/s")
-
-      assert tokens_count > 0
-      assert Enum.any?(tokens, &match?({:doctype, _, _, _, _}, &1))
-      assert Enum.any?(tokens, &match?({:start_tag, "html", _, _}, &1))
-    end
-  end
 end

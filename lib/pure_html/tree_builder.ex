@@ -15,13 +15,14 @@ defmodule PureHtml.TreeBuilder do
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header
                hgroup hr main menu nav ol p pre section summary table ul)
 
-  defstruct [:document, :stack, :head_id, :body_id]
+  defstruct [:document, :stack, :head_id, :body_id, :strip_next_newline]
 
   @type t :: %__MODULE__{
           document: Document.t(),
           stack: [non_neg_integer()],
           head_id: non_neg_integer() | nil,
-          body_id: non_neg_integer() | nil
+          body_id: non_neg_integer() | nil,
+          strip_next_newline: boolean()
         }
 
   @doc "Builds a document from a stream of tokens."
@@ -33,7 +34,13 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp new do
-    %__MODULE__{document: Document.new(), stack: [], head_id: nil, body_id: nil}
+    %__MODULE__{
+      document: Document.new(),
+      stack: [],
+      head_id: nil,
+      body_id: nil,
+      strip_next_newline: false
+    }
   end
 
   defp process(state, {:start_tag, "html", attrs, _self_closing?}) do
@@ -73,6 +80,7 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_close_option(tag)
     |> maybe_insert_table_implicit(tag)
     |> insert_element(tag, attrs, self_closing?, &(List.first(&1.stack) || &1.body_id))
+    |> maybe_set_strip_newline(tag)
   end
 
   defp process(state, {:end_tag, "html"}), do: state
@@ -84,7 +92,9 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process(state, {:character, text}) do
-    if String.trim(text) == "" and state.body_id == nil do
+    {text, state} = maybe_strip_newline(text, state)
+
+    if text == "" or (String.trim(text) == "" and state.body_id == nil) do
       state
     else
       state
@@ -113,6 +123,22 @@ defmodule PureHtml.TreeBuilder do
     |> ensure_head()
     |> ensure_body()
     |> Map.get(:document)
+  end
+
+  # Leading newline stripping for pre/textarea/listing
+
+  defp maybe_set_strip_newline(state, tag) when tag in ~w(pre textarea listing) do
+    %{state | strip_next_newline: true}
+  end
+
+  defp maybe_set_strip_newline(state, _tag), do: state
+
+  defp maybe_strip_newline(<<?\n, rest::binary>>, %{strip_next_newline: true} = state) do
+    {rest, %{state | strip_next_newline: false}}
+  end
+
+  defp maybe_strip_newline(text, state) do
+    {text, %{state | strip_next_newline: false}}
   end
 
   # Ensure implicit elements exist
