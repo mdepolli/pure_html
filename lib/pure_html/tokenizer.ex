@@ -95,8 +95,11 @@ defmodule PureHtml.Tokenizer do
     initial_state = Keyword.get(opts, :initial_state, :data)
     last_start_tag = Keyword.get(opts, :last_start_tag, nil)
 
+    # Normalize newlines per HTML5 spec: CRLF → LF, CR → LF
+    normalized_input = input |> String.replace("\r\n", "\n") |> String.replace("\r", "\n")
+
     tokenizer = %__MODULE__{
-      input: input,
+      input: normalized_input,
       state: initial_state,
       return_state: nil,
       token: nil,
@@ -124,6 +127,7 @@ defmodule PureHtml.Tokenizer do
     case step(state) do
       {:emit, token, new_state} -> {token, new_state}
       {:continue, new_state} -> next_token(new_state)
+      nil -> nil
     end
   end
 
@@ -173,7 +177,6 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :tag_open, input: <<??, _rest::binary>>} = state) do
-    # Unexpected question mark - this is a parse error
     continue(state, state: :bogus_comment, token: {:comment, ""})
   end
 
@@ -238,7 +241,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :tag_name, input: ""} = _state) do
-    # EOF in tag - parse error
+    # EOF in tag - discard the incomplete tag (parse error)
     nil
   end
 
@@ -255,8 +258,13 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :before_attribute_name, input: <<c, _::binary>>} = state)
-       when c in ~c[/>] or state.input == "" do
+       when c in ~c[/>] do
     continue(state, state: :after_attribute_name)
+  end
+
+  defp step(%{state: :before_attribute_name, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
+    nil
   end
 
   defp step(%{state: :before_attribute_name, input: <<?=, rest::binary>>} = state) do
@@ -274,10 +282,15 @@ defmodule PureHtml.Tokenizer do
 
   # Attribute name state
   defp step(%{state: :attribute_name, input: <<c, _::binary>>} = state)
-       when c in ~c[\t\n\f />] or state.input == "" do
+       when c in ~c[\t\n\f />] do
     state
     |> finalize_attribute_name()
     |> continue(state: :after_attribute_name)
+  end
+
+  defp step(%{state: :attribute_name, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
+    nil
   end
 
   defp step(%{state: :attribute_name, input: <<?=, rest::binary>>} = state) do
@@ -323,6 +336,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :after_attribute_name, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
     nil
   end
 
@@ -348,10 +362,16 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :before_attribute_value, input: <<?>, rest::binary>>} = state) do
-    # Missing attribute value
+    # Missing attribute value - finalize with empty value
     state
+    |> finalize_attribute_value()
     |> maybe_update_last_start_tag()
     |> emit(input: rest)
+  end
+
+  defp step(%{state: :before_attribute_value, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
+    nil
   end
 
   defp step(%{state: :before_attribute_value, input: _} = state) do
@@ -374,6 +394,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :attribute_value_double_quoted, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
     nil
   end
 
@@ -397,6 +418,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :attribute_value_single_quoted, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
     nil
   end
 
@@ -428,6 +450,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :attribute_value_unquoted, input: ""} = _state) do
+    # EOF in tag - discard (parse error)
     nil
   end
 
@@ -963,6 +986,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :after_doctype_public_identifier, input: _} = state) do
+    # Missing quote before system identifier - triggers quirks mode
     state
     |> set_force_quirks()
     |> continue(state: :bogus_doctype)
@@ -1179,9 +1203,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :after_doctype_system_identifier, input: _} = state) do
-    state
-    |> set_force_quirks()
-    |> continue(state: :bogus_doctype)
+    continue(state, state: :bogus_doctype)
   end
 
   # Bogus comment state
@@ -1225,7 +1247,8 @@ defmodule PureHtml.Tokenizer do
 
   defp step(%{state: :character_reference, input: <<?&, _::binary>> = input} = state) do
     case PureHtml.Entities.lookup(input) do
-      {chars, rest} -> flush_char_ref(state, chars, rest)
+      {chars, rest} ->
+        flush_char_ref(state, chars, rest)
 
       nil ->
         <<_, rest::binary>> = input
@@ -1236,7 +1259,8 @@ defmodule PureHtml.Tokenizer do
   # Numeric character reference state
   defp step(%{state: :numeric_character_reference, input: <<c, rest::binary>>} = state)
        when c in ~c[xX] do
-    continue(state, input: rest, buffer: "", state: :hexadecimal_character_reference_start)
+    # Store the x/X in buffer to preserve case if we need to emit it as text
+    continue(state, input: rest, buffer: <<c>>, state: :hexadecimal_character_reference_start)
   end
 
   defp step(%{state: :numeric_character_reference, input: _} = state) do
@@ -1272,11 +1296,13 @@ defmodule PureHtml.Tokenizer do
   # Hexadecimal character reference start
   defp step(%{state: :hexadecimal_character_reference_start, input: <<c, _::binary>>} = state)
        when is_ascii_hex_digit(c) do
-    continue(state, state: :hexadecimal_character_reference)
+    # Clear the x/X from buffer, start collecting digits
+    continue(state, buffer: "", state: :hexadecimal_character_reference)
   end
 
   defp step(%{state: :hexadecimal_character_reference_start, input: _} = state) do
-    emit_failed_char_ref(state, "&#x")
+    # Buffer contains the x/X, preserve its case
+    emit_failed_char_ref(state, "&#" <> state.buffer)
   end
 
   # Hexadecimal character reference
@@ -1309,13 +1335,33 @@ defmodule PureHtml.Tokenizer do
 
   # Windows-1252 replacements for 0x80-0x9F per HTML5 spec
   @windows_1252 %{
-    0x80 => 0x20AC, 0x82 => 0x201A, 0x83 => 0x0192, 0x84 => 0x201E,
-    0x85 => 0x2026, 0x86 => 0x2020, 0x87 => 0x2021, 0x88 => 0x02C6,
-    0x89 => 0x2030, 0x8A => 0x0160, 0x8B => 0x2039, 0x8C => 0x0152,
-    0x8E => 0x017D, 0x91 => 0x2018, 0x92 => 0x2019, 0x93 => 0x201C,
-    0x94 => 0x201D, 0x95 => 0x2022, 0x96 => 0x2013, 0x97 => 0x2014,
-    0x98 => 0x02DC, 0x99 => 0x2122, 0x9A => 0x0161, 0x9B => 0x203A,
-    0x9C => 0x0153, 0x9E => 0x017E, 0x9F => 0x0178
+    0x80 => 0x20AC,
+    0x82 => 0x201A,
+    0x83 => 0x0192,
+    0x84 => 0x201E,
+    0x85 => 0x2026,
+    0x86 => 0x2020,
+    0x87 => 0x2021,
+    0x88 => 0x02C6,
+    0x89 => 0x2030,
+    0x8A => 0x0160,
+    0x8B => 0x2039,
+    0x8C => 0x0152,
+    0x8E => 0x017D,
+    0x91 => 0x2018,
+    0x92 => 0x2019,
+    0x93 => 0x201C,
+    0x94 => 0x201D,
+    0x95 => 0x2022,
+    0x96 => 0x2013,
+    0x97 => 0x2014,
+    0x98 => 0x02DC,
+    0x99 => 0x2122,
+    0x9A => 0x0161,
+    0x9B => 0x203A,
+    0x9C => 0x0153,
+    0x9E => 0x017E,
+    0x9F => 0x0178
   }
 
   defp finish_numeric_char_ref(state, rest, base) do
