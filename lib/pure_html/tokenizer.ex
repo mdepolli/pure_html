@@ -154,6 +154,11 @@ defmodule PureHtml.Tokenizer do
     emit_char(state, <<c::utf8>>, input: rest)
   end
 
+  defp step(%{state: :data, input: <<byte, rest::binary>>} = state) do
+    # Invalid UTF-8 byte - emit as-is (parse error in real impl)
+    emit_char(state, <<byte>>, input: rest)
+  end
+
   defp step(%{state: :data, input: ""} = _state) do
     # Handled by next_token/1 - but keeping for completeness
     nil
@@ -1248,7 +1253,13 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :character_reference, input: <<?&, _::binary>> = input} = state) do
     case PureHtml.Entities.lookup(input) do
       {chars, rest} ->
-        flush_char_ref(state, chars, rest)
+        if legacy_entity_in_attribute?(state.return_state, input, rest) do
+          # Don't consume legacy entity followed by = or alphanumeric in attribute
+          <<_, after_amp::binary>> = input
+          flush_char_ref(state, "&", after_amp)
+        else
+          flush_char_ref(state, chars, rest)
+        end
 
       nil ->
         <<_, rest::binary>> = input
@@ -1503,4 +1514,24 @@ defmodule PureHtml.Tokenizer do
   defp flush_char_ref(state, chars, rest) do
     emit_char(state, chars, input: rest, state: state.return_state, return_state: nil)
   end
+
+  # Per HTML5 spec: in attribute values, legacy entities (no semicolon) followed
+  # by = or alphanumeric should NOT be consumed (to preserve URLs like ?a=1&lang=en)
+  defp legacy_entity_in_attribute?(return_state, input, rest)
+       when is_attribute_value_state(return_state) do
+    matched_len = byte_size(input) - byte_size(rest)
+    <<matched::binary-size(matched_len), _::binary>> = input
+    no_semicolon? = not String.ends_with?(matched, ";")
+
+    problematic_next? =
+      case rest do
+        <<?=, _::binary>> -> true
+        <<c, _::binary>> when is_ascii_digit(c) or is_ascii_alpha(c) -> true
+        _ -> false
+      end
+
+    no_semicolon? and problematic_next?
+  end
+
+  defp legacy_entity_in_attribute?(_, _, _), do: false
 end
