@@ -13,7 +13,7 @@ defmodule PureHtml.TreeBuilder do
   # Elements that implicitly close an open <p> element
   @closes_p ~w(address article aside blockquote center details dialog dir div dl
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header
-               hgroup hr main menu nav ol p pre section summary table ul)
+               hgroup hr listing main menu nav ol p plaintext pre section summary table ul xmp)
 
   defstruct [:document, :stack, :head_id, :body_id, :strip_next_newline]
 
@@ -73,11 +73,14 @@ defmodule PureHtml.TreeBuilder do
     |> ensure_head()
     |> ensure_body()
     |> maybe_close_p(tag)
+    |> maybe_close_heading(tag)
     |> maybe_close_li(tag)
     |> maybe_close_dd_dt(tag)
     |> maybe_close_table_elements(tag)
     |> maybe_close_ruby(tag)
     |> maybe_close_option(tag)
+    |> maybe_close_button(tag)
+    |> maybe_close_formatting(tag)
     |> maybe_insert_table_implicit(tag)
     |> insert_element(tag, attrs, self_closing?, &(List.first(&1.stack) || &1.body_id))
     |> maybe_set_strip_newline(tag)
@@ -206,6 +209,25 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_p(state, _tag), do: state
 
+  # Headings close other headings
+  @headings ~w(h1 h2 h3 h4 h5 h6)
+  defp maybe_close_heading(state, tag) when tag in @headings do
+    close_if_current_in(state, @headings)
+  end
+
+  defp maybe_close_heading(state, _tag), do: state
+
+  defp close_if_current_in(state, targets) do
+    case state.stack do
+      [top | rest] ->
+        node = Document.get_node(state.document, top)
+        if node.tag in targets, do: %{state | stack: rest}, else: state
+
+      _ ->
+        state
+    end
+  end
+
   defp maybe_close_li(state, "li"), do: close_in_scope(state, "li", ~w(ul ol))
   defp maybe_close_li(state, _tag), do: state
 
@@ -236,6 +258,17 @@ defmodule PureHtml.TreeBuilder do
   defp maybe_close_option(state, "option"), do: close_if_current(state, "option")
   defp maybe_close_option(state, "optgroup"), do: close_if_current(state, "option")
   defp maybe_close_option(state, _tag), do: state
+
+  # Button closes button
+  defp maybe_close_button(state, "button"), do: close_in_scope(state, "button", ~w(form))
+  defp maybe_close_button(state, _tag), do: state
+
+  # Formatting elements that close themselves
+  defp maybe_close_formatting(state, tag)
+       when tag in ~w(a b big code em font i nobr s small strike strong tt u),
+       do: close_if_current(state, tag)
+
+  defp maybe_close_formatting(state, _tag), do: state
 
   # Implicit table structure
   defp maybe_insert_table_implicit(state, "col") do

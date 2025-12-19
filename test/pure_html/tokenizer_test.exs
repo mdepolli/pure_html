@@ -76,5 +76,4 @@ defmodule PureHtml.TokenizerTest do
                Tokenizer.tokenize("<input type=text name=foo disabled>") |> Enum.to_list()
     end
   end
-
 end
