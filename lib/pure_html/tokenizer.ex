@@ -22,6 +22,8 @@ defmodule PureHtml.Tokenizer do
 
   """
 
+  alias PureHtml.Entities
+
   # The tokenizer state struct
   defstruct [
     # remaining input binary
@@ -1251,19 +1253,13 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :character_reference, input: <<?&, _::binary>> = input} = state) do
-    case PureHtml.Entities.lookup(input) do
-      {chars, rest} ->
-        if legacy_entity_in_attribute?(state.return_state, input, rest) do
-          # Don't consume legacy entity followed by = or alphanumeric in attribute
-          <<_, after_amp::binary>> = input
-          flush_char_ref(state, "&", after_amp)
-        else
-          flush_char_ref(state, chars, rest)
-        end
-
-      nil ->
-        <<_, rest::binary>> = input
-        flush_char_ref(state, "&", rest)
+    with {chars, rest} <- Entities.lookup(input),
+         true <- consumable_entity?(state.return_state, input, rest) do
+      flush_char_ref(state, chars, rest)
+    else
+      _ ->
+        <<_, after_amp::binary>> = input
+        flush_char_ref(state, "&", after_amp)
     end
   end
 
@@ -1517,21 +1513,21 @@ defmodule PureHtml.Tokenizer do
 
   # Per HTML5 spec: in attribute values, legacy entities (no semicolon) followed
   # by = or alphanumeric should NOT be consumed (to preserve URLs like ?a=1&lang=en)
-  defp legacy_entity_in_attribute?(return_state, input, rest)
+  defp consumable_entity?(return_state, input, rest)
        when is_attribute_value_state(return_state) do
     matched_len = byte_size(input) - byte_size(rest)
     <<matched::binary-size(matched_len), _::binary>> = input
-    no_semicolon? = not String.ends_with?(matched, ";")
+    has_semicolon? = String.ends_with?(matched, ";")
 
-    problematic_next? =
+    legacy_follows_problematic_char? =
       case rest do
         <<?=, _::binary>> -> true
         <<c, _::binary>> when is_ascii_digit(c) or is_ascii_alpha(c) -> true
         _ -> false
       end
 
-    no_semicolon? and problematic_next?
+    has_semicolon? or not legacy_follows_problematic_char?
   end
 
-  defp legacy_entity_in_attribute?(_, _, _), do: false
+  defp consumable_entity?(_, _, _), do: true
 end
