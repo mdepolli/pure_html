@@ -514,8 +514,8 @@ defmodule PureHtml.Tokenizer do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :comment_start_dash, input: ""} = _state) do
-    nil
+  defp step(%{state: :comment_start_dash, input: ""} = state) do
+    emit(state, [])
   end
 
   defp step(%{state: :comment_start_dash, input: _} = state) do
@@ -541,8 +541,8 @@ defmodule PureHtml.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :comment, input: ""} = _state) do
-    nil
+  defp step(%{state: :comment, input: ""} = state) do
+    emit(state, [])
   end
 
   defp step(%{state: :comment, input: <<c::utf8, rest::binary>>} = state) do
@@ -605,8 +605,8 @@ defmodule PureHtml.Tokenizer do
     continue(state, state: :comment_end, input: rest)
   end
 
-  defp step(%{state: :comment_end_dash, input: ""} = _state) do
-    nil
+  defp step(%{state: :comment_end_dash, input: ""} = state) do
+    emit(state, [])
   end
 
   defp step(%{state: :comment_end_dash, input: _} = state) do
@@ -630,8 +630,8 @@ defmodule PureHtml.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :comment_end, input: ""} = _state) do
-    nil
+  defp step(%{state: :comment_end, input: ""} = state) do
+    emit(state, [])
   end
 
   defp step(%{state: :comment_end, input: _} = state) do
@@ -652,8 +652,8 @@ defmodule PureHtml.Tokenizer do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :comment_end_bang, input: ""} = _state) do
-    nil
+  defp step(%{state: :comment_end_bang, input: ""} = state) do
+    emit(state, [])
   end
 
   defp step(%{state: :comment_end_bang, input: _} = state) do
@@ -1307,6 +1307,17 @@ defmodule PureHtml.Tokenizer do
     end
   end
 
+  # Windows-1252 replacements for 0x80-0x9F per HTML5 spec
+  @windows_1252 %{
+    0x80 => 0x20AC, 0x82 => 0x201A, 0x83 => 0x0192, 0x84 => 0x201E,
+    0x85 => 0x2026, 0x86 => 0x2020, 0x87 => 0x2021, 0x88 => 0x02C6,
+    0x89 => 0x2030, 0x8A => 0x0160, 0x8B => 0x2039, 0x8C => 0x0152,
+    0x8E => 0x017D, 0x91 => 0x2018, 0x92 => 0x2019, 0x93 => 0x201C,
+    0x94 => 0x201D, 0x95 => 0x2022, 0x96 => 0x2013, 0x97 => 0x2014,
+    0x98 => 0x02DC, 0x99 => 0x2122, 0x9A => 0x0161, 0x9B => 0x203A,
+    0x9C => 0x0153, 0x9E => 0x017E, 0x9F => 0x0178
+  }
+
   defp finish_numeric_char_ref(state, rest, base) do
     codepoint = String.to_integer(state.buffer, base)
 
@@ -1316,7 +1327,7 @@ defmodule PureHtml.Tokenizer do
         codepoint == 0 -> <<0xFFFD::utf8>>
         codepoint > 0x10FFFF -> <<0xFFFD::utf8>>
         codepoint >= 0xD800 and codepoint <= 0xDFFF -> <<0xFFFD::utf8>>
-        # Noncharacters are allowed, but control characters have replacements
+        Map.has_key?(@windows_1252, codepoint) -> <<@windows_1252[codepoint]::utf8>>
         true -> <<codepoint::utf8>>
       end
 
