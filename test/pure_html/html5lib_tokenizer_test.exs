@@ -27,6 +27,7 @@ defmodule PureHtml.Html5libTokenizerTest do
           # Only run tests for states we support
           if state_atom == :data do
             @tag :html5lib
+            @tag :tokenizer
             @tag test_file: filename
             test "##{index}: #{description} (#{initial_state})" do
               normalized = unquote(Macro.escape(normalized))
