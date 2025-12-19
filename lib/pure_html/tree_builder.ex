@@ -67,6 +67,11 @@ defmodule PureHtml.TreeBuilder do
     |> ensure_body()
     |> maybe_close_p(tag)
     |> maybe_close_li(tag)
+    |> maybe_close_dd_dt(tag)
+    |> maybe_close_table_elements(tag)
+    |> maybe_close_ruby(tag)
+    |> maybe_close_option(tag)
+    |> maybe_insert_table_implicit(tag)
     |> insert_element(tag, attrs, self_closing?, &(List.first(&1.stack) || &1.body_id))
   end
 
@@ -173,6 +178,72 @@ defmodule PureHtml.TreeBuilder do
   defp maybe_close_li(state, "li"), do: close_in_scope(state, "li", ~w(ul ol))
   defp maybe_close_li(state, _tag), do: state
 
+  defp maybe_close_dd_dt(state, "dd"), do: close_in_scope(state, ~w(dd dt), ~w(dl))
+  defp maybe_close_dd_dt(state, "dt"), do: close_in_scope(state, ~w(dd dt), ~w(dl))
+  defp maybe_close_dd_dt(state, _tag), do: state
+
+  # Table elements
+  defp maybe_close_table_elements(state, "tr"), do: close_in_scope(state, "tr", ~w(table))
+  defp maybe_close_table_elements(state, "td"), do: close_in_scope(state, ~w(td th), ~w(table tr))
+  defp maybe_close_table_elements(state, "th"), do: close_in_scope(state, ~w(td th), ~w(table tr))
+
+  defp maybe_close_table_elements(state, tag) when tag in ~w(thead tbody tfoot),
+    do: close_in_scope(state, ~w(thead tbody tfoot), ~w(table))
+
+  defp maybe_close_table_elements(state, _tag), do: state
+
+  # Ruby elements
+  defp maybe_close_ruby(state, tag) when tag in ~w(rp rt),
+    do: close_in_scope(state, ~w(rp rt), ~w(ruby))
+
+  defp maybe_close_ruby(state, tag) when tag in ~w(rb rtc),
+    do: close_in_scope(state, ~w(rb rtc rp rt), ~w(ruby))
+
+  defp maybe_close_ruby(state, _tag), do: state
+
+  # Option elements
+  defp maybe_close_option(state, "option"), do: close_if_current(state, "option")
+  defp maybe_close_option(state, "optgroup"), do: close_if_current(state, "option")
+  defp maybe_close_option(state, _tag), do: state
+
+  # Implicit table structure
+  defp maybe_insert_table_implicit(state, "col") do
+    if current_tag(state) == "table" do
+      insert_and_push(state, "colgroup")
+    else
+      state
+    end
+  end
+
+  defp maybe_insert_table_implicit(state, "tr") do
+    if current_tag(state) == "table" do
+      insert_and_push(state, "tbody")
+    else
+      state
+    end
+  end
+
+  defp maybe_insert_table_implicit(state, tag) when tag in ~w(td th) do
+    case current_tag(state) do
+      t when t in ~w(table tbody thead tfoot) -> insert_and_push(state, "tr")
+      _ -> state
+    end
+  end
+
+  defp maybe_insert_table_implicit(state, _tag), do: state
+
+  defp current_tag(%{stack: [top | _], document: document}) do
+    Document.get_node(document, top).tag
+  end
+
+  defp current_tag(_state), do: nil
+
+  defp insert_and_push(state, tag) do
+    parent_id = List.first(state.stack) || state.body_id
+    {document, node_id} = Document.add_element(state.document, tag, %{}, parent_id)
+    %{state | document: document, stack: [node_id | state.stack]}
+  end
+
   defp close_if_current(state, target) do
     case state.stack do
       [top | rest] ->
@@ -184,22 +255,24 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp close_in_scope(state, target, scope_boundary) do
-    case find_in_scope(state.stack, state.document, target, scope_boundary) do
+  defp close_in_scope(state, targets, scope_boundary) do
+    targets = List.wrap(targets)
+
+    case find_in_scope(state.stack, state.document, targets, scope_boundary) do
       {:found, new_stack} -> %{state | stack: new_stack}
       :not_found -> state
     end
   end
 
-  defp find_in_scope([], _document, _target, _boundary), do: :not_found
+  defp find_in_scope([], _document, _targets, _boundary), do: :not_found
 
-  defp find_in_scope([top | rest], document, target, boundary) do
+  defp find_in_scope([top | rest], document, targets, boundary) do
     node = Document.get_node(document, top)
 
     cond do
-      node.tag == target -> {:found, rest}
+      node.tag in targets -> {:found, rest}
       node.tag in boundary -> :not_found
-      true -> find_in_scope(rest, document, target, boundary)
+      true -> find_in_scope(rest, document, targets, boundary)
     end
   end
 
