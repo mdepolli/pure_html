@@ -1,7 +1,7 @@
 defmodule PureHtml.Document do
   @moduledoc false
 
-  defstruct [:nodes, :by_tag, :by_id, :by_class, :root_id, :next_id, :doctype, :before_html]
+  defstruct [:nodes, :by_tag, :by_id, :by_class, :root_id, :next_id, :doctype, :before_html, :template_contents]
 
   def new do
     %__MODULE__{
@@ -12,7 +12,8 @@ defmodule PureHtml.Document do
       root_id: nil,
       next_id: 0,
       doctype: nil,
-      before_html: []
+      before_html: [],
+      template_contents: %{}
     }
   end
 
@@ -54,14 +55,44 @@ defmodule PureHtml.Document do
     {doc, id}
   end
 
-  def add_text(doc, content, parent_id) do
+  def add_template_content(doc, template_id) do
+    # Create a document fragment node for the template's content
     id = doc.next_id
-    node = %{type: :text, id: id, content: content, parent_id: parent_id}
-
+    node = %{type: :document_fragment, id: id, children_ids: []}
     nodes = Map.put(doc.nodes, id, node)
-    nodes = add_to_parent(nodes, parent_id, id)
+    template_contents = Map.put(doc.template_contents, template_id, id)
+    {%{doc | nodes: nodes, next_id: id + 1, template_contents: template_contents}, id}
+  end
 
-    {%{doc | nodes: nodes, next_id: id + 1}, id}
+  def get_template_content(doc, template_id) do
+    Map.get(doc.template_contents, template_id)
+  end
+
+  def add_text(doc, content, parent_id) do
+    # Try to coalesce with the last child if it's a text node
+    case last_child_text_node(doc, parent_id) do
+      {:ok, text_id, existing_content} ->
+        node = %{type: :text, id: text_id, content: existing_content <> content, parent_id: parent_id}
+        {%{doc | nodes: Map.put(doc.nodes, text_id, node)}, text_id}
+
+      :none ->
+        id = doc.next_id
+        node = %{type: :text, id: id, content: content, parent_id: parent_id}
+
+        nodes = Map.put(doc.nodes, id, node)
+        nodes = add_to_parent(nodes, parent_id, id)
+
+        {%{doc | nodes: nodes, next_id: id + 1}, id}
+    end
+  end
+
+  defp last_child_text_node(doc, parent_id) do
+    with %{children_ids: [last_id | _]} <- get_node(doc, parent_id),
+         %{type: :text, content: content} <- get_node(doc, last_id) do
+      {:ok, last_id, content}
+    else
+      _ -> :none
+    end
   end
 
   def add_comment(doc, content, parent_id) do

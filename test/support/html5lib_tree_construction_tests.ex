@@ -125,10 +125,27 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
           |> Enum.join()
 
         children_lines =
-          document
-          |> PureHtml.Document.get_children_ids(node_id)
-          |> Enum.map(&serialize_node(document, &1, depth + 1))
-          |> Enum.join()
+          if node.tag == "template" do
+            # Template uses its content document fragment
+            case Map.get(document.template_contents, node_id) do
+              nil ->
+                ""
+
+              content_id ->
+                content_line = "#{indent}  content\n"
+                content_children =
+                  document
+                  |> PureHtml.Document.get_children_ids(content_id)
+                  |> Enum.map(&serialize_node(document, &1, depth + 2))
+                  |> Enum.join()
+                content_line <> content_children
+            end
+          else
+            document
+            |> PureHtml.Document.get_children_ids(node_id)
+            |> Enum.map(&serialize_node(document, &1, depth + 1))
+            |> Enum.join()
+          end
 
         tag_line <> attr_lines <> children_lines
 

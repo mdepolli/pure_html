@@ -131,11 +131,16 @@ defmodule PureHtml.Tokenizer do
     {token, %{state | deferred_token: nil}}
   end
 
-  defp next_token(%__MODULE__{input: "", state: :data, pending_chars: []} = _state) do
+  @eof_flush_states [:data, :rawtext, :rcdata, :script_data, :script_data_escaped,
+                     :script_data_double_escaped]
+
+  defp next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
+       when s in @eof_flush_states do
     nil
   end
 
-  defp next_token(%__MODULE__{input: "", state: :data, pending_chars: pending} = state) do
+  defp next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
+       when s in @eof_flush_states do
     # Flush pending chars at EOF
     {flush_pending(pending), %{state | pending_chars: []}}
   end
@@ -196,6 +201,480 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :data, input: ""} = _state) do
     # Handled by next_token/1 - but keeping for completeness
     nil
+  end
+
+  # RAWTEXT state - for <style>, <xmp>, etc. No entity decoding.
+  defp step(%{state: :rawtext, input: <<?<, rest::binary>>} = state) do
+    continue(state, state: :rawtext_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :rawtext, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, input: rest)
+  end
+
+  defp step(%{state: :rawtext, input: ""} = _state), do: nil
+
+  defp step(%{state: :rawtext, input: input} = state) do
+    {chars, rest} = chars_until(input, [?<, 0])
+    emit_char(state, chars, input: rest)
+  end
+
+  defp step(%{state: :rawtext_less_than_sign, input: <<?/, rest::binary>>} = state) do
+    continue(state, state: :rawtext_end_tag_open, buffer: "", input: rest)
+  end
+
+  defp step(%{state: :rawtext_less_than_sign, input: _} = state) do
+    emit_char(state, "<", state: :rawtext)
+  end
+
+  defp step(%{state: :rawtext_end_tag_open, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    continue(state,
+      state: :rawtext_end_tag_name,
+      token: {:end_tag, ""},
+      input: <<c, rest::binary>>
+    )
+  end
+
+  defp step(%{state: :rawtext_end_tag_open, input: _} = state) do
+    emit_char(state, "</", state: :rawtext)
+  end
+
+  defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :before_attribute_name, input: rest)
+    else
+      emit_rawtext_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :rawtext_end_tag_name, input: <<?/, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :self_closing_start_tag, input: rest)
+    else
+      emit_rawtext_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :rawtext_end_tag_name, input: <<?>, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      emit(state, input: rest)
+    else
+      emit_rawtext_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    state = append_to_tag_name(state, char)
+    continue(state, buffer: state.buffer <> char, input: rest)
+  end
+
+  defp step(%{state: :rawtext_end_tag_name, input: _} = state) do
+    emit_rawtext_buffer(state, state.input)
+  end
+
+  # RCDATA state - for <textarea>, <title>. Processes entities.
+  defp step(%{state: :rcdata, input: <<?<, rest::binary>>} = state) do
+    continue(state, state: :rcdata_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :rcdata, input: <<?&, _rest::binary>>} = state) do
+    continue(state, state: :character_reference, return_state: :rcdata)
+  end
+
+  defp step(%{state: :rcdata, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, input: rest)
+  end
+
+  defp step(%{state: :rcdata, input: ""} = _state), do: nil
+
+  defp step(%{state: :rcdata, input: input} = state) do
+    {chars, rest} = chars_until(input, [?<, ?&, 0])
+    emit_char(state, chars, input: rest)
+  end
+
+  defp step(%{state: :rcdata_less_than_sign, input: <<?/, rest::binary>>} = state) do
+    continue(state, state: :rcdata_end_tag_open, buffer: "", input: rest)
+  end
+
+  defp step(%{state: :rcdata_less_than_sign, input: _} = state) do
+    emit_char(state, "<", state: :rcdata)
+  end
+
+  defp step(%{state: :rcdata_end_tag_open, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    continue(state,
+      state: :rcdata_end_tag_name,
+      token: {:end_tag, ""},
+      input: <<c, rest::binary>>
+    )
+  end
+
+  defp step(%{state: :rcdata_end_tag_open, input: _} = state) do
+    emit_char(state, "</", state: :rcdata)
+  end
+
+  defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :before_attribute_name, input: rest)
+    else
+      emit_rcdata_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :rcdata_end_tag_name, input: <<?/, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :self_closing_start_tag, input: rest)
+    else
+      emit_rcdata_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :rcdata_end_tag_name, input: <<?>, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      emit(state, input: rest)
+    else
+      emit_rcdata_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    state = append_to_tag_name(state, char)
+    continue(state, buffer: state.buffer <> char, input: rest)
+  end
+
+  defp step(%{state: :rcdata_end_tag_name, input: _} = state) do
+    emit_rcdata_buffer(state, state.input)
+  end
+
+  # Script data state - for <script>. Similar to RAWTEXT but handles escaped states.
+  defp step(%{state: :script_data, input: <<?<, rest::binary>>} = state) do
+    continue(state, state: :script_data_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, input: rest)
+  end
+
+  defp step(%{state: :script_data, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data, input: input} = state) do
+    {chars, rest} = chars_until(input, [?<, 0])
+    emit_char(state, chars, input: rest)
+  end
+
+  defp step(%{state: :script_data_less_than_sign, input: <<?/, rest::binary>>} = state) do
+    continue(state, state: :script_data_end_tag_open, buffer: "", input: rest)
+  end
+
+  defp step(%{state: :script_data_less_than_sign, input: <<?!, rest::binary>>} = state) do
+    emit_char(state, "<!", state: :script_data_escape_start, input: rest)
+  end
+
+  defp step(%{state: :script_data_less_than_sign, input: _} = state) do
+    emit_char(state, "<", state: :script_data)
+  end
+
+  defp step(%{state: :script_data_end_tag_open, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    continue(state,
+      state: :script_data_end_tag_name,
+      token: {:end_tag, ""},
+      input: <<c, rest::binary>>
+    )
+  end
+
+  defp step(%{state: :script_data_end_tag_open, input: _} = state) do
+    emit_char(state, "</", state: :script_data)
+  end
+
+  defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :before_attribute_name, input: rest)
+    else
+      emit_script_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :script_data_end_tag_name, input: <<?/, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :self_closing_start_tag, input: rest)
+    else
+      emit_script_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :script_data_end_tag_name, input: <<?>, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      emit(state, input: rest)
+    else
+      emit_script_buffer(state, rest)
+    end
+  end
+
+  defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    state = append_to_tag_name(state, char)
+    continue(state, buffer: state.buffer <> char, input: rest)
+  end
+
+  defp step(%{state: :script_data_end_tag_name, input: _} = state) do
+    emit_script_buffer(state, state.input)
+  end
+
+  # Script data escape start
+  defp step(%{state: :script_data_escape_start, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", state: :script_data_escape_start_dash, input: rest)
+  end
+
+  defp step(%{state: :script_data_escape_start, input: _} = state) do
+    continue(state, state: :script_data)
+  end
+
+  defp step(%{state: :script_data_escape_start_dash, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", state: :script_data_escaped_dash_dash, input: rest)
+  end
+
+  defp step(%{state: :script_data_escape_start_dash, input: _} = state) do
+    continue(state, state: :script_data)
+  end
+
+  # Script data escaped state
+  defp step(%{state: :script_data_escaped, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", state: :script_data_escaped_dash, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped, input: <<?<, rest::binary>>} = state) do
+    continue(state, state: :script_data_escaped_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data_escaped, input: input} = state) do
+    {chars, rest} = chars_until(input, [?-, ?<, 0])
+    emit_char(state, chars, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", state: :script_data_escaped_dash_dash, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash, input: <<?<, rest::binary>>} = state) do
+    continue(state, state: :script_data_escaped_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, state: :script_data_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data_escaped_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<?<, rest::binary>>} = state) do
+    continue(state, state: :script_data_escaped_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<?>, rest::binary>>} = state) do
+    emit_char(state, ">", state: :script_data, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, state: :script_data_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_dash_dash, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_less_than_sign, input: <<?/, rest::binary>>} = state) do
+    continue(state, state: :script_data_escaped_end_tag_open, buffer: "", input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_less_than_sign, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    emit_char(state, "<" <> char, state: :script_data_double_escape_start, buffer: char, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_less_than_sign, input: _} = state) do
+    emit_char(state, "<", state: :script_data_escaped)
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_open, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    continue(state,
+      state: :script_data_escaped_end_tag_name,
+      token: {:end_tag, ""},
+      input: <<c, rest::binary>>
+    )
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_open, input: _} = state) do
+    emit_char(state, "</", state: :script_data_escaped)
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_whitespace(c) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :before_attribute_name, input: rest)
+    else
+      emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil, input: rest)
+    end
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<?/, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      continue(state, state: :self_closing_start_tag, input: rest)
+    else
+      emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil, input: rest)
+    end
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<?>, rest::binary>>} = state) do
+    if appropriate_end_tag?(state) do
+      emit(state, input: rest)
+    else
+      emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil, input: rest)
+    end
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    state = append_to_tag_name(state, char)
+    continue(state, buffer: state.buffer <> char, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_name, input: _} = state) do
+    emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil)
+  end
+
+  # Script data double escape start
+  defp step(%{state: :script_data_double_escape_start, input: <<c, rest::binary>>} = state)
+       when c in ~c[\t\n\f /] or c == ?> do
+    if state.buffer == "script" do
+      emit_char(state, <<c>>, state: :script_data_double_escaped, input: rest)
+    else
+      emit_char(state, <<c>>, state: :script_data_escaped, input: rest)
+    end
+  end
+
+  defp step(%{state: :script_data_double_escape_start, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    emit_char(state, <<c>>, buffer: state.buffer <> char, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escape_start, input: _} = state) do
+    continue(state, state: :script_data_escaped)
+  end
+
+  # Script data double escaped state
+  defp step(%{state: :script_data_double_escaped, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", state: :script_data_double_escaped_dash, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped, input: <<?<, rest::binary>>} = state) do
+    emit_char(state, "<", state: :script_data_double_escaped_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data_double_escaped, input: input} = state) do
+    {chars, rest} = chars_until(input, [?-, ?<, 0])
+    emit_char(state, chars, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", state: :script_data_double_escaped_dash_dash, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash, input: <<?<, rest::binary>>} = state) do
+    emit_char(state, "<", state: :script_data_double_escaped_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, state: :script_data_double_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data_double_escaped_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_double_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<?-, rest::binary>>} = state) do
+    emit_char(state, "-", input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<?<, rest::binary>>} = state) do
+    emit_char(state, "<", state: :script_data_double_escaped_less_than_sign, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<?>, rest::binary>>} = state) do
+    emit_char(state, ">", state: :script_data, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, state: :script_data_double_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: ""} = _state), do: nil
+
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_double_escaped, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_less_than_sign, input: <<?/, rest::binary>>} = state) do
+    emit_char(state, "/", state: :script_data_double_escape_end, buffer: "", input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escaped_less_than_sign, input: _} = state) do
+    continue(state, state: :script_data_double_escaped)
+  end
+
+  defp step(%{state: :script_data_double_escape_end, input: <<c, rest::binary>>} = state)
+       when c in ~c[\t\n\f /] or c == ?> do
+    if state.buffer == "script" do
+      emit_char(state, <<c>>, state: :script_data_escaped, input: rest)
+    else
+      emit_char(state, <<c>>, state: :script_data_double_escaped, input: rest)
+    end
+  end
+
+  defp step(%{state: :script_data_double_escape_end, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) do
+    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    emit_char(state, <<c>>, buffer: state.buffer <> char, input: rest)
+  end
+
+  defp step(%{state: :script_data_double_escape_end, input: _} = state) do
+    continue(state, state: :script_data_double_escaped)
   end
 
   # Tag open state - saw '<', determine what kind of tag
@@ -1439,6 +1918,27 @@ defmodule PureHtml.Tokenizer do
     {:continue, struct!(state, updates)}
   end
 
+  @rawtext_elements ~w(style xmp iframe noembed noframes)
+  @rcdata_elements ~w(textarea title)
+
+  defp emit(%{token: {:start_tag, "script", _, false}} = state, updates) do
+    base_updates = [state: :script_data, token: nil]
+    all_updates = Keyword.merge(base_updates, updates)
+    {:emit, state.token, struct!(state, all_updates)}
+  end
+
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) when tag in @rawtext_elements do
+    base_updates = [state: :rawtext, token: nil]
+    all_updates = Keyword.merge(base_updates, updates)
+    {:emit, state.token, struct!(state, all_updates)}
+  end
+
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) when tag in @rcdata_elements do
+    base_updates = [state: :rcdata, token: nil]
+    all_updates = Keyword.merge(base_updates, updates)
+    {:emit, state.token, struct!(state, all_updates)}
+  end
+
   defp emit(state, updates) do
     base_updates = [state: :data, token: nil]
     all_updates = Keyword.merge(base_updates, updates)
@@ -1528,6 +2028,24 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp maybe_update_last_start_tag(state), do: state
+
+  defp appropriate_end_tag?(%{token: {:end_tag, name}, last_start_tag: last}) do
+    name == last
+  end
+
+  defp appropriate_end_tag?(_state), do: false
+
+  defp emit_rawtext_buffer(state, rest) do
+    emit_char(state, "</" <> state.buffer, state: :rawtext, token: nil, input: rest)
+  end
+
+  defp emit_rcdata_buffer(state, rest) do
+    emit_char(state, "</" <> state.buffer, state: :rcdata, token: nil, input: rest)
+  end
+
+  defp emit_script_buffer(state, rest) do
+    emit_char(state, "</" <> state.buffer, state: :script_data, token: nil, input: rest)
+  end
 
   defp flush_char_ref(%{return_state: return_state} = state, chars, rest)
        when is_attribute_value_state(return_state) do

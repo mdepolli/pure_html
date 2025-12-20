@@ -60,6 +60,13 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_insert_body(attrs)
   end
 
+  defp process(state, {:start_tag, "template", attrs, _self_closing?}) do
+    state
+    |> ensure_html(%{})
+    |> ensure_head()
+    |> insert_template(attrs, &head_or_body_parent/1)
+  end
+
   defp process(state, {:start_tag, tag, attrs, self_closing?}) when tag in @head_elements do
     state
     |> ensure_html(%{})
@@ -88,7 +95,7 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_close_button(tag)
     |> maybe_close_formatting(tag)
     |> maybe_insert_table_implicit(tag)
-    |> insert_element(tag, attrs, self_closing?, &(List.first(&1.stack) || &1.body_id))
+    |> insert_element(tag, attrs, self_closing?, &(stack_first_id(&1.stack) || &1.body_id))
     |> maybe_set_strip_newline(tag)
   end
 
@@ -122,7 +129,8 @@ defmodule PureHtml.TreeBuilder do
       document = Document.add_comment_before_html(state.document, text)
       %{state | document: document}
     else
-      parent_id = List.first(state.stack) || state.document.root_id
+      parent_id = stack_first_id(state.stack) || state.document.root_id
+      parent_id = adjust_for_template(state.document, parent_id)
       {document, _id} = Document.add_comment(state.document, text, parent_id)
       %{state | document: document}
     end
@@ -145,6 +153,7 @@ defmodule PureHtml.TreeBuilder do
   # Parent selection
 
   defp head_or_body_parent(%{body_id: nil, head_id: head_id}), do: head_id
+  defp head_or_body_parent(%{stack: [{:template, _template_id, content_id} | _]}), do: content_id
   defp head_or_body_parent(%{stack: [top | _]}), do: top
   defp head_or_body_parent(%{body_id: body_id}), do: body_id
 
@@ -200,8 +209,18 @@ defmodule PureHtml.TreeBuilder do
 
   # Insert nodes
 
+  defp insert_template(state, attrs, parent_fn) do
+    parent_id = parent_fn.(state)
+    parent_id = adjust_for_template(state.document, parent_id)
+    {document, template_id} = Document.add_element(state.document, "template", attrs, parent_id)
+    {document, content_id} = Document.add_template_content(document, template_id)
+    # Push template onto stack, but content is where children go
+    %{state | document: document, stack: [{:template, template_id, content_id} | state.stack]}
+  end
+
   defp insert_element(state, tag, attrs, self_closing?, parent_fn) do
     parent_id = parent_fn.(state)
+    parent_id = adjust_for_template(state.document, parent_id)
     {document, node_id} = Document.add_element(state.document, tag, attrs, parent_id)
 
     stack =
@@ -211,10 +230,34 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp insert_text(state, text) do
-    parent_id = List.first(state.stack) || state.body_id
+    parent_id = get_current_parent(state)
+    parent_id = adjust_for_template(state.document, parent_id)
     {document, _id} = Document.add_text(state.document, text, parent_id)
     %{state | document: document}
   end
+
+  # When parent is a template, redirect to its content
+  defp adjust_for_template(document, parent_id) do
+    case Document.get_node(document, parent_id) do
+      %{tag: "template"} -> Document.get_template_content(document, parent_id)
+      _ -> parent_id
+    end
+  end
+
+  defp get_current_parent(state) do
+    case List.first(state.stack) do
+      {:template, _template_id, content_id} -> content_id
+      id when is_integer(id) -> id
+      nil -> state.body_id
+    end
+  end
+
+  # Extract node ID from stack entry (handles both plain IDs and template tuples)
+  defp stack_entry_id({:template, template_id, _content_id}), do: template_id
+  defp stack_entry_id(id) when is_integer(id), do: id
+
+  defp stack_first_id([]), do: nil
+  defp stack_first_id([entry | _]), do: stack_entry_id(entry)
 
   # Implicit closing
 
@@ -232,8 +275,8 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_heading(state, _tag), do: state
 
-  defp close_if_current_in(%{stack: [top | rest]} = state, targets) do
-    node = Document.get_node(state.document, top)
+  defp close_if_current_in(%{stack: [entry | rest]} = state, targets) do
+    node = Document.get_node(state.document, stack_entry_id(entry))
     if node.tag in targets, do: %{state | stack: rest}, else: state
   end
 
@@ -359,20 +402,21 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_insert_table_implicit(state, _tag), do: state
 
-  defp current_tag(%{stack: [top | _], document: document}) do
-    Document.get_node(document, top).tag
+  defp current_tag(%{stack: [entry | _], document: document}) do
+    Document.get_node(document, stack_entry_id(entry)).tag
   end
 
   defp current_tag(_state), do: nil
 
   defp insert_and_push(state, tag) do
-    parent_id = List.first(state.stack) || state.body_id
+    parent_id = stack_first_id(state.stack) || state.body_id
+    parent_id = adjust_for_template(state.document, parent_id)
     {document, node_id} = Document.add_element(state.document, tag, %{}, parent_id)
     %{state | document: document, stack: [node_id | state.stack]}
   end
 
-  defp close_if_current(%{stack: [top | rest]} = state, target) do
-    node = Document.get_node(state.document, top)
+  defp close_if_current(%{stack: [entry | rest]} = state, target) do
+    node = Document.get_node(state.document, stack_entry_id(entry))
     if node.tag == target, do: %{state | stack: rest}, else: state
   end
 
@@ -389,8 +433,8 @@ defmodule PureHtml.TreeBuilder do
 
   defp find_in_scope([], _document, _targets, _boundary), do: :not_found
 
-  defp find_in_scope([top | rest], document, targets, boundary) do
-    node = Document.get_node(document, top)
+  defp find_in_scope([entry | rest], document, targets, boundary) do
+    node = Document.get_node(document, stack_entry_id(entry))
 
     cond do
       node.tag in targets -> {:found, rest}
@@ -402,13 +446,13 @@ defmodule PureHtml.TreeBuilder do
   # Stack operations
 
   defp remove_from_stack(state, id) do
-    %{state | stack: Enum.reject(state.stack, &(&1 == id))}
+    %{state | stack: Enum.reject(state.stack, &(stack_entry_id(&1) == id))}
   end
 
   defp close_until([], _document, _tag), do: :not_found
 
-  defp close_until([top | rest], document, tag) do
-    node = Document.get_node(document, top)
+  defp close_until([entry | rest], document, tag) do
+    node = Document.get_node(document, stack_entry_id(entry))
 
     if node.tag == tag do
       {:found, rest}
