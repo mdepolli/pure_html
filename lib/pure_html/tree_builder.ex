@@ -295,7 +295,8 @@ defmodule PureHtml.TreeBuilder do
       document = Document.add_comment_before_html(state.document, text)
       %{state | document: document}
     else
-      parent_id = stack_first_id(state.stack) || state.document.root_id
+      # Prefer stack top, then body, then root
+      parent_id = stack_first_id(state.stack) || state.body_id || state.document.root_id
       parent_id = adjust_for_template(state.document, parent_id)
       {document, _id} = Document.add_comment(state.document, text, parent_id)
       %{state | document: document}
