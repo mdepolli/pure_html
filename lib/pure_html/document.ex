@@ -145,6 +145,51 @@ defmodule PureHtml.Document do
     end
   end
 
+  @doc "Move all children from one element to another"
+  def move_children(doc, from_id, to_id) do
+    from_node = get_node(doc, from_id)
+    children_ids = Map.get(from_node, :children_ids, [])
+
+    # Update parent_id on each child and add to new parent
+    nodes =
+      Enum.reduce(children_ids, doc.nodes, fn child_id, nodes ->
+        nodes
+        |> update_in([child_id, :parent_id], fn _ -> to_id end)
+      end)
+
+    # Clear old parent's children and set new parent's children
+    nodes = put_in(nodes, [from_id, :children_ids], [])
+    nodes = update_in(nodes, [to_id, :children_ids], fn existing ->
+      children_ids ++ (existing || [])
+    end)
+
+    %{doc | nodes: nodes}
+  end
+
+  @doc "Remove a child from its parent's children list"
+  def remove_from_parent(doc, child_id) do
+    child = get_node(doc, child_id)
+    parent_id = child.parent_id
+
+    if parent_id do
+      nodes = update_in(doc.nodes, [parent_id, :children_ids], fn ids ->
+        Enum.reject(ids, &(&1 == child_id))
+      end)
+      %{doc | nodes: nodes}
+    else
+      doc
+    end
+  end
+
+  @doc "Append a child to a parent"
+  def append_child(doc, parent_id, child_id) do
+    # Update child's parent_id
+    nodes = put_in(doc.nodes, [child_id, :parent_id], parent_id)
+    # Add to parent's children
+    nodes = update_in(nodes, [parent_id, :children_ids], &[child_id | (&1 || [])])
+    %{doc | nodes: nodes}
+  end
+
   defp add_to_parent(nodes, nil, _child_id), do: nodes
 
   defp add_to_parent(nodes, parent_id, child_id) do
