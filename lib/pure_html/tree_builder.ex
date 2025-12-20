@@ -64,7 +64,12 @@ defmodule PureHtml.TreeBuilder do
     state
     |> ensure_html(%{})
     |> ensure_head()
-    |> insert_element(tag, attrs, self_closing?, & &1.head_id)
+    |> insert_element(tag, attrs, self_closing?, &head_or_body_parent/1)
+  end
+
+  # Convert <image> to <img> per spec
+  defp process(state, {:start_tag, "image", attrs, self_closing?}) do
+    process(state, {:start_tag, "img", attrs, self_closing?})
   end
 
   defp process(state, {:start_tag, tag, attrs, self_closing?}) do
@@ -79,6 +84,7 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_close_table_elements(tag)
     |> maybe_close_ruby(tag)
     |> maybe_close_option(tag)
+    |> maybe_close_optgroup(tag)
     |> maybe_close_button(tag)
     |> maybe_close_formatting(tag)
     |> maybe_insert_table_implicit(tag)
@@ -87,11 +93,14 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process(state, {:end_tag, "html"}), do: state
-  defp process(state, {:end_tag, "head"}), do: remove_from_stack(state, state.head_id)
+  defp process(state, {:end_tag, "head"}), do: state
   defp process(state, {:end_tag, "body"}), do: remove_from_stack(state, state.body_id)
 
   defp process(state, {:end_tag, tag}) do
-    %{state | stack: close_until(state.stack, state.document, tag)}
+    case close_until(state.stack, state.document, tag) do
+      {:found, new_stack} -> %{state | stack: new_stack}
+      :not_found -> state
+    end
   end
 
   defp process(state, {:character, text}) do
@@ -132,6 +141,12 @@ defmodule PureHtml.TreeBuilder do
     |> ensure_body()
     |> Map.get(:document)
   end
+
+  # Parent selection
+
+  defp head_or_body_parent(%{body_id: nil, head_id: head_id}), do: head_id
+  defp head_or_body_parent(%{stack: [top | _]}), do: top
+  defp head_or_body_parent(%{body_id: body_id}), do: body_id
 
   # Leading newline stripping for pre/textarea/listing
 
@@ -217,16 +232,12 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_heading(state, _tag), do: state
 
-  defp close_if_current_in(state, targets) do
-    case state.stack do
-      [top | rest] ->
-        node = Document.get_node(state.document, top)
-        if node.tag in targets, do: %{state | stack: rest}, else: state
-
-      _ ->
-        state
-    end
+  defp close_if_current_in(%{stack: [top | rest]} = state, targets) do
+    node = Document.get_node(state.document, top)
+    if node.tag in targets, do: %{state | stack: rest}, else: state
   end
+
+  defp close_if_current_in(state, _targets), do: state
 
   defp maybe_close_li(state, "li"), do: close_in_scope(state, "li", ~w(ul ol))
   defp maybe_close_li(state, _tag), do: state
@@ -236,12 +247,49 @@ defmodule PureHtml.TreeBuilder do
   defp maybe_close_dd_dt(state, _tag), do: state
 
   # Table elements
-  defp maybe_close_table_elements(state, "tr"), do: close_in_scope(state, "tr", ~w(table))
-  defp maybe_close_table_elements(state, "td"), do: close_in_scope(state, ~w(td th), ~w(table tr))
-  defp maybe_close_table_elements(state, "th"), do: close_in_scope(state, ~w(td th), ~w(table tr))
+  defp maybe_close_table_elements(state, "caption") do
+    state
+    |> close_in_scope(~w(td th), ~w(table))
+    |> close_in_scope(~w(tr), ~w(table))
+    |> close_in_scope(~w(thead tbody tfoot), ~w(table))
+    |> close_in_scope("caption", ~w(table))
+  end
 
-  defp maybe_close_table_elements(state, tag) when tag in ~w(thead tbody tfoot),
-    do: close_in_scope(state, ~w(thead tbody tfoot), ~w(table))
+  defp maybe_close_table_elements(state, "colgroup") do
+    state
+    |> close_in_scope(~w(td th), ~w(table))
+    |> close_in_scope(~w(tr), ~w(table))
+    |> close_in_scope(~w(thead tbody tfoot), ~w(table))
+    |> close_if_current("colgroup")
+  end
+
+  defp maybe_close_table_elements(state, "tr") do
+    state
+    |> close_if_current("caption")
+    |> close_if_current("colgroup")
+    |> close_in_scope("tr", ~w(table))
+  end
+
+  defp maybe_close_table_elements(state, "td") do
+    state
+    |> close_if_current("caption")
+    |> close_if_current("colgroup")
+    |> close_in_scope(~w(td th), ~w(table tr))
+  end
+
+  defp maybe_close_table_elements(state, "th") do
+    state
+    |> close_if_current("caption")
+    |> close_if_current("colgroup")
+    |> close_in_scope(~w(td th), ~w(table tr))
+  end
+
+  defp maybe_close_table_elements(state, tag) when tag in ~w(thead tbody tfoot) do
+    state
+    |> close_if_current("caption")
+    |> close_if_current("colgroup")
+    |> close_in_scope(~w(thead tbody tfoot), ~w(table))
+  end
 
   defp maybe_close_table_elements(state, _tag), do: state
 
@@ -255,9 +303,16 @@ defmodule PureHtml.TreeBuilder do
   defp maybe_close_ruby(state, _tag), do: state
 
   # Option elements
-  defp maybe_close_option(state, "option"), do: close_if_current(state, "option")
-  defp maybe_close_option(state, "optgroup"), do: close_if_current(state, "option")
+  defp maybe_close_option(state, tag) when tag in ~w(option optgroup hr),
+    do: close_if_current(state, "option")
+
   defp maybe_close_option(state, _tag), do: state
+
+  # Optgroup closes optgroup (and hr in select context)
+  defp maybe_close_optgroup(state, tag) when tag in ~w(optgroup hr),
+    do: close_if_current(state, "optgroup")
+
+  defp maybe_close_optgroup(state, _tag), do: state
 
   # Button closes button
   defp maybe_close_button(state, "button"), do: close_in_scope(state, "button", ~w(form))
@@ -289,8 +344,16 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_insert_table_implicit(state, tag) when tag in ~w(td th) do
     case current_tag(state) do
-      t when t in ~w(table tbody thead tfoot) -> insert_and_push(state, "tr")
-      _ -> state
+      "table" ->
+        state
+        |> insert_and_push("tbody")
+        |> insert_and_push("tr")
+
+      t when t in ~w(tbody thead tfoot) ->
+        insert_and_push(state, "tr")
+
+      _ ->
+        state
     end
   end
 
@@ -308,16 +371,12 @@ defmodule PureHtml.TreeBuilder do
     %{state | document: document, stack: [node_id | state.stack]}
   end
 
-  defp close_if_current(state, target) do
-    case state.stack do
-      [top | rest] ->
-        node = Document.get_node(state.document, top)
-        if node.tag == target, do: %{state | stack: rest}, else: state
-
-      _ ->
-        state
-    end
+  defp close_if_current(%{stack: [top | rest]} = state, target) do
+    node = Document.get_node(state.document, top)
+    if node.tag == target, do: %{state | stack: rest}, else: state
   end
+
+  defp close_if_current(state, _target), do: state
 
   defp close_in_scope(state, targets, scope_boundary) do
     targets = List.wrap(targets)
@@ -346,13 +405,13 @@ defmodule PureHtml.TreeBuilder do
     %{state | stack: Enum.reject(state.stack, &(&1 == id))}
   end
 
-  defp close_until([], _document, _tag), do: []
+  defp close_until([], _document, _tag), do: :not_found
 
   defp close_until([top | rest], document, tag) do
     node = Document.get_node(document, top)
 
     if node.tag == tag do
-      rest
+      {:found, rest}
     else
       close_until(rest, document, tag)
     end
