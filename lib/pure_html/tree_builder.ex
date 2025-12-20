@@ -141,6 +141,12 @@ defmodule PureHtml.TreeBuilder do
     ol p pre ruby s small span strong strike sub sup table tt u ul var
   ))
 
+  # Table-related elements where foster parenting applies
+  @table_foster_targets ~w(table tbody tfoot thead tr)
+
+  # Elements allowed as children in table context (no foster parenting needed)
+  @table_allowed_children ~w(caption colgroup tbody tfoot thead tr td th script template style)
+
   # Elements that implicitly close an open <p> element
   @closes_p ~w(address article aside blockquote center details dialog dir div dl
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header
@@ -389,6 +395,9 @@ defmodule PureHtml.TreeBuilder do
     parent_id = parent_fn.(state)
     parent_id = adjust_for_template(state.document, parent_id)
 
+    # Check for foster parenting (non-table-allowed element in table context)
+    foster_parent_info = should_foster_parent_element?(state, tag)
+
     # Get inherited namespace context
     inherited_ns = get_inherited_namespace(state)
 
@@ -436,7 +445,22 @@ defmodule PureHtml.TreeBuilder do
           {tag, attrs, inherited_ns}
       end
 
-    {document, node_id} = Document.add_element(state.document, tag, attrs, parent_id, namespace)
+    # Use foster parenting if needed
+    {document, node_id} =
+      case foster_parent_info do
+        {:foster, table_id} ->
+          table_node = Document.get_node(state.document, table_id)
+          foster_parent_id = table_node.parent_id
+
+          if foster_parent_id do
+            Document.add_element_before(state.document, tag, attrs, foster_parent_id, table_id, namespace)
+          else
+            Document.add_element(state.document, tag, attrs, parent_id, namespace)
+          end
+
+        :no ->
+          Document.add_element(state.document, tag, attrs, parent_id, namespace)
+      end
 
     stack =
       if self_closing? or tag in @void_elements, do: state.stack, else: [node_id | state.stack]
@@ -511,8 +535,71 @@ defmodule PureHtml.TreeBuilder do
   defp insert_text(state, text) do
     parent_id = get_current_parent(state)
     parent_id = adjust_for_template(state.document, parent_id)
-    {document, _id} = Document.add_text(state.document, text, parent_id)
+
+    # Check if we need foster parenting (text in table context)
+    {document, _id} =
+      case should_foster_parent?(state) do
+        {:foster, table_id} ->
+          # Insert text before the table in its parent
+          table_node = Document.get_node(state.document, table_id)
+          foster_parent_id = table_node.parent_id
+
+          if foster_parent_id do
+            Document.add_text_before(state.document, text, foster_parent_id, table_id)
+          else
+            Document.add_text(state.document, text, parent_id)
+          end
+
+        :no ->
+          Document.add_text(state.document, text, parent_id)
+      end
+
     %{state | document: document}
+  end
+
+  # Check if current context requires foster parenting for text
+  # Returns {:foster, table_id} if foster parenting needed, :no otherwise
+  defp should_foster_parent?(state) do
+    case state.stack do
+      [current | _rest] ->
+        current_id = stack_entry_id(current)
+        node = Document.get_node(state.document, current_id)
+
+        if node.tag in @table_foster_targets do
+          # Find the table element (might be current or an ancestor)
+          table_id = find_table_in_stack(state.stack, state.document)
+          if table_id, do: {:foster, table_id}, else: :no
+        else
+          :no
+        end
+
+      [] ->
+        :no
+    end
+  end
+
+  # Check if current context requires foster parenting for an element
+  # Only foster parent if element is NOT a table-allowed child
+  defp should_foster_parent_element?(state, tag) do
+    if tag in @table_allowed_children do
+      :no
+    else
+      should_foster_parent?(state)
+    end
+  end
+
+  # Find the table element in the stack
+  defp find_table_in_stack([], _document), do: nil
+
+  defp find_table_in_stack([entry | rest], document) do
+    id = stack_entry_id(entry)
+    node = Document.get_node(document, id)
+
+    if node.tag == "table" do
+      id
+    else
+      find_table_in_stack(rest, document)
+    end
   end
 
   # When parent is a template, redirect to its content
