@@ -10,6 +10,137 @@ defmodule PureHtml.TreeBuilder do
   @void_elements ~w(area base br col embed hr img input link meta param source track wbr)
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
 
+  # SVG tag name case adjustments (per HTML5 spec)
+  @svg_tag_adjustments %{
+    "altglyph" => "altGlyph",
+    "altglyphdef" => "altGlyphDef",
+    "altglyphitem" => "altGlyphItem",
+    "animatecolor" => "animateColor",
+    "animatemotion" => "animateMotion",
+    "animatetransform" => "animateTransform",
+    "clippath" => "clipPath",
+    "feblend" => "feBlend",
+    "fecolormatrix" => "feColorMatrix",
+    "fecomponenttransfer" => "feComponentTransfer",
+    "fecomposite" => "feComposite",
+    "feconvolvematrix" => "feConvolveMatrix",
+    "fediffuselighting" => "feDiffuseLighting",
+    "fedisplacementmap" => "feDisplacementMap",
+    "fedistantlight" => "feDistantLight",
+    "feflood" => "feFlood",
+    "fefunca" => "feFuncA",
+    "fefuncb" => "feFuncB",
+    "fefuncg" => "feFuncG",
+    "fefuncr" => "feFuncR",
+    "fegaussianblur" => "feGaussianBlur",
+    "feimage" => "feImage",
+    "femerge" => "feMerge",
+    "femergenode" => "feMergeNode",
+    "femorphology" => "feMorphology",
+    "feoffset" => "feOffset",
+    "fepointlight" => "fePointLight",
+    "fespecularlighting" => "feSpecularLighting",
+    "fespotlight" => "feSpotLight",
+    "fetile" => "feTile",
+    "feturbulence" => "feTurbulence",
+    "foreignobject" => "foreignObject",
+    "glyphref" => "glyphRef",
+    "lineargradient" => "linearGradient",
+    "radialgradient" => "radialGradient",
+    "textpath" => "textPath"
+  }
+
+  # SVG attribute name case adjustments
+  @svg_attr_adjustments %{
+    "attributename" => "attributeName",
+    "attributetype" => "attributeType",
+    "basefrequency" => "baseFrequency",
+    "baseprofile" => "baseProfile",
+    "calcmode" => "calcMode",
+    "clippathunits" => "clipPathUnits",
+    "diffuseconstant" => "diffuseConstant",
+    "edgemode" => "edgeMode",
+    "filterunits" => "filterUnits",
+    "glyphref" => "glyphRef",
+    "gradienttransform" => "gradientTransform",
+    "gradientunits" => "gradientUnits",
+    "kernelmatrix" => "kernelMatrix",
+    "kernelunitlength" => "kernelUnitLength",
+    "keypoints" => "keyPoints",
+    "keysplines" => "keySplines",
+    "keytimes" => "keyTimes",
+    "lengthadjust" => "lengthAdjust",
+    "limitingconeangle" => "limitingConeAngle",
+    "markerheight" => "markerHeight",
+    "markerunits" => "markerUnits",
+    "markerwidth" => "markerWidth",
+    "maskcontentunits" => "maskContentUnits",
+    "maskunits" => "maskUnits",
+    "numoctaves" => "numOctaves",
+    "pathlength" => "pathLength",
+    "patterncontentunits" => "patternContentUnits",
+    "patterntransform" => "patternTransform",
+    "patternunits" => "patternUnits",
+    "pointsatx" => "pointsAtX",
+    "pointsaty" => "pointsAtY",
+    "pointsatz" => "pointsAtZ",
+    "preservealpha" => "preserveAlpha",
+    "preserveaspectratio" => "preserveAspectRatio",
+    "primitiveunits" => "primitiveUnits",
+    "refx" => "refX",
+    "refy" => "refY",
+    "repeatcount" => "repeatCount",
+    "repeatdur" => "repeatDur",
+    "requiredextensions" => "requiredExtensions",
+    "requiredfeatures" => "requiredFeatures",
+    "specularconstant" => "specularConstant",
+    "specularexponent" => "specularExponent",
+    "spreadmethod" => "spreadMethod",
+    "startoffset" => "startOffset",
+    "stddeviation" => "stdDeviation",
+    "stitchtiles" => "stitchTiles",
+    "surfacescale" => "surfaceScale",
+    "systemlanguage" => "systemLanguage",
+    "tablevalues" => "tableValues",
+    "targetx" => "targetX",
+    "targety" => "targetY",
+    "textlength" => "textLength",
+    "viewbox" => "viewBox",
+    "viewtarget" => "viewTarget",
+    "xchannelselector" => "xChannelSelector",
+    "ychannelselector" => "yChannelSelector",
+    "zoomandpan" => "zoomAndPan"
+  }
+
+  # MathML attribute name case adjustments
+  @mathml_attr_adjustments %{
+    "definitionurl" => "definitionURL"
+  }
+
+  # HTML integration points - SVG/MathML elements that can contain HTML
+  @html_integration_points MapSet.new([
+    {"svg", "foreignObject"},
+    {"svg", "desc"},
+    {"svg", "title"},
+    {"math", "annotation-xml"}
+  ])
+
+  # MathML text integration points
+  @mathml_text_integration_points MapSet.new([
+    {"math", "mi"},
+    {"math", "mo"},
+    {"math", "mn"},
+    {"math", "ms"},
+    {"math", "mtext"}
+  ])
+
+  # Elements that cause breakout from foreign content
+  @foreign_breakout_elements MapSet.new(~w(
+    b big blockquote body br center code dd div dl dt em embed
+    h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr
+    ol p pre ruby s small span strong strike sub sup table tt u ul var
+  ))
+
   # Elements that implicitly close an open <p> element
   @closes_p ~w(address article aside blockquote center details dialog dir div dl
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header
@@ -91,6 +222,23 @@ defmodule PureHtml.TreeBuilder do
   # Convert <image> to <img> per spec
   defp process(state, {:start_tag, "image", attrs, self_closing?}) do
     process(state, {:start_tag, "img", attrs, self_closing?})
+  end
+
+  # SVG and MathML foreign content
+  defp process(state, {:start_tag, "svg", attrs, self_closing?}) do
+    state
+    |> ensure_html(%{})
+    |> ensure_head()
+    |> ensure_body()
+    |> insert_element("svg", attrs, self_closing?, &(stack_first_id(&1.stack) || &1.body_id), "svg")
+  end
+
+  defp process(state, {:start_tag, "math", attrs, self_closing?}) do
+    state
+    |> ensure_html(%{})
+    |> ensure_head()
+    |> ensure_body()
+    |> insert_element("math", attrs, self_closing?, &(stack_first_id(&1.stack) || &1.body_id), "math")
   end
 
   defp process(state, {:start_tag, tag, attrs, self_closing?}) do
@@ -236,10 +384,58 @@ defmodule PureHtml.TreeBuilder do
     %{state | document: document, stack: [{:template, template_id, content_id} | state.stack]}
   end
 
-  defp insert_element(state, tag, attrs, self_closing?, parent_fn) do
+  defp insert_element(state, tag, attrs, self_closing?, parent_fn, namespace \\ nil) do
     parent_id = parent_fn.(state)
     parent_id = adjust_for_template(state.document, parent_id)
-    {document, node_id} = Document.add_element(state.document, tag, attrs, parent_id)
+
+    # Get inherited namespace context
+    inherited_ns = get_inherited_namespace(state)
+
+    # Check if we're at an HTML integration point or if this is a breakout element
+    {tag, attrs, namespace} =
+      cond do
+        # Explicit SVG namespace provided (for svg root element)
+        namespace == "svg" ->
+          adjusted_tag = Map.get(@svg_tag_adjustments, tag, tag)
+          adjusted_attrs = adjust_svg_attributes(attrs)
+          {adjusted_tag, adjusted_attrs, "svg"}
+
+        # Explicit MathML namespace provided (for math root element)
+        namespace == "math" ->
+          adjusted_attrs = adjust_mathml_attributes(attrs)
+          {tag, adjusted_attrs, "math"}
+
+        # No inherited namespace - regular HTML
+        inherited_ns == nil ->
+          {tag, attrs, nil}
+
+        # In SVG/MathML but at an integration point - check for breakout
+        in_html_integration_point?(state) and MapSet.member?(@foreign_breakout_elements, tag) ->
+          # Breakout to HTML - no namespace
+          {tag, attrs, nil}
+
+        # In MathML text integration point - check for breakout
+        in_mathml_text_integration_point?(state) and MapSet.member?(@foreign_breakout_elements, tag) ->
+          # Breakout to HTML - no namespace
+          {tag, attrs, nil}
+
+        # In SVG namespace - apply SVG adjustments
+        inherited_ns == "svg" ->
+          adjusted_tag = Map.get(@svg_tag_adjustments, tag, tag)
+          adjusted_attrs = adjust_svg_attributes(attrs)
+          {adjusted_tag, adjusted_attrs, "svg"}
+
+        # In MathML namespace - apply MathML adjustments
+        inherited_ns == "math" ->
+          adjusted_attrs = adjust_mathml_attributes(attrs)
+          {tag, adjusted_attrs, "math"}
+
+        # Other foreign namespace - inherit as-is
+        true ->
+          {tag, attrs, inherited_ns}
+      end
+
+    {document, node_id} = Document.add_element(state.document, tag, attrs, parent_id, namespace)
 
     stack =
       if self_closing? or tag in @void_elements, do: state.stack, else: [node_id | state.stack]
@@ -253,6 +449,62 @@ defmodule PureHtml.TreeBuilder do
       end
 
     %{state | document: document, stack: stack, active_formatting: active_formatting}
+  end
+
+  defp get_inherited_namespace(state) do
+    # Check if current element is in a foreign namespace
+    case state.stack do
+      [current | _] ->
+        current_id = stack_entry_id(current)
+        node = Document.get_node(state.document, current_id)
+        node[:namespace]
+      [] ->
+        nil
+    end
+  end
+
+  # Check if current element is an HTML integration point
+  defp in_html_integration_point?(state) do
+    case state.stack do
+      [current | _] ->
+        current_id = stack_entry_id(current)
+        node = Document.get_node(state.document, current_id)
+        ns = node[:namespace]
+        tag = node.tag
+        MapSet.member?(@html_integration_points, {ns, tag})
+      [] ->
+        false
+    end
+  end
+
+  # Check if current element is a MathML text integration point
+  defp in_mathml_text_integration_point?(state) do
+    case state.stack do
+      [current | _] ->
+        current_id = stack_entry_id(current)
+        node = Document.get_node(state.document, current_id)
+        ns = node[:namespace]
+        tag = node.tag
+        MapSet.member?(@mathml_text_integration_points, {ns, tag})
+      [] ->
+        false
+    end
+  end
+
+  # Adjust SVG attribute names to proper case
+  defp adjust_svg_attributes(attrs) do
+    Map.new(attrs, fn {name, value} ->
+      adjusted_name = Map.get(@svg_attr_adjustments, name, name)
+      {adjusted_name, value}
+    end)
+  end
+
+  # Adjust MathML attribute names to proper case
+  defp adjust_mathml_attributes(attrs) do
+    Map.new(attrs, fn {name, value} ->
+      adjusted_name = Map.get(@mathml_attr_adjustments, name, name)
+      {adjusted_name, value}
+    end)
   end
 
   defp insert_text(state, text) do

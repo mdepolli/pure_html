@@ -28,7 +28,7 @@ defmodule PureHtml.Document do
     %{doc | doctype: %{name: name, public_id: public_id, system_id: system_id}}
   end
 
-  def add_element(doc, tag, attrs, parent_id) do
+  def add_element(doc, tag, attrs, parent_id, namespace \\ nil) do
     id = doc.next_id
 
     node = %{
@@ -37,7 +37,8 @@ defmodule PureHtml.Document do
       tag: tag,
       attrs: attrs,
       parent_id: parent_id,
-      children_ids: []
+      children_ids: [],
+      namespace: namespace
     }
 
     nodes = Map.put(doc.nodes, id, node)

@@ -114,7 +114,13 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
 
     case node.type do
       :element ->
-        tag_line = "#{indent}<#{node.tag}>\n"
+        # Include namespace if present (e.g., "svg" or "math")
+        # Format: <namespace tag> for foreign content, <tag> for HTML
+        tag_with_ns = case node[:namespace] do
+          nil -> node.tag
+          ns -> "#{ns} #{node.tag}"
+        end
+        tag_line = "#{indent}<#{tag_with_ns}>\n"
 
         attr_lines =
           node.attrs
