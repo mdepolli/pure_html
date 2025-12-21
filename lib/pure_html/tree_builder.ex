@@ -281,9 +281,21 @@ defmodule PureHtml.TreeBuilder do
   # Finalize - close all open elements and return tree
   defp finalize(stack) do
     stack
-    |> in_body()
+    |> close_through_head()
+    |> ensure_body()
     |> do_finalize()
   end
+
+  # Close all elements through head (for finalization)
+  defp close_through_head([{"html", _, _}] = stack), do: stack
+  defp close_through_head([{"body", _, _} | _] = stack), do: stack
+
+  defp close_through_head([{tag, attrs, children} | rest]) do
+    child = {tag, attrs, children}
+    close_through_head(add_child(rest, child))
+  end
+
+  defp close_through_head([]), do: [{"html", %{}, []}, {"head", %{}, []}]
 
   # Single element left - this is the root, reverse all children
   defp do_finalize([{tag, attrs, children}]) do
