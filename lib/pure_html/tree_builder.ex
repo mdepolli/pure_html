@@ -22,6 +22,8 @@ defmodule PureHtml.TreeBuilder do
   @table_cells ~w(td th)
   @table_sections ~w(tbody thead tfoot)
   @table_context ~w(table tbody thead tfoot tr)
+  # Elements that are valid in table context (don't need foster parenting)
+  @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
@@ -119,7 +121,9 @@ defmodule PureHtml.TreeBuilder do
   # Inside foreign content (SVG/MathML) - elements inherit namespace
   defp process({:start_tag, tag, attrs, self_closing}, stack, af, nid) do
     case foreign_namespace(stack) do
-      nil -> process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
+      nil ->
+        process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
+
       ns ->
         {stack, nid} = push_foreign_element(stack, nid, ns, tag, attrs, self_closing)
         {stack, af, nid}
@@ -130,6 +134,18 @@ defmodule PureHtml.TreeBuilder do
   defp process({:end_tag, "html"}, stack, af, nid), do: {stack, af, nid}
   defp process({:end_tag, "head"}, stack, af, nid), do: {close_head(stack), af, nid}
   defp process({:end_tag, "body"}, stack, af, nid), do: {stack, af, nid}
+
+  # End tag for table cells - clear af up to marker
+  defp process({:end_tag, tag}, stack, af, nid) when tag in @table_cells do
+    {close_tag(tag, stack), clear_af_to_marker(af), nid}
+  end
+
+  # End tag for table - first close any foster-parented elements
+  defp process({:end_tag, "table"}, stack, af, nid) do
+    # Close any non-table elements that were foster-parented
+    stack = clear_to_table_context(stack)
+    {close_tag("table", stack), af, nid}
+  end
 
   # End tag for formatting elements - run adoption agency algorithm
   defp process({:end_tag, tag}, stack, af, nid) when tag in @formatting_elements do
@@ -149,19 +165,32 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Character data inside head element - add directly
-  defp process({:character, text}, [{_, tag, _, _} | _] = stack, af, nid) when tag in @head_elements do
+  defp process({:character, text}, [{_, tag, _, _} | _] = stack, af, nid)
+       when tag in @head_elements do
     {add_text(stack, text), af, nid}
   end
 
   # Character data in table context - foster parent (add before table)
-  defp process({:character, text}, [{_, tag, _, _} | _] = stack, af, nid) when tag in @table_context do
-    {foster_text(stack, text), af, nid}
+  # Also reconstruct active formatting elements before the table
+  defp process({:character, text}, [{_, tag, _, _} | _] = stack, af, nid)
+       when tag in @table_context do
+    {stack, af, nid, reconstructed} = foster_reconstruct_active_formatting(stack, af, nid)
+
+    if reconstructed do
+      # Text goes into the reconstructed formatting element (now on top of stack)
+      {add_text(stack, text), af, nid}
+    else
+      # No formatting to reconstruct, just foster the text
+      {foster_text(stack, text), af, nid}
+    end
   end
 
   # Character data - whitespace before body is ignored
   defp process({:character, text}, stack, af, nid) do
     case {has_body?(stack), String.trim(text)} do
-      {false, ""} -> {stack, af, nid}
+      {false, ""} ->
+        {stack, af, nid}
+
       _ ->
         {stack, nid} = in_body(stack, nid)
         # Reconstruct active formatting elements before adding text
@@ -182,40 +211,71 @@ defmodule PureHtml.TreeBuilder do
   defp process({:error, _}, stack, af, nid), do: {stack, af, nid}
 
   # HTML start tag processing (called when not in SVG context)
-  defp process_html_start_tag(tag, attrs, self_closing, stack, af, nid) when tag in @head_elements do
+  # First check if we're in table context and need to foster-parent
+  defp process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
+       when tag not in @table_elements do
+    if in_table_context?(stack) do
+      # Foster-parent: push element before the table, then process
+      process_foster_start_tag(tag, attrs, self_closing, stack, af, nid)
+    else
+      do_process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
+    end
+  end
+
+  # Table elements bypass foster parenting check
+  defp process_html_start_tag(tag, attrs, self_closing, stack, af, nid) do
+    do_process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
+  end
+
+  # Check if we're inside a table (need foster parenting for non-table elements)
+  defp in_table_context?([{_, "table", _, _} | _]), do: true
+  defp in_table_context?([{_, tag, _, _} | _]) when tag in @table_context, do: true
+  defp in_table_context?([{_, "body", _, _} | _]), do: false
+  defp in_table_context?([{_, "html", _, _} | _]), do: false
+  defp in_table_context?([_ | rest]), do: in_table_context?(rest)
+  defp in_table_context?([]), do: false
+
+  defp do_process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
+       when tag in @head_elements do
     {stack, nid} = ensure_html(stack, nid)
     {stack, nid} = ensure_head(stack, nid)
     process_start_tag(stack, af, nid, tag, attrs, self_closing)
   end
 
-  defp process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @void_elements do
+  defp do_process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @void_elements do
     {stack, nid} = in_body(stack, nid)
     stack = maybe_close_p(stack, tag)
     {add_child(stack, {tag, attrs, []}), af, nid}
   end
 
-  defp process_html_start_tag(tag, attrs, true, stack, af, nid) do
+  defp do_process_html_start_tag(tag, attrs, true, stack, af, nid) do
     {stack, nid} = in_body(stack, nid)
     stack = maybe_close_p(stack, tag)
     {add_child(stack, {tag, attrs, []}), af, nid}
   end
 
-  defp process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @table_cells do
+  defp do_process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @table_cells do
     {stack, nid} = in_body(stack, nid)
+    # Clear any foster-parented elements before ensuring table context
+    stack = clear_to_table_body_context(stack)
     {stack, nid} = ensure_table_context(stack, nid)
     {stack, nid} = push_element(stack, nid, tag, attrs)
-    {stack, af, nid}
+    # Push a scope marker - formatting elements won't be reconstructed past this
+    {stack, [:marker | af], nid}
   end
 
-  defp process_html_start_tag("tr", attrs, _, stack, af, nid) do
+  defp do_process_html_start_tag("tr", attrs, _, stack, af, nid) do
     {stack, nid} = in_body(stack, nid)
+    # Clear any foster-parented elements before ensuring tbody
+    stack = clear_to_table_body_context(stack)
     {stack, nid} = ensure_tbody(stack, nid)
     {stack, nid} = push_element(stack, nid, "tr", attrs)
     {stack, af, nid}
   end
 
   # Formatting elements - track in active formatting list
-  defp process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @formatting_elements do
+  defp do_process_html_start_tag(tag, attrs, _, stack, af, nid)
+       when tag in @formatting_elements do
     {stack, nid} = in_body(stack, nid)
     {stack, nid} = push_element(stack, nid, tag, attrs)
     # Get the ID of the element we just pushed
@@ -225,7 +285,7 @@ defmodule PureHtml.TreeBuilder do
     {stack, af, nid}
   end
 
-  defp process_html_start_tag(tag, attrs, _, stack, af, nid) do
+  defp do_process_html_start_tag(tag, attrs, _, stack, af, nid) do
     {stack, nid} = in_body(stack, nid)
     # Close p first (before pushing new element)
     stack = maybe_close_p(stack, tag)
@@ -294,9 +354,17 @@ defmodule PureHtml.TreeBuilder do
               fb_idx ->
                 # Has furthest block - run full adoption agency
                 {_, fe_tag, fe_attrs} = Enum.at(af, af_idx)
-                {new_stack, new_af, new_nid} = run_adoption_agency_with_furthest_block(
-                  stack, af, nid, {af_idx, fe_id, fe_tag, fe_attrs}, stack_idx, fb_idx
-                )
+
+                {new_stack, new_af, new_nid} =
+                  run_adoption_agency_with_furthest_block(
+                    stack,
+                    af,
+                    nid,
+                    {af_idx, fe_id, fe_tag, fe_attrs},
+                    stack_idx,
+                    fb_idx
+                  )
+
                 # Continue outer loop
                 run_adoption_agency_outer_loop(subject, new_stack, new_af, new_nid, iteration + 1)
             end
@@ -322,7 +390,14 @@ defmodule PureHtml.TreeBuilder do
   # Full adoption agency algorithm when there's a furthest block
   # For <a>1<div>2<div>3</a>, stack is [div2{3}, div1{2}, a{1}, body]
   # We want: a{1} closed, div1{a{2}}, div2{a{3}} stay on stack
-  defp run_adoption_agency_with_furthest_block(stack, af, nid, {af_idx, fe_id, fe_tag, fe_attrs}, fe_stack_idx, fb_idx) do
+  defp run_adoption_agency_with_furthest_block(
+         stack,
+         af,
+         nid,
+         {af_idx, fe_id, fe_tag, fe_attrs},
+         fe_stack_idx,
+         fb_idx
+       ) do
     # Split stack: [above_fb..., fb, between..., fe, below_fe...]
     {above_fb, rest1} = Enum.split(stack, fb_idx)
     [fb | rest2] = rest1
@@ -343,7 +418,8 @@ defmodule PureHtml.TreeBuilder do
     {_fe_id, _fe_tag, _fe_attrs, fe_children} = fe
     fe_children = close_elements_into(formatting_between, fe_children)
     closed_fe = {fe_id, fe_tag, fe_attrs, fe_children}
-    below_fe = add_child(below_fe, closed_fe)
+    # Use foster-aware add so FE goes to body, not table
+    below_fe = foster_aware_add_child(below_fe, closed_fe)
 
     # 2. Create new FE clone as a stack element (with new ID)
     # Per HTML5 spec step 27: insert new element into stack below furthest block
@@ -358,7 +434,9 @@ defmodule PureHtml.TreeBuilder do
 
     # 4. Create formatting clones as separate stack elements (not wrapping FB)
     # Stack order: [a-clone, p, b-clone, ...] so closing a-clone goes into p, p goes into b-clone
-    formatting_to_clone = Enum.map(formatting_to_clone_list, fn {_id, tag, attrs, _} -> {tag, attrs} end)
+    formatting_to_clone =
+      Enum.map(formatting_to_clone_list, fn {_id, tag, attrs, _} -> {tag, attrs} end)
+
     {formatting_stack_elements, nid} = create_formatting_stack_elements(formatting_to_clone, nid)
 
     # 5. Block elements stay on stack with FE clone inside their children
@@ -368,8 +446,10 @@ defmodule PureHtml.TreeBuilder do
     # - above_fb elements stay on stack ABOVE the new FE clone (they're still open)
     # - Stack order: [above_fb..., a-clone, FB, formatting_clones..., block_clones..., below_fe...]
     # The outer loop will process above_fb elements in subsequent iterations
-    final_stack = above_fb ++ [new_fe_clone, fb_empty | formatting_stack_elements] ++
-                  Enum.reverse(block_with_clones) ++ below_fe
+    final_stack =
+      above_fb ++
+        [new_fe_clone, fb_empty | formatting_stack_elements] ++
+        Enum.reverse(block_with_clones) ++ below_fe
 
     # 7. Update AF: remove old FE and between formatting elements,
     # add new FE clone so outer loop can find it
@@ -499,9 +579,13 @@ defmodule PureHtml.TreeBuilder do
   # implicitly closed but are still in the active formatting list
   defp reconstruct_active_formatting(stack, af, nid) do
     # Find entries in AF that are not in the stack
+    # Stop at markers - don't reconstruct past scope boundaries
     entries_to_reconstruct =
       af
-      |> Enum.reverse()  # Process in order (oldest first)
+      # Take only entries before the first marker
+      |> Enum.take_while(&(&1 != :marker))
+      # Process in order (oldest first)
+      |> Enum.reverse()
       |> Enum.filter(fn {id, _tag, _attrs} ->
         find_in_stack_by_id(stack, id) == nil
       end)
@@ -552,17 +636,53 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
+  # Clear active formatting list up to the last marker
+  defp clear_af_to_marker([:marker | rest]), do: rest
+  defp clear_af_to_marker([_ | rest]), do: clear_af_to_marker(rest)
+  defp clear_af_to_marker([]), do: []
+
   # --------------------------------------------------------------------------
   # Table context
   # --------------------------------------------------------------------------
+
+  # Clear the stack back to a table body context per HTML5 spec
+  # Pop elements until we reach tbody, thead, tfoot, table, or html
+  defp clear_to_table_body_context([{_, tag, _, _} | _] = stack)
+       when tag in @table_sections or tag in ["table", "html"] do
+    stack
+  end
+
+  defp clear_to_table_body_context([{id, tag, attrs, children} | rest]) do
+    # Close this element (foster-aware so it goes to body if needed)
+    child = {id, tag, attrs, children}
+    clear_to_table_body_context(foster_aware_add_child(rest, child))
+  end
+
+  defp clear_to_table_body_context([]), do: []
+
+  # Clear the stack to the table element itself (for </table>)
+  # Foster-close any non-table elements to body
+  defp clear_to_table_context([{_, "table", _, _} | _] = stack), do: stack
+  defp clear_to_table_context([{_, "html", _, _} | _] = stack), do: stack
+
+  defp clear_to_table_context([{id, tag, attrs, children} | rest]) do
+    child = {id, tag, attrs, children}
+    clear_to_table_context(foster_aware_add_child(rest, child))
+  end
+
+  defp clear_to_table_context([]), do: []
 
   defp ensure_table_context(stack, nid) do
     {stack, nid} = ensure_tbody(stack, nid)
     ensure_tr(stack, nid)
   end
 
-  defp ensure_tbody([{_, "table", _, _} | _] = stack, nid), do: push_element(stack, nid, "tbody", %{})
-  defp ensure_tbody([{_, tag, _, _} | _] = stack, nid) when tag in @table_sections, do: {stack, nid}
+  defp ensure_tbody([{_, "table", _, _} | _] = stack, nid),
+    do: push_element(stack, nid, "tbody", %{})
+
+  defp ensure_tbody([{_, tag, _, _} | _] = stack, nid) when tag in @table_sections,
+    do: {stack, nid}
+
   defp ensure_tbody([{_, "tr", _, _} | _] = stack, nid), do: {stack, nid}
   defp ensure_tbody(stack, nid), do: {stack, nid}
 
@@ -649,7 +769,8 @@ defmodule PureHtml.TreeBuilder do
   defp ensure_head([{_, "body", _, _} | _] = stack, nid), do: {stack, nid}
   defp ensure_head(stack, nid), do: {stack, nid}
 
-  defp ensure_head_check([{_, "html", _, [{_, "head", _, _} | _]}], original, nid), do: {original, nid}
+  defp ensure_head_check([{_, "html", _, [{_, "head", _, _} | _]}], original, nid),
+    do: {original, nid}
 
   defp ensure_head_check([{id, "html", attrs, [_ | rest]}], original, nid) do
     ensure_head_check([{id, "html", attrs, rest}], original, nid)
@@ -686,6 +807,62 @@ defmodule PureHtml.TreeBuilder do
   # Foster parenting
   # --------------------------------------------------------------------------
 
+  # Foster-parent a start tag: insert element before table in DOM, but keep on stack
+  defp process_foster_start_tag(tag, attrs, self_closing, stack, af, nid) do
+    if self_closing or tag in @void_elements do
+      # Self-closing/void: just add as foster child, don't push to stack
+      {foster_element(stack, {tag, attrs, []}), af, nid}
+    else
+      # Non-void: add to stack before table context, and as foster child
+      {stack, nid, new_id} = foster_push_element(stack, nid, tag, attrs)
+      # Track formatting elements in AF
+      af =
+        if tag in @formatting_elements do
+          apply_noahs_ark([{new_id, tag, attrs} | af], tag, attrs)
+        else
+          af
+        end
+
+      {stack, af, nid}
+    end
+  end
+
+  # Push element onto stack in foster parent position (before table context)
+  # Also adds the element as a foster child of the element before table
+  defp foster_push_element(stack, nid, tag, attrs) do
+    new_elem = {nid, tag, attrs, []}
+    do_foster_push(stack, new_elem, nid + 1, [])
+  end
+
+  defp do_foster_push([{id, "table", tbl_attrs, tbl_children} | rest], new_elem, nid, acc) do
+    # Found table - insert new element at TOP of stack to receive content
+    # Previously foster-parented elements (in acc) go BELOW the new element
+    # Stack order: [new_elem, acc (reversed), table, rest]
+    table_and_below = [{id, "table", tbl_attrs, tbl_children} | rest]
+    stack = [new_elem | rebuild_stack(acc, table_and_below)]
+    {new_id, _, _, _} = new_elem
+    {stack, nid, new_id}
+  end
+
+  defp do_foster_push([current | rest], new_elem, nid, acc) do
+    do_foster_push(rest, new_elem, nid, [current | acc])
+  end
+
+  defp do_foster_push([], new_elem, nid, acc) do
+    # No table found - just push normally
+    {new_id, _, _, _} = new_elem
+    {Enum.reverse([new_elem | acc]), nid, new_id}
+  end
+
+  # Foster-parent a void/self-closing element (add before table, don't push to stack)
+  defp foster_element(stack, element) do
+    foster_content(stack, element, [], &add_foster_child/2)
+  end
+
+  defp add_foster_child(stack, element) do
+    add_child(stack, element)
+  end
+
   defp foster_text(stack, text) do
     foster_content(stack, text, [], &add_foster_text/2)
   end
@@ -712,6 +889,36 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp add_foster_text([], _text), do: []
+
+  # Reconstruct active formatting elements in foster parent context
+  # Returns {stack, af, nid, reconstructed?}
+  defp foster_reconstruct_active_formatting(stack, af, nid) do
+    # Find entries in AF that are not on the stack (before any marker)
+    entries_to_reconstruct =
+      af
+      |> Enum.take_while(&(&1 != :marker))
+      |> Enum.reverse()
+      |> Enum.filter(fn {id, _tag, _attrs} ->
+        find_in_stack_by_id(stack, id) == nil
+      end)
+
+    if entries_to_reconstruct == [] do
+      {stack, af, nid, false}
+    else
+      {stack, af, nid} = foster_reconstruct_entries(stack, af, nid, entries_to_reconstruct)
+      {stack, af, nid, true}
+    end
+  end
+
+  defp foster_reconstruct_entries(stack, af, nid, []), do: {stack, af, nid}
+
+  defp foster_reconstruct_entries(stack, af, nid, [{old_id, tag, attrs} | rest]) do
+    # Foster-push the new element
+    {stack, nid, new_id} = foster_push_element(stack, nid, tag, attrs)
+    # Update AF: replace old entry with new one
+    new_af = update_af_entry(af, old_id, {new_id, tag, attrs})
+    foster_reconstruct_entries(stack, new_af, nid, rest)
+  end
 
   defp rebuild_stack([], stack), do: stack
   defp rebuild_stack([elem | rest], stack), do: rebuild_stack(rest, [elem | stack])
@@ -763,7 +970,7 @@ defmodule PureHtml.TreeBuilder do
 
   defp close_tag(tag, stack) do
     case pop_until(tag, stack, []) do
-      {:found, element, rest} -> add_child(rest, element)
+      {:found, element, rest} -> foster_aware_add_child(rest, element)
       :not_found -> stack
     end
   end
@@ -816,7 +1023,8 @@ defmodule PureHtml.TreeBuilder do
 
   defp close_through_head([{id, tag, attrs, children} | rest]) do
     child = {id, tag, attrs, children}
-    close_through_head(add_child(rest, child))
+    # Use foster-aware closing so elements don't get put inside table
+    close_through_head(foster_aware_add_child(rest, child))
   end
 
   defp close_through_head([]), do: [{0, "html", %{}, [{1, "head", %{}, []}]}]
@@ -834,16 +1042,46 @@ defmodule PureHtml.TreeBuilder do
 
   defp ensure_body_final([]), do: []
 
+  defp do_finalize([]), do: nil
+
   defp do_finalize([{id, tag, attrs, children}]) do
     {id, tag, attrs, reverse_all(children)}
   end
 
   defp do_finalize([{id, tag, attrs, children} | rest]) do
     child = {id, tag, attrs, children}
-    do_finalize(add_child(rest, child))
+    # Check if we need foster-closing (next element is in table context)
+    do_finalize(foster_aware_add_child(rest, child))
   end
 
-  defp do_finalize([]), do: nil
+  # Add child to parent, but if parent is in table context and child is NOT
+  # a valid table element, skip to body (foster-parenting)
+  defp foster_aware_add_child([{_, next_tag, _, _} | _] = rest, child)
+       when next_tag in @table_context do
+    # Only foster-parent if child is not a valid table element
+    case child do
+      {_, child_tag, _, _} when child_tag in @table_elements -> add_child(rest, child)
+      _ -> foster_add_to_body(rest, child, [])
+    end
+  end
+
+  defp foster_aware_add_child(rest, child) do
+    add_child(rest, child)
+  end
+
+  # Skip over table context elements and add child to body
+  defp foster_add_to_body([{_, "body", _, _} | _] = stack, child, acc) do
+    rebuild_stack(acc, add_child(stack, child))
+  end
+
+  defp foster_add_to_body([current | rest], child, acc) do
+    foster_add_to_body(rest, child, [current | acc])
+  end
+
+  defp foster_add_to_body([], child, acc) do
+    # No body found, just add normally
+    Enum.reverse([child | acc])
+  end
 
   defp reverse_all(children) do
     children
