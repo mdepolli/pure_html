@@ -256,12 +256,27 @@ defmodule PureHtml.TreeBuilder do
 
   # Run the adoption agency algorithm for a formatting element end tag
   # This handles misnested formatting elements like <a><p></a></p>
+  # The outer loop runs up to 8 times per the HTML5 spec
   defp run_adoption_agency(subject, stack, af, nid) do
+    run_adoption_agency_outer_loop(subject, stack, af, nid, 0)
+  end
+
+  defp run_adoption_agency_outer_loop(_subject, stack, af, nid, iteration) when iteration >= 8 do
+    # Outer loop limit reached
+    {stack, af, nid}
+  end
+
+  defp run_adoption_agency_outer_loop(subject, stack, af, nid, iteration) do
     case find_formatting_entry(af, subject) do
       nil ->
         # No formatting element with this tag in active formatting list
-        # Just close normally
-        {close_tag(subject, stack), af, nid}
+        if iteration == 0 do
+          # First iteration - just close normally
+          {close_tag(subject, stack), af, nid}
+        else
+          # Subsequent iterations - we're done
+          {stack, af, nid}
+        end
 
       {af_idx, {fe_id, _fe_tag, _fe_attrs}} ->
         case find_in_stack_by_id(stack, fe_id) do
@@ -279,9 +294,11 @@ defmodule PureHtml.TreeBuilder do
               fb_idx ->
                 # Has furthest block - run full adoption agency
                 {_, fe_tag, fe_attrs} = Enum.at(af, af_idx)
-                run_adoption_agency_with_furthest_block(
+                {new_stack, new_af, new_nid} = run_adoption_agency_with_furthest_block(
                   stack, af, nid, {af_idx, fe_id, fe_tag, fe_attrs}, stack_idx, fb_idx
                 )
+                # Continue outer loop
+                run_adoption_agency_outer_loop(subject, new_stack, new_af, new_nid, iteration + 1)
             end
         end
     end
@@ -312,9 +329,8 @@ defmodule PureHtml.TreeBuilder do
     between_count = fe_stack_idx - fb_idx - 1
     {between, [fe | below_fe]} = Enum.split(rest2, between_count)
 
-    # Close elements above FB into FB's children first
+    # Keep FB's original children (don't close above_fb into it - they stay on stack)
     {fb_id, fb_tag, fb_attrs, fb_children} = fb
-    fb_children = close_elements_into(above_fb, fb_children)
 
     # Separate between elements: formatting (in AF) vs non-formatting (blocks)
     {formatting_between, block_between} = partition_between_elements(between, af)
@@ -329,23 +345,36 @@ defmodule PureHtml.TreeBuilder do
     closed_fe = {fe_id, fe_tag, fe_attrs, fe_children}
     below_fe = add_child(below_fe, closed_fe)
 
-    # 2. Create FB with clone of FE wrapping its children
-    fb_with_fe_clone = {fb_id, fb_tag, fb_attrs, [{fe_tag, fe_attrs, fb_children}]}
+    # 2. Create new FE clone as a stack element (with new ID)
+    # Per HTML5 spec step 27: insert new element into stack below furthest block
+    # The FE clone takes FB's original children
+    new_fe_clone_id = nid
+    new_fe_clone = {new_fe_clone_id, fe_tag, fe_attrs, fb_children}
+    nid = nid + 1
 
-    # 3. Wrap FB with clones of ONLY the first 3 formatting elements
+    # 3. FB's children have been moved to the FE clone, so FB is now empty
+    # When FE clone is closed during finalization, it becomes a child of FB
+    fb_empty = {fb_id, fb_tag, fb_attrs, []}
+
+    # 4. Create formatting clones as separate stack elements (not wrapping FB)
+    # Stack order: [a-clone, p, b-clone, ...] so closing a-clone goes into p, p goes into b-clone
     formatting_to_clone = Enum.map(formatting_to_clone_list, fn {_id, tag, attrs, _} -> {tag, attrs} end)
-    {final_fb, nid} = wrap_fb_with_clones_and_ids(fb_with_fe_clone, formatting_to_clone, nid)
+    {formatting_stack_elements, nid} = create_formatting_stack_elements(formatting_to_clone, nid)
 
-    # 4. Block elements stay on stack with FE clone inside their children
+    # 5. Block elements stay on stack with FE clone inside their children
     block_with_clones = wrap_children_with_fe_clone(block_between, fe_tag, fe_attrs)
 
-    # 5. Rebuild stack: FB + block elements (reversed) + below_fe
-    # block_between is [closest_to_fb, ..., closest_to_fe]
-    # We want closest_to_fe on top of below_fe, then others, then FB on top
-    final_stack = [final_fb | Enum.reverse(block_with_clones)] ++ below_fe
+    # 6. Rebuild stack:
+    # - above_fb elements stay on stack ABOVE the new FE clone (they're still open)
+    # - Stack order: [above_fb..., a-clone, FB, formatting_clones..., block_clones..., below_fe...]
+    # The outer loop will process above_fb elements in subsequent iterations
+    final_stack = above_fb ++ [new_fe_clone, fb_empty | formatting_stack_elements] ++
+                  Enum.reverse(block_with_clones) ++ below_fe
 
-    # Remove old formatting element from AF, and ALL formatting elements from between
+    # 7. Update AF: remove old FE and between formatting elements,
+    # add new FE clone so outer loop can find it
     af = remove_formatting_from_af(af, af_idx, formatting_between)
+    af = [{new_fe_clone_id, fe_tag, fe_attrs} | af]
 
     {final_stack, af, nid}
   end
@@ -376,21 +405,21 @@ defmodule PureHtml.TreeBuilder do
     end)
   end
 
-  # Wrap FB with cloned formatting elements, giving each a new ID
-  # formatting_to_clone is [closest_to_fb, ..., closest_to_fe]
-  defp wrap_fb_with_clones_and_ids(fb, [], nid), do: {fb, nid}
+  # Create formatting clones as stack elements (4-tuples with IDs)
+  # Returns a list of elements to put on the stack BELOW the furthest block
+  # formatting_to_clone is [closest_to_fb, ..., closest_to_fe] (in stack order)
+  defp create_formatting_stack_elements([], nid), do: {[], nid}
 
-  defp wrap_fb_with_clones_and_ids(fb, formatting_to_clone, nid) do
-    # We want: outermost{..{innermost{fb}}}
-    # closest_to_fb should be outermost (first to wrap)
-    {result, nid} =
-      Enum.reduce(formatting_to_clone, {fb, nid}, fn {tag, attrs}, {inner, current_nid} ->
-        # Create wrapper with new ID
-        wrapper = {current_nid, tag, attrs, [inner]}
-        {wrapper, current_nid + 1}
+  defp create_formatting_stack_elements(formatting_to_clone, nid) do
+    # Create stack elements - each is empty, children will be added during finalization
+    {elements, new_nid} =
+      Enum.reduce(formatting_to_clone, {[], nid}, fn {tag, attrs}, {acc, current_nid} ->
+        elem = {current_nid, tag, attrs, []}
+        {[elem | acc], current_nid + 1}
       end)
 
-    {result, nid}
+    # Reverse to maintain order: closest_to_fb first (will be closed last)
+    {Enum.reverse(elements), new_nid}
   end
 
   defp find_af_entry_by_id(af, target_id) do
@@ -416,14 +445,24 @@ defmodule PureHtml.TreeBuilder do
     end)
   end
 
-  # Find the furthest block - first special element above the formatting element
+  # Find the furthest block - the special element CLOSEST to the formatting element
+  # (i.e., the first special element opened AFTER the FE)
+  # "Furthest" refers to its position in the DOM tree (furthest from the root),
+  # not its position in the stack.
+  # Note: Foreign elements (SVG, MathML) are NOT treated as special for adoption agency
   defp find_furthest_block(stack, fe_idx) do
-    stack
-    |> Enum.take(fe_idx)
-    |> Enum.with_index()
+    # Elements between top of stack and FE (opened after FE)
+    elements =
+      stack
+      |> Enum.take(fe_idx)
+      |> Enum.with_index()
+
+    # Find the special element closest to FE (highest index in this range)
+    # Only HTML elements are considered special, not foreign (SVG/MathML) elements
+    elements
+    |> Enum.reverse()
     |> Enum.find_value(fn
-      {{_, tag, _, _}, idx} when tag in @special_elements -> idx
-      {{_, {_, _}, _, _}, idx} -> idx  # Foreign elements are also special
+      {{_, tag, _, _}, idx} when is_binary(tag) and tag in @special_elements -> idx
       _ -> nil
     end)
   end
@@ -435,12 +474,10 @@ defmodule PureHtml.TreeBuilder do
     {above_fe, [fe | rest]} = Enum.split(stack, stack_idx)
 
     # Close elements above the formatting element, nesting them inside each other
-    # from innermost (top of stack) to formatting element
-    # Don't reverse children here - reverse_all in finalization handles it
+    # above_fe is [top, ..., closest_to_fe] - top should be innermost, closest_to_fe outermost
+    # Example: [input, tr, svg] -> svg{tr{input{}}}
     closed_above =
-      above_fe
-      |> Enum.reverse()
-      |> Enum.reduce(nil, fn {id, tag, attrs, children}, inner ->
+      Enum.reduce(above_fe, nil, fn {id, tag, attrs, children}, inner ->
         children = if inner, do: [inner | children], else: children
         {id, tag, attrs, children}
       end)
