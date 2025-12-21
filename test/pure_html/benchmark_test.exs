@@ -33,17 +33,16 @@ defmodule PureHtml.BenchmarkTest do
   end
 
   test "TreeBuilder: Wikipedia homepage", %{tokens: tokens} do
-    {time_us, doc} = :timer.tc(fn -> PureHtml.TreeBuilder.build(tokens) end)
+    {time_us, {_doctype, tree}} = :timer.tc(fn -> PureHtml.TreeBuilder.build(tokens) end)
     time_ms = time_us / 1000
 
     IO.puts("""
 
       TreeBuilder benchmark:
         Tokens: #{length(tokens)}
-        Nodes: #{map_size(doc.nodes)}
         Time: #{Float.round(time_ms, 1)} ms
     """)
 
-    assert doc.root_id != nil
+    assert tree != nil
   end
 end
