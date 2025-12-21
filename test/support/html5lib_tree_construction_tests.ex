@@ -78,29 +78,21 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
   end
 
   @doc """
-  Serializes a Document to the html5lib tree format for comparison.
+  Serializes a document (tuple tree) to the html5lib tree format for comparison.
+
+  Document format: `{doctype, tree}` where:
+  - doctype: `{name, public_id, system_id}` or nil
+  - tree: `{tag, attrs, children}` tuple or nil
   """
-  def serialize_document(document) do
-    doctype = serialize_doctype(document.doctype)
-
-    before_html =
-      document.before_html
-      |> Enum.reverse()
-      |> Enum.map(&serialize_node(document, &1, 0))
-      |> Enum.join()
-
-    tree =
-      case document.root_id do
-        nil -> ""
-        root_id -> serialize_node(document, root_id, 0)
-      end
-
-    doctype <> before_html <> tree
+  def serialize_document({doctype, tree}) do
+    doctype_str = serialize_doctype(doctype)
+    tree_str = if tree, do: serialize_node(tree, 0), else: ""
+    doctype_str <> tree_str
   end
 
   defp serialize_doctype(nil), do: ""
 
-  defp serialize_doctype(%{name: name, public_id: public_id, system_id: system_id}) do
+  defp serialize_doctype({name, public_id, system_id}) do
     if (public_id == "" or public_id == nil) and (system_id == "" or system_id == nil) do
       "| <!DOCTYPE #{name}>\n"
     else
@@ -108,58 +100,37 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
     end
   end
 
-  defp serialize_node(document, node_id, depth) do
-    node = PureHtml.Document.get_node(document, node_id)
+  defp serialize_node({:comment, text}, depth) do
     indent = "| " <> String.duplicate("  ", depth)
+    "#{indent}<!-- #{text} -->\n"
+  end
 
-    case node.type do
-      :element ->
-        # Include namespace if present (e.g., "svg" or "math")
-        # Format: <namespace tag> for foreign content, <tag> for HTML
-        tag_with_ns = case node[:namespace] do
-          nil -> node.tag
-          ns -> "#{ns} #{node.tag}"
-        end
-        tag_line = "#{indent}<#{tag_with_ns}>\n"
+  defp serialize_node({tag, attrs, children}, depth) do
+    indent = "| " <> String.duplicate("  ", depth)
+    tag_line = "#{indent}<#{tag}>\n"
 
-        attr_lines =
-          node.attrs
-          |> Enum.sort()
-          |> Enum.map(fn {name, value} ->
-            "#{indent}  #{name}=\"#{value}\"\n"
-          end)
-          |> Enum.join()
+    attr_lines =
+      attrs
+      |> Enum.sort()
+      |> Enum.map(fn {name, value} ->
+        "#{indent}  #{name}=\"#{value}\"\n"
+      end)
+      |> Enum.join()
 
-        children_lines =
-          if node.tag == "template" do
-            # Template uses its content document fragment
-            case Map.get(document.template_contents, node_id) do
-              nil ->
-                ""
+    children_lines =
+      children
+      |> Enum.map(&serialize_child(&1, depth + 1))
+      |> Enum.join()
 
-              content_id ->
-                content_line = "#{indent}  content\n"
-                content_children =
-                  document
-                  |> PureHtml.Document.get_children_ids(content_id)
-                  |> Enum.map(&serialize_node(document, &1, depth + 2))
-                  |> Enum.join()
-                content_line <> content_children
-            end
-          else
-            document
-            |> PureHtml.Document.get_children_ids(node_id)
-            |> Enum.map(&serialize_node(document, &1, depth + 1))
-            |> Enum.join()
-          end
+    tag_line <> attr_lines <> children_lines
+  end
 
-        tag_line <> attr_lines <> children_lines
+  defp serialize_child(text, depth) when is_binary(text) do
+    indent = "| " <> String.duplicate("  ", depth)
+    "#{indent}\"#{text}\"\n"
+  end
 
-      :text ->
-        "#{indent}\"#{node.content}\"\n"
-
-      :comment ->
-        "#{indent}<!-- #{node.content} -->\n"
-    end
+  defp serialize_child(node, depth) do
+    serialize_node(node, depth)
   end
 end
