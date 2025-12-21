@@ -21,6 +21,17 @@ defmodule PureHtml.TreeBuilder do
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
                hr listing main menu nav ol p pre section summary table ul)
 
+  @self_closing %{
+    "li" => ["li"],
+    "dt" => ["dt", "dd"],
+    "dd" => ["dt", "dd"],
+    "option" => ["option", "optgroup"],
+    "optgroup" => ["optgroup"],
+    "tr" => ["tr"],
+    "td" => ["td", "th"],
+    "th" => ["td", "th"]
+  }
+
   @doc """
   Builds a document from a stream of tokens.
 
@@ -110,6 +121,7 @@ defmodule PureHtml.TreeBuilder do
     stack
     |> in_body()
     |> maybe_close_p(tag)
+    |> maybe_close_same(tag)
     |> push_element(tag, attrs)
   end
 
@@ -200,6 +212,15 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp close_p_if_open(stack), do: stack
+
+  for {tag, closes} <- @self_closing do
+    defp maybe_close_same([{top_tag, attrs, children} | rest], unquote(tag))
+         when top_tag in unquote(closes) do
+      add_child(rest, {top_tag, attrs, children})
+    end
+  end
+
+  defp maybe_close_same(stack, _tag), do: stack
 
   # Transition to body context (ensure html/head/body exist, head is closed)
   defp in_body(stack) do
