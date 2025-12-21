@@ -107,6 +107,11 @@ defmodule PureHtml.TreeBuilder do
   # Character data - empty stack, ignore
   defp process({:character, _text}, []), do: []
 
+  # Character data inside head element - add directly
+  defp process({:character, text}, [{tag, _, _} | _] = stack) when tag in @head_elements do
+    add_text(stack, text)
+  end
+
   # Character data - whitespace before body is ignored
   defp process({:character, text}, stack) do
     case {has_body?(stack), String.trim(text)} do
