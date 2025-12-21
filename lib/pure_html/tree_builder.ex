@@ -96,24 +96,23 @@ defmodule PureHtml.TreeBuilder do
     {doctype, close_tag(tag, stack)}
   end
 
-  # Character data - add to current element
+  # Character data - empty stack, ignore
+  defp process({:character, _text}, {doctype, []}), do: {doctype, []}
+
+  # Character data - whitespace before body is ignored
   defp process({:character, text}, {doctype, stack}) do
-    # Whitespace-only before body is ignored
-    if stack == [] or (not has_body?(stack) and String.trim(text) == "") do
-      {doctype, stack}
-    else
-      {doctype, add_text(text, in_body(stack))}
+    case {has_body?(stack), String.trim(text)} do
+      {false, ""} -> {doctype, stack}
+      _ -> {doctype, add_text(text, in_body(stack))}
     end
   end
 
-  # Comment
+  # Comment before html - ignored for now
+  defp process({:comment, _text}, {doctype, []}), do: {doctype, []}
+
+  # Comment - add to current element
   defp process({:comment, text}, {doctype, stack}) do
-    if stack == [] do
-      # Comment before html - add to html when it's created
-      {doctype, stack}
-    else
-      {doctype, add_child({:comment, text}, stack)}
-    end
+    {doctype, add_child({:comment, text}, stack)}
   end
 
   # Errors - ignore
@@ -233,10 +232,10 @@ defmodule PureHtml.TreeBuilder do
   defp reverse_children(other), do: other
 
   # Finalize - close all open elements and return tree
-  defp finalize([]), do: nil
-
   defp finalize(stack) do
-    do_finalize(in_body(stack))
+    stack
+    |> in_body()
+    |> do_finalize()
   end
 
   defp do_finalize([{tag, attrs, children}]) do
