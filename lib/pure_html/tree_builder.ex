@@ -262,6 +262,7 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_close_optgroup(tag)
     |> maybe_close_button(tag)
     |> maybe_close_formatting(tag)
+    |> maybe_reconstruct_formatting(tag)
     |> maybe_insert_table_implicit(tag)
     |> insert_element(tag, attrs, self_closing?, &(stack_first_id(&1.stack) || &1.body_id))
     |> maybe_set_strip_newline(tag)
@@ -269,7 +270,22 @@ defmodule PureHtml.TreeBuilder do
 
   defp process(state, {:end_tag, "html"}), do: state
   defp process(state, {:end_tag, "head"}), do: state
-  defp process(state, {:end_tag, "body"}), do: remove_from_stack(state, state.body_id)
+  # Per HTML5 spec, </body> doesn't remove body from stack - content after </body> still goes into body
+  defp process(state, {:end_tag, "body"}), do: state
+
+  # Per HTML5 spec, </p> inserts empty <p> if none in scope, then closes it
+  defp process(state, {:end_tag, "p"}) do
+    state = ensure_html(state, %{}) |> ensure_head() |> ensure_body()
+
+    if has_p_in_button_scope?(state) do
+      close_p_element(state)
+    else
+      # Insert empty <p> then close it
+      parent_id = stack_first_id(state.stack) || state.body_id
+      {document, p_id} = Document.add_element(state.document, "p", %{}, parent_id)
+      %{state | document: document}
+    end
+  end
 
   defp process(state, {:end_tag, tag}) when tag in @formatting_elements do
     run_adoption_agency(state, tag)
@@ -292,6 +308,7 @@ defmodule PureHtml.TreeBuilder do
       |> ensure_html(%{})
       |> ensure_head()
       |> ensure_body()
+      |> reconstruct_active_formatting()
       |> insert_text(text)
     end
   end
@@ -350,18 +367,26 @@ defmodule PureHtml.TreeBuilder do
 
   defp ensure_html(%__MODULE__{document: %{root_id: nil}} = state, attrs) do
     {document, html_id} = Document.add_element(state.document, "html", attrs, nil)
-    %{state | document: Document.set_root(document, html_id)}
+    document = Document.set_root(document, html_id)
+    # Don't push html to stack - it's always implicitly the root
+    %{state | document: document}
   end
 
   defp ensure_html(state, _attrs), do: state
 
-  defp ensure_head(%__MODULE__{head_id: nil} = state),
-    do: insert_implicit(state, "head", :head_id)
+  defp ensure_head(%__MODULE__{head_id: nil} = state) do
+    {document, head_id} = Document.add_element(state.document, "head", %{}, state.document.root_id)
+    # Don't push head to stack - it's implicitly closed when body opens
+    %{state | document: document, head_id: head_id}
+  end
 
   defp ensure_head(state), do: state
 
-  defp ensure_body(%__MODULE__{body_id: nil} = state),
-    do: insert_implicit(state, "body", :body_id)
+  defp ensure_body(%__MODULE__{body_id: nil} = state) do
+    {document, body_id} = Document.add_element(state.document, "body", %{}, state.document.root_id)
+    # Push body to stack as the default parent for content
+    %{state | document: document, body_id: body_id, stack: [body_id | state.stack]}
+  end
 
   defp ensure_body(state), do: state
 
@@ -375,9 +400,19 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_insert_body(state, _attrs), do: state
 
-  defp insert_implicit(state, tag, field, attrs \\ %{}) do
+  defp insert_implicit(state, tag, field), do: insert_implicit(state, tag, field, %{})
+
+  defp insert_implicit(state, "html", field, attrs) do
+    {document, id} = Document.add_element(state.document, "html", attrs, nil)
+    document = Document.set_root(document, id)
+    new_state = %{state | document: document, stack: [id | state.stack]}
+    Map.put(new_state, field, id)
+  end
+
+  defp insert_implicit(state, tag, field, attrs) do
     {document, id} = Document.add_element(state.document, tag, attrs, state.document.root_id)
-    %{state | document: document} |> Map.put(field, id)
+    new_state = %{state | document: document, stack: [id | state.stack]}
+    Map.put(new_state, field, id)
   end
 
   # Insert nodes
@@ -465,15 +500,140 @@ defmodule PureHtml.TreeBuilder do
     stack =
       if self_closing? or tag in @void_elements, do: state.stack, else: [node_id | state.stack]
 
-    # Track formatting elements for adoption agency
+    # Track formatting elements for adoption agency (with Noah's Ark limit)
     active_formatting =
       if tag in @formatting_elements and not self_closing? do
-        [{node_id, tag, attrs} | state.active_formatting]
+        # Noah's Ark: limit identical elements to 3
+        af_with_limit = apply_noahs_ark(state.active_formatting, tag, attrs)
+        [{node_id, tag, attrs} | af_with_limit]
       else
         state.active_formatting
       end
 
     %{state | document: document, stack: stack, active_formatting: active_formatting}
+  end
+
+  # Noah's Ark algorithm: if there are already 3 elements with the same
+  # tag and attributes, remove the earliest one
+  defp apply_noahs_ark(active_formatting, tag, attrs) do
+    {matching, count} =
+      Enum.reduce(active_formatting, {[], 0}, fn
+        :marker, {acc, n} ->
+          {[:marker | acc], n}
+
+        {id, t, a} = entry, {acc, n} ->
+          if t == tag and attrs_equal?(a, attrs) do
+            {[entry | acc], n + 1}
+          else
+            {[entry | acc], n}
+          end
+      end)
+
+    if count >= 3 do
+      # Remove the earliest matching element (it's at the end of the reversed list)
+      remove_earliest_matching(Enum.reverse(matching), tag, attrs)
+    else
+      active_formatting
+    end
+  end
+
+  defp attrs_equal?(a1, a2), do: a1 == a2
+
+  defp remove_earliest_matching([], _tag, _attrs), do: []
+
+  defp remove_earliest_matching([{_id, t, a} | rest], tag, attrs) when t == tag do
+    if attrs_equal?(a, attrs) do
+      rest
+    else
+      [{_id, t, a} | remove_earliest_matching(rest, tag, attrs)]
+    end
+  end
+
+  defp remove_earliest_matching([:marker | rest], tag, attrs) do
+    [:marker | remove_earliest_matching(rest, tag, attrs)]
+  end
+
+  defp remove_earliest_matching([entry | rest], tag, attrs) do
+    [entry | remove_earliest_matching(rest, tag, attrs)]
+  end
+
+  # Reconstruct active formatting elements that are not currently in the stack
+  # This is called before inserting text or non-special elements
+  defp reconstruct_active_formatting(state) do
+    case state.active_formatting do
+      [] ->
+        state
+
+      [first | _] ->
+        # Check if reconstruction is needed (last entry not in stack)
+        if formatting_in_stack?(state, first) do
+          state
+        else
+          do_reconstruct(state)
+        end
+    end
+  end
+
+  defp formatting_in_stack?(_state, :marker), do: true
+
+  defp formatting_in_stack?(state, {node_id, _tag, _attrs}) do
+    Enum.any?(state.stack, fn entry -> stack_entry_id(entry) == node_id end)
+  end
+
+  defp do_reconstruct(state) do
+    # Find the first entry that IS in the stack (or a marker), working backwards
+    start_index = find_reconstruct_start(state.active_formatting, state, 0)
+
+    # Reconstruct from start_index to end (index 0)
+    reconstruct_from_index(state, start_index)
+  end
+
+  defp find_reconstruct_start([], _state, index), do: max(0, index - 1)
+
+  defp find_reconstruct_start([entry | rest], state, index) do
+    if formatting_in_stack?(state, entry) do
+      # This entry is in the stack, start reconstructing from the next one
+      max(0, index - 1)
+    else
+      find_reconstruct_start(rest, state, index + 1)
+    end
+  end
+
+  defp reconstruct_from_index(state, index) when index < 0, do: state
+
+  defp reconstruct_from_index(state, index) do
+    case Enum.at(state.active_formatting, index) do
+      nil ->
+        state
+
+      :marker ->
+        state
+
+      {_old_id, tag, attrs} ->
+        # Create a new element with the same tag/attrs
+        parent_id = stack_first_id(state.stack) || state.body_id
+        {document, new_id} = Document.add_element(state.document, tag, attrs, parent_id)
+
+        # Update the active formatting entry with the new node id
+        new_af = List.replace_at(state.active_formatting, index, {new_id, tag, attrs})
+
+        # Push onto stack
+        new_stack = [new_id | state.stack]
+
+        state = %{state | document: document, stack: new_stack, active_formatting: new_af}
+
+        # Continue to the next entry (moving toward index 0)
+        reconstruct_from_index(state, index - 1)
+    end
+  end
+
+  # Only reconstruct for non-special elements
+  defp maybe_reconstruct_formatting(state, tag) do
+    if tag in @special_elements do
+      state
+    else
+      reconstruct_active_formatting(state)
+    end
   end
 
   defp get_inherited_namespace(state) do
@@ -727,11 +887,8 @@ defmodule PureHtml.TreeBuilder do
   defp maybe_close_button(state, "button"), do: close_in_scope(state, "button", ~w(form))
   defp maybe_close_button(state, _tag), do: state
 
-  # Formatting elements that close themselves
-  defp maybe_close_formatting(state, tag)
-       when tag in ~w(a b big code em font i nobr s small strike strong tt u),
-       do: close_if_current(state, tag)
-
+  # Only <a> closes itself when nested (other formatting elements nest normally)
+  defp maybe_close_formatting(state, "a"), do: close_in_scope(state, "a", @special_elements)
   defp maybe_close_formatting(state, _tag), do: state
 
   # Implicit table structure
@@ -787,6 +944,33 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp close_if_current(state, _target), do: state
+
+  # Button scope boundaries for <p> element
+  @button_scope_boundary ~w(applet button caption html marquee object table td th template)
+
+  defp has_p_in_button_scope?(state) do
+    has_in_scope?(state.stack, state.document, "p", @button_scope_boundary)
+  end
+
+  defp has_in_scope?([], _document, _target, _boundary), do: false
+
+  defp has_in_scope?([entry | rest], document, target, boundary) do
+    node = Document.get_node(document, stack_entry_id(entry))
+
+    cond do
+      node.tag == target -> true
+      node.tag in boundary -> false
+      true -> has_in_scope?(rest, document, target, boundary)
+    end
+  end
+
+  defp close_p_element(state) do
+    # Pop elements until we find and pop <p>
+    case close_until(state.stack, state.document, "p") do
+      {:found, new_stack} -> %{state | stack: new_stack}
+      :not_found -> state
+    end
+  end
 
   defp close_in_scope(state, targets, scope_boundary) do
     targets = List.wrap(targets)
@@ -914,18 +1098,15 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp find_furthest_block(stack, document, fe_stack_index) do
-    # Look for the first special element between top of stack and formatting element
+    # Find the special element closest to the formatting element (furthest from top)
+    # Single-pass reduce that tracks the last matching index
     stack
     |> Enum.take(fe_stack_index)
     |> Enum.with_index()
-    |> Enum.find(fn {entry, _idx} ->
+    |> Enum.reduce(nil, fn {entry, idx}, acc ->
       node = Document.get_node(document, stack_entry_id(entry))
-      node.tag in @special_elements
+      if node.tag in @special_elements, do: idx, else: acc
     end)
-    |> case do
-      nil -> nil
-      {_entry, idx} -> idx
-    end
   end
 
   defp run_adoption_agency_inner(state, _subject, {fe_id, fe_tag, fe_attrs}, fe_af_index, fe_stack_index, fb_stack_index) do
@@ -939,16 +1120,16 @@ defmodule PureHtml.TreeBuilder do
     {state, last_node_id, bookmark} =
       run_inner_loop(state, fe_id, fe_stack_index, fb_stack_index, fb_id, bookmark, 0)
 
-    # Step 11: Insert last_node into common ancestor
+    # Step 11: Insert last_node into common ancestor, after the formatting element
     common_ancestor_id =
       case Enum.at(state.stack, fe_stack_index + 1) do
         nil -> state.body_id
         entry -> stack_entry_id(entry)
       end
 
-    # Remove last_node from its current parent and append to common ancestor
+    # Remove last_node from its current parent and insert after formatting element
     document = Document.remove_from_parent(state.document, last_node_id)
-    document = Document.append_child(document, common_ancestor_id, last_node_id)
+    document = Document.insert_child_after(document, common_ancestor_id, last_node_id, fe_id)
 
     # Step 12: Create new formatting element
     {document, new_fe_id} = Document.add_element(document, fe_tag, fe_attrs, nil)

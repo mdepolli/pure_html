@@ -282,6 +282,18 @@ defmodule PureHtml.Document do
     %{doc | nodes: nodes}
   end
 
+  @doc "Insert a child after a sibling in DOM order (for adoption agency)"
+  def insert_child_after(doc, parent_id, child_id, after_sibling_id) do
+    # Update child's parent_id
+    nodes = put_in(doc.nodes, [child_id, :parent_id], parent_id)
+    # Insert in children list - since children_ids is in reverse order,
+    # we insert BEFORE the sibling in the list to appear AFTER in the DOM
+    nodes = update_in(nodes, [parent_id, :children_ids], fn ids ->
+      insert_before_in_list(ids || [], after_sibling_id, child_id)
+    end)
+    %{doc | nodes: nodes}
+  end
+
   # Insert new_id after target_id in the list
   defp insert_after_in_list([], _target_id, new_id), do: [new_id]
 
@@ -291,6 +303,17 @@ defmodule PureHtml.Document do
 
   defp insert_after_in_list([other | rest], target_id, new_id) do
     [other | insert_after_in_list(rest, target_id, new_id)]
+  end
+
+  # Insert new_id before target_id in the list
+  defp insert_before_in_list([], _target_id, new_id), do: [new_id]
+
+  defp insert_before_in_list([target_id | rest], target_id, new_id) do
+    [new_id, target_id | rest]
+  end
+
+  defp insert_before_in_list([other | rest], target_id, new_id) do
+    [other | insert_before_in_list(rest, target_id, new_id)]
   end
 
   defp add_to_parent(nodes, nil, _child_id), do: nodes
