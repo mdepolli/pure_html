@@ -88,54 +88,20 @@ defmodule PureHtml.TreeBuilder do
     |> push_element("body", attrs)
   end
 
-  # Head elements go in head
-  defp process({:start_tag, tag, attrs, self_closing}, stack)
-       when tag in @head_elements do
-    stack
-    |> ensure_html()
-    |> ensure_head()
-    |> process_start_tag(tag, attrs, self_closing)
-  end
-
-  # Start tag - void element (self-closing by nature)
-  defp process({:start_tag, tag, attrs, _}, stack) when tag in @void_elements do
+  # SVG element - enter SVG namespace
+  defp process({:start_tag, "svg", attrs, _}, stack) do
     stack
     |> in_body()
-    |> maybe_close_p(tag)
-    |> add_child({tag, attrs, []})
+    |> push_svg_element("svg", attrs)
   end
 
-  # Start tag - self-closing flag
-  defp process({:start_tag, tag, attrs, true}, stack) do
-    stack
-    |> in_body()
-    |> maybe_close_p(tag)
-    |> add_child({tag, attrs, []})
-  end
-
-  # Table cells need implicit tr and tbody
-  defp process({:start_tag, tag, attrs, _}, stack) when tag in @table_cells do
-    stack
-    |> in_body()
-    |> ensure_table_context()
-    |> push_element(tag, attrs)
-  end
-
-  # Table row needs implicit tbody
-  defp process({:start_tag, "tr", attrs, _}, stack) do
-    stack
-    |> in_body()
-    |> ensure_tbody()
-    |> push_element("tr", attrs)
-  end
-
-  # Start tag - push onto stack
-  defp process({:start_tag, tag, attrs, _}, stack) do
-    stack
-    |> in_body()
-    |> maybe_close_p(tag)
-    |> maybe_close_same(tag)
-    |> push_element(tag, attrs)
+  # Inside SVG - all elements get SVG namespace
+  defp process({:start_tag, tag, attrs, self_closing}, stack) do
+    if in_svg?(stack) do
+      push_svg_element(stack, tag, attrs, self_closing)
+    else
+      process_html_start_tag(tag, attrs, self_closing, stack)
+    end
   end
 
   # End tags for implicit elements
@@ -182,6 +148,50 @@ defmodule PureHtml.TreeBuilder do
 
   # Errors - ignore
   defp process({:error, _}, stack), do: stack
+
+  # HTML start tag processing (called when not in SVG context)
+  defp process_html_start_tag(tag, attrs, self_closing, stack) when tag in @head_elements do
+    stack
+    |> ensure_html()
+    |> ensure_head()
+    |> process_start_tag(tag, attrs, self_closing)
+  end
+
+  defp process_html_start_tag(tag, attrs, _, stack) when tag in @void_elements do
+    stack
+    |> in_body()
+    |> maybe_close_p(tag)
+    |> add_child({tag, attrs, []})
+  end
+
+  defp process_html_start_tag(tag, attrs, true, stack) do
+    stack
+    |> in_body()
+    |> maybe_close_p(tag)
+    |> add_child({tag, attrs, []})
+  end
+
+  defp process_html_start_tag(tag, attrs, _, stack) when tag in @table_cells do
+    stack
+    |> in_body()
+    |> ensure_table_context()
+    |> push_element(tag, attrs)
+  end
+
+  defp process_html_start_tag("tr", attrs, _, stack) do
+    stack
+    |> in_body()
+    |> ensure_tbody()
+    |> push_element("tr", attrs)
+  end
+
+  defp process_html_start_tag(tag, attrs, _, stack) do
+    stack
+    |> in_body()
+    |> maybe_close_p(tag)
+    |> maybe_close_same(tag)
+    |> push_element(tag, attrs)
+  end
 
   defp process_start_tag(stack, tag, attrs, true) do
     add_child(stack, {tag, attrs, []})
@@ -337,6 +347,20 @@ defmodule PureHtml.TreeBuilder do
     [{tag, attrs, []} | stack]
   end
 
+  defp push_svg_element(stack, tag, attrs, self_closing \\ false)
+
+  defp push_svg_element(stack, tag, attrs, true) do
+    add_child(stack, {{:svg, tag}, attrs, []})
+  end
+
+  defp push_svg_element(stack, tag, attrs, _) do
+    [{{:svg, tag}, attrs, []} | stack]
+  end
+
+  defp in_svg?([{{:svg, _}, _, _} | _]), do: true
+  defp in_svg?([_ | rest]), do: in_svg?(rest)
+  defp in_svg?([]), do: false
+
   defp add_child(stack, child)
 
   defp add_child([{tag, attrs, children} | rest], child) do
@@ -370,6 +394,18 @@ defmodule PureHtml.TreeBuilder do
   defp pop_until(_tag, [], _acc), do: :not_found
 
   defp pop_until(tag, [{tag, attrs, children} | rest], acc) do
+    finalize_pop({tag, attrs, children}, acc, rest)
+  end
+
+  defp pop_until(tag, [{{:svg, tag}, attrs, children} | rest], acc) do
+    finalize_pop({{:svg, tag}, attrs, children}, acc, rest)
+  end
+
+  defp pop_until(tag, [current | rest], acc) do
+    pop_until(tag, rest, [current | acc])
+  end
+
+  defp finalize_pop({tag, attrs, children}, acc, rest) do
     element = {tag, attrs, Enum.reverse(children)}
 
     final_element =
@@ -380,8 +416,8 @@ defmodule PureHtml.TreeBuilder do
     {:found, final_element, rest}
   end
 
-  defp pop_until(tag, [current | rest], acc) do
-    pop_until(tag, rest, [current | acc])
+  defp reverse_children({{ns, tag}, attrs, children}) when is_list(children) do
+    {{ns, tag}, attrs, Enum.reverse(children)}
   end
 
   defp reverse_children({tag, attrs, children}) when is_list(children) do
@@ -426,6 +462,7 @@ defmodule PureHtml.TreeBuilder do
     children
     |> Enum.reverse()
     |> Enum.map(fn
+      {{ns, tag}, attrs, kids} when is_list(kids) -> {{ns, tag}, attrs, reverse_all(kids)}
       {tag, attrs, kids} when is_list(kids) -> {tag, attrs, reverse_all(kids)}
       {:comment, _} = comment -> comment
       text when is_binary(text) -> text

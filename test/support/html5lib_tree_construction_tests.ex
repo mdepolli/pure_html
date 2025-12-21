@@ -105,9 +105,17 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
     "#{indent}<!-- #{text} -->\n"
   end
 
+  defp serialize_node({{ns, tag}, attrs, children}, depth) do
+    serialize_element("#{ns} #{tag}", attrs, children, depth)
+  end
+
   defp serialize_node({tag, attrs, children}, depth) do
+    serialize_element(tag, attrs, children, depth)
+  end
+
+  defp serialize_element(tag_display, attrs, children, depth) do
     indent = "| " <> String.duplicate("  ", depth)
-    tag_line = "#{indent}<#{tag}>\n"
+    tag_line = "#{indent}<#{tag_display}>\n"
 
     attr_lines =
       attrs
