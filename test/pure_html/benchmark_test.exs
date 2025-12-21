@@ -35,14 +35,27 @@ defmodule PureHtml.BenchmarkTest do
   test "TreeBuilder: Wikipedia homepage", %{tokens: tokens} do
     {time_us, {_doctype, tree}} = :timer.tc(fn -> PureHtml.TreeBuilder.build(tokens) end)
     time_ms = time_us / 1000
+    nodes = count_nodes(tree)
 
     IO.puts("""
 
       TreeBuilder benchmark:
         Tokens: #{length(tokens)}
+        Nodes: #{nodes}
         Time: #{Float.round(time_ms, 1)} ms
     """)
 
     assert tree != nil
+  end
+
+  defp count_nodes({_tag, _attrs, children}), do: 1 + count_children(children)
+  defp count_nodes(_), do: 1
+
+  defp count_children(children) when is_list(children) do
+    Enum.reduce(children, 0, fn
+      {_, _, _} = node, acc -> acc + count_nodes(node)
+      {:comment, _}, acc -> acc + 1
+      _, acc -> acc + 1
+    end)
   end
 end
