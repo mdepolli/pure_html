@@ -92,15 +92,21 @@ defmodule PureHtml.TreeBuilder do
   defp process({:start_tag, "svg", attrs, _}, stack) do
     stack
     |> in_body()
-    |> push_svg_element("svg", attrs)
+    |> push_foreign_element(:svg, "svg", attrs)
   end
 
-  # Inside SVG - all elements get SVG namespace
+  # MathML element - enter MathML namespace
+  defp process({:start_tag, "math", attrs, _}, stack) do
+    stack
+    |> in_body()
+    |> push_foreign_element(:math, "math", attrs)
+  end
+
+  # Inside foreign content (SVG/MathML) - elements inherit namespace
   defp process({:start_tag, tag, attrs, self_closing}, stack) do
-    if in_svg?(stack) do
-      push_svg_element(stack, tag, attrs, self_closing)
-    else
-      process_html_start_tag(tag, attrs, self_closing, stack)
+    case foreign_namespace(stack) do
+      nil -> process_html_start_tag(tag, attrs, self_closing, stack)
+      ns -> push_foreign_element(stack, ns, tag, attrs, self_closing)
     end
   end
 
@@ -347,19 +353,19 @@ defmodule PureHtml.TreeBuilder do
     [{tag, attrs, []} | stack]
   end
 
-  defp push_svg_element(stack, tag, attrs, self_closing \\ false)
+  defp push_foreign_element(stack, ns, tag, attrs, self_closing \\ false)
 
-  defp push_svg_element(stack, tag, attrs, true) do
-    add_child(stack, {{:svg, tag}, attrs, []})
+  defp push_foreign_element(stack, ns, tag, attrs, true) do
+    add_child(stack, {{ns, tag}, attrs, []})
   end
 
-  defp push_svg_element(stack, tag, attrs, _) do
-    [{{:svg, tag}, attrs, []} | stack]
+  defp push_foreign_element(stack, ns, tag, attrs, _) do
+    [{{ns, tag}, attrs, []} | stack]
   end
 
-  defp in_svg?([{{:svg, _}, _, _} | _]), do: true
-  defp in_svg?([_ | rest]), do: in_svg?(rest)
-  defp in_svg?([]), do: false
+  defp foreign_namespace([{{ns, _}, _, _} | _]) when ns in [:svg, :math], do: ns
+  defp foreign_namespace([_ | rest]), do: foreign_namespace(rest)
+  defp foreign_namespace([]), do: nil
 
   defp add_child(stack, child)
 
