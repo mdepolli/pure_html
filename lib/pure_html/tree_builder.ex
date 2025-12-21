@@ -49,18 +49,18 @@ defmodule PureHtml.TreeBuilder do
 
   # Explicit head tag
   defp process({:start_tag, "head", attrs, _}, stack) do
-    [{"head", attrs, []} | ensure_html(stack)]
+    stack
+    |> ensure_html()
+    |> push_element("head", attrs)
   end
 
   # Explicit body tag
   defp process({:start_tag, "body", attrs, _}, stack) do
-    stack =
-      stack
-      |> ensure_html()
-      |> ensure_head()
-      |> close_head()
-
-    [{"body", attrs, []} | stack]
+    stack
+    |> ensure_html()
+    |> ensure_head()
+    |> close_head()
+    |> push_element("body", attrs)
   end
 
   # Head elements go in head
@@ -168,13 +168,23 @@ defmodule PureHtml.TreeBuilder do
   defp ensure_html(stack), do: stack
 
   # Ensure head element exists (must be called after ensure_html)
-  defp ensure_head([{"html", attrs, children}]) do
-    [{"head", %{}, []}, {"html", attrs, children}]
-  end
-
+  defp ensure_head([{"html", _, _}] = stack), do: ensure_head(stack, stack)
   defp ensure_head([{"head", _, _} | _] = stack), do: stack
   defp ensure_head([{"body", _, _} | _] = stack), do: stack
   defp ensure_head(stack), do: stack
+
+  # Head found - return original stack unchanged
+  defp ensure_head([{"html", _, [{"head", _, _} | _]}], original), do: original
+
+  # Skip non-head child, keep checking
+  defp ensure_head([{"html", attrs, [_ | rest]}], original) do
+    ensure_head([{"html", attrs, rest}], original)
+  end
+
+  # No head found - create one with original children
+  defp ensure_head([{"html", attrs, []}], [{"html", _, children}]) do
+    [{"head", %{}, []}, {"html", attrs, children}]
+  end
 
   # Close head if it's open (move to body context)
   defp close_head([{"head", attrs, children} | rest]) do
