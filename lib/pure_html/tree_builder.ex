@@ -104,8 +104,13 @@ defmodule PureHtml.TreeBuilder do
   # End tag - pop and nest in parent
   defp process({:end_tag, tag}, stack), do: close_tag(tag, stack)
 
-  # Character data - empty stack, ignore
-  defp process({:character, _text}, []), do: []
+  # Character data - empty stack, create structure
+  defp process({:character, text}, []) do
+    []
+    |> ensure_html()
+    |> in_body()
+    |> add_text(text)
+  end
 
   # Character data inside head element - add directly
   defp process({:character, text}, [{tag, _, _} | _] = stack) when tag in @head_elements do
@@ -295,7 +300,7 @@ defmodule PureHtml.TreeBuilder do
     close_through_head(add_child(rest, child))
   end
 
-  defp close_through_head([]), do: [{"html", %{}, []}, {"head", %{}, []}]
+  defp close_through_head([]), do: [{"html", %{}, [{"head", %{}, []}]}]
 
   # Single element left - this is the root, reverse all children
   defp do_finalize([{tag, attrs, children}]) do
