@@ -15,121 +15,143 @@ defmodule PureHtml.TreeBuilder do
   @void_elements ~w(area base br col embed hr img input link meta param source track wbr)
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
 
+  # Elements that implicitly close an open <p> element
+  @closes_p ~w(address article aside blockquote center details dialog dir div dl
+               fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
+               hr listing main menu nav ol p pre section summary table ul)
+
   @doc """
   Builds a document from a stream of tokens.
 
   Returns `{doctype, tree}` where tree is a nested tuple structure.
   """
   def build(tokens) do
-    {doctype, stack} = Enum.reduce(tokens, {nil, []}, &process/2)
+    {doctype, stack} =
+      Enum.reduce(tokens, {nil, []}, fn
+        {:doctype, name, public_id, system_id, _}, {_, stack} ->
+          {{name, public_id, system_id}, stack}
+
+        token, {doctype, stack} ->
+          {doctype, process(token, stack)}
+      end)
+
     {doctype, finalize(stack)}
   end
 
-  # Doctype
-  defp process({:doctype, name, public_id, system_id, _}, {_doctype, stack}) do
-    {{name, public_id, system_id}, stack}
-  end
-
   # Explicit html tag
-  defp process({:start_tag, "html", attrs, _}, {doctype, []}) do
-    {doctype, [{"html", attrs, []}]}
+  defp process({:start_tag, "html", attrs, _}, []) do
+    [{"html", attrs, []}]
   end
 
-  defp process({:start_tag, "html", _attrs, _}, {doctype, stack}) do
-    # html already exists, ignore
-    {doctype, stack}
+  defp process({:start_tag, "html", _attrs, _}, stack) do
+    stack
   end
 
   # Explicit head tag
-  defp process({:start_tag, "head", attrs, _}, {doctype, stack}) do
-    stack = ensure_html(stack)
-    {doctype, [{"head", attrs, []} | stack]}
+  defp process({:start_tag, "head", attrs, _}, stack) do
+    [{"head", attrs, []} | ensure_html(stack)]
   end
 
   # Explicit body tag
-  defp process({:start_tag, "body", attrs, _}, {doctype, stack}) do
+  defp process({:start_tag, "body", attrs, _}, stack) do
     stack =
       stack
       |> ensure_html()
       |> ensure_head()
       |> close_head()
 
-    {doctype, [{"body", attrs, []} | stack]}
+    [{"body", attrs, []} | stack]
   end
 
   # Head elements go in head
-  defp process({:start_tag, tag, attrs, self_closing}, {doctype, stack})
+  defp process({:start_tag, tag, attrs, self_closing}, stack)
        when tag in @head_elements do
-    stack =
-      stack
-      |> ensure_html()
-      |> ensure_head()
-
-    process_start_tag(tag, attrs, self_closing, doctype, stack)
+    stack
+    |> ensure_html()
+    |> ensure_head()
+    |> process_start_tag(tag, attrs, self_closing)
   end
 
   # Start tag - void element (self-closing by nature)
-  defp process({:start_tag, tag, attrs, _}, {doctype, stack}) when tag in @void_elements do
-    stack = in_body(stack)
-    {doctype, add_child({tag, attrs, []}, stack)}
+  defp process({:start_tag, tag, attrs, _}, stack) when tag in @void_elements do
+    stack
+    |> in_body()
+    |> maybe_close_p(tag)
+    |> add_child({tag, attrs, []})
   end
 
   # Start tag - self-closing flag
-  defp process({:start_tag, tag, attrs, true}, {doctype, stack}) do
-    stack = in_body(stack)
-    {doctype, add_child({tag, attrs, []}, stack)}
+  defp process({:start_tag, tag, attrs, true}, stack) do
+    stack
+    |> in_body()
+    |> maybe_close_p(tag)
+    |> add_child({tag, attrs, []})
   end
 
   # Start tag - push onto stack
-  defp process({:start_tag, tag, attrs, _}, {doctype, stack}) do
-    stack = in_body(stack)
-    {doctype, [{tag, attrs, []} | stack]}
+  defp process({:start_tag, tag, attrs, _}, stack) do
+    stack
+    |> in_body()
+    |> maybe_close_p(tag)
+    |> push_element(tag, attrs)
   end
 
   # End tags for implicit elements
-  defp process({:end_tag, "html"}, acc), do: acc
-  defp process({:end_tag, "head"}, {doctype, stack}), do: {doctype, close_head(stack)}
-  defp process({:end_tag, "body"}, acc), do: acc
+  defp process({:end_tag, "html"}, stack), do: stack
+  defp process({:end_tag, "head"}, stack), do: close_head(stack)
+  defp process({:end_tag, "body"}, stack), do: stack
 
   # End tag - pop and nest in parent
-  defp process({:end_tag, tag}, {doctype, stack}) do
-    {doctype, close_tag(tag, stack)}
-  end
+  defp process({:end_tag, tag}, stack), do: close_tag(tag, stack)
 
   # Character data - empty stack, ignore
-  defp process({:character, _text}, {doctype, []}), do: {doctype, []}
+  defp process({:character, _text}, []), do: []
 
   # Character data - whitespace before body is ignored
-  defp process({:character, text}, {doctype, stack}) do
+  defp process({:character, text}, stack) do
     case {has_body?(stack), String.trim(text)} do
-      {false, ""} -> {doctype, stack}
-      _ -> {doctype, add_text(text, in_body(stack))}
+      {false, ""} -> stack
+      _ -> stack |> in_body() |> add_text(text)
     end
   end
 
   # Comment before html - ignored for now
-  defp process({:comment, _text}, {doctype, []}), do: {doctype, []}
+  defp process({:comment, _text}, []), do: []
 
   # Comment - add to current element
-  defp process({:comment, text}, {doctype, stack}) do
-    {doctype, add_child({:comment, text}, stack)}
+  defp process({:comment, text}, stack) do
+    add_child(stack, {:comment, text})
   end
 
   # Errors - ignore
-  defp process({:error, _}, acc), do: acc
+  defp process({:error, _}, stack), do: stack
 
-  # Helper for processing start tags
-  defp process_start_tag(tag, attrs, true, doctype, stack) do
-    {doctype, add_child({tag, attrs, []}, stack)}
+  # Helper for processing start tags (stack first for piping)
+  defp process_start_tag(stack, tag, attrs, true) do
+    add_child(stack, {tag, attrs, []})
   end
 
-  defp process_start_tag(tag, attrs, _, doctype, stack) when tag in @void_elements do
-    {doctype, add_child({tag, attrs, []}, stack)}
+  defp process_start_tag(stack, tag, attrs, _) when tag in @void_elements do
+    add_child(stack, {tag, attrs, []})
   end
 
-  defp process_start_tag(tag, attrs, _, doctype, stack) do
-    {doctype, [{tag, attrs, []} | stack]}
+  defp process_start_tag(stack, tag, attrs, _) do
+    push_element(stack, tag, attrs)
   end
+
+  # Close <p> if it's currently open and tag is in @closes_p
+  defp maybe_close_p(stack, tag) when tag in @closes_p do
+    close_p_if_open(stack)
+  end
+
+  defp maybe_close_p(stack, _tag), do: stack
+
+  # Close <p> if it's on top of the stack (don't reverse - finalize will do that)
+  defp close_p_if_open([{"p", attrs, children} | rest]) do
+    add_child(rest, {"p", attrs, children})
+  end
+
+  defp close_p_if_open(stack), do: stack
 
   # Transition to body context (ensure html/head/body exist, head is closed)
   defp in_body(stack) do
@@ -156,7 +178,7 @@ defmodule PureHtml.TreeBuilder do
 
   # Close head if it's open (move to body context)
   defp close_head([{"head", attrs, children} | rest]) do
-    add_child({"head", attrs, Enum.reverse(children)}, rest)
+    add_child(rest, {"head", attrs, children})
   end
 
   defp close_head(stack), do: stack
@@ -179,31 +201,40 @@ defmodule PureHtml.TreeBuilder do
   defp has_body?([_ | rest]), do: has_body?(rest)
   defp has_body?([]), do: false
 
+  # Push a new element onto the stack (stack first for piping)
+  defp push_element(stack, tag, attrs) do
+    [{tag, attrs, []} | stack]
+  end
+
   # Add a child to the current element (top of stack)
-  defp add_child(child, [{tag, attrs, children} | rest]) do
+  defp add_child(stack, child)
+
+  defp add_child([{tag, attrs, children} | rest], child) do
     [{tag, attrs, [child | children]} | rest]
   end
 
-  defp add_child(child, []) do
+  defp add_child([], child) do
     [child]
   end
 
-  # Add text, coalescing with previous text if possible
-  defp add_text(text, [{tag, attrs, [prev_text | rest_children]} | rest])
+  # Add text, coalescing with previous text if possible (stack first for piping)
+  defp add_text(stack, text)
+
+  defp add_text([{tag, attrs, [prev_text | rest_children]} | rest], text)
        when is_binary(prev_text) do
     [{tag, attrs, [prev_text <> text | rest_children]} | rest]
   end
 
-  defp add_text(text, [{tag, attrs, children} | rest]) do
+  defp add_text([{tag, attrs, children} | rest], text) do
     [{tag, attrs, [text | children]} | rest]
   end
 
-  defp add_text(_text, []), do: []
+  defp add_text([], _text), do: []
 
   # Close a tag - find it in stack, pop everything up to it
   defp close_tag(tag, stack) do
     case pop_until(tag, stack, []) do
-      {:found, element, rest} -> add_child(element, rest)
+      {:found, element, rest} -> add_child(rest, element)
       :not_found -> stack
     end
   end
@@ -213,6 +244,7 @@ defmodule PureHtml.TreeBuilder do
 
   defp pop_until(tag, [{tag, attrs, children} | rest], acc) do
     element = {tag, attrs, Enum.reverse(children)}
+
     final_element =
       Enum.reduce(acc, element, fn child, {t, a, c} ->
         {t, a, [reverse_children(child) | c]}
@@ -238,22 +270,25 @@ defmodule PureHtml.TreeBuilder do
     |> do_finalize()
   end
 
+  # Single element left - this is the root, reverse all children
   defp do_finalize([{tag, attrs, children}]) do
-    {tag, attrs, reverse_all(Enum.reverse(children))}
+    {tag, attrs, reverse_all(children)}
   end
 
+  # Multiple elements - close top and add to parent, don't reverse yet
   defp do_finalize([{tag, attrs, children} | rest]) do
-    child = {tag, attrs, Enum.reverse(children)}
-    do_finalize(add_child(child, rest))
+    child = {tag, attrs, children}
+    do_finalize(add_child(rest, child))
   end
 
-  defp do_finalize([]) do
-    nil
-  end
+  defp do_finalize([]), do: nil
 
+  # Recursively reverse children at all levels (called only on root)
   defp reverse_all(children) do
-    Enum.map(children, fn
-      {tag, attrs, kids} when is_list(kids) -> {tag, attrs, reverse_all(Enum.reverse(kids))}
+    children
+    |> Enum.reverse()
+    |> Enum.map(fn
+      {tag, attrs, kids} when is_list(kids) -> {tag, attrs, reverse_all(kids)}
       {:comment, _} = comment -> comment
       text when is_binary(text) -> text
     end)
