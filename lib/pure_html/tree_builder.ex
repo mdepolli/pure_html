@@ -16,6 +16,7 @@ defmodule PureHtml.TreeBuilder do
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_cells ~w(td th)
   @table_sections ~w(tbody thead tfoot)
+  @table_context ~w(table tbody thead tfoot tr)
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
@@ -144,6 +145,11 @@ defmodule PureHtml.TreeBuilder do
   # Character data inside head element - add directly
   defp process({:character, text}, [{tag, _, _} | _] = stack) when tag in @head_elements do
     add_text(stack, text)
+  end
+
+  # Character data in table context - foster parent (add before table)
+  defp process({:character, text}, [{tag, _, _} | _] = stack) when tag in @table_context do
+    foster_text(stack, text)
   end
 
   # Character data - whitespace before body is ignored
@@ -279,6 +285,38 @@ defmodule PureHtml.TreeBuilder do
   defp has_body?([{"body", _, _} | _]), do: true
   defp has_body?([_ | rest]), do: has_body?(rest)
   defp has_body?([]), do: false
+
+  # Foster parent text - add before table element
+  defp foster_text(stack, text) do
+    foster_content(stack, text, [], &add_foster_text/2)
+  end
+
+  defp foster_content([{"table", attrs, children} | rest], content, acc, add_fn) do
+    # Add content to parent (before table), rebuild stack
+    rest = add_fn.(rest, content)
+    rebuild_stack(acc, [{"table", attrs, children} | rest])
+  end
+
+  defp foster_content([current | rest], content, acc, add_fn) do
+    foster_content(rest, content, [current | acc], add_fn)
+  end
+
+  defp foster_content([], _content, acc, _add_fn) do
+    Enum.reverse(acc)
+  end
+
+  defp add_foster_text([{tag, attrs, [prev | children]} | rest], text) when is_binary(prev) do
+    [{tag, attrs, [prev <> text | children]} | rest]
+  end
+
+  defp add_foster_text([{tag, attrs, children} | rest], text) do
+    [{tag, attrs, [text | children]} | rest]
+  end
+
+  defp add_foster_text([], _text), do: []
+
+  defp rebuild_stack([], stack), do: stack
+  defp rebuild_stack([elem | rest], stack), do: rebuild_stack(rest, [elem | stack])
 
   # Push a new element onto the stack (stack first for piping)
   defp push_element(stack, tag, attrs) do
