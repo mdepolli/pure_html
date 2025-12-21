@@ -14,8 +14,9 @@ defmodule PureHtml.TreeBuilder do
 
   @void_elements ~w(area base br col embed hr img input link meta param source track wbr)
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
+  @table_cells ~w(td th)
+  @table_sections ~w(tbody thead tfoot)
 
-  # Elements that implicitly close an open <p> element
   @closes_p ~w(address article aside blockquote center details dialog dir div dl
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
                hr listing main menu nav ol p pre section summary table ul)
@@ -88,6 +89,22 @@ defmodule PureHtml.TreeBuilder do
     |> add_child({tag, attrs, []})
   end
 
+  # Table cells need implicit tr and tbody
+  defp process({:start_tag, tag, attrs, _}, stack) when tag in @table_cells do
+    stack
+    |> in_body()
+    |> ensure_table_context()
+    |> push_element(tag, attrs)
+  end
+
+  # Table row needs implicit tbody
+  defp process({:start_tag, "tr", attrs, _}, stack) do
+    stack
+    |> in_body()
+    |> ensure_tbody()
+    |> push_element("tr", attrs)
+  end
+
   # Start tag - push onto stack
   defp process({:start_tag, tag, attrs, _}, stack) do
     stack
@@ -148,6 +165,27 @@ defmodule PureHtml.TreeBuilder do
   defp process_start_tag(stack, tag, attrs, _) do
     push_element(stack, tag, attrs)
   end
+
+  # Ensure we're in a proper table context for td/th (need tr and tbody)
+  defp ensure_table_context(stack) do
+    stack
+    |> ensure_tbody()
+    |> ensure_tr()
+  end
+
+  # Ensure tbody exists when inside table
+  defp ensure_tbody([{"table", _, _} | _] = stack), do: push_element(stack, "tbody", %{})
+  defp ensure_tbody([{tag, _, _} | _] = stack) when tag in @table_sections, do: stack
+  defp ensure_tbody([{"tr", _, _} | _] = stack), do: stack
+  defp ensure_tbody(stack), do: stack
+
+  # Ensure tr exists when inside tbody/thead/tfoot
+  defp ensure_tr([{tag, _, _} | _] = stack) when tag in @table_sections do
+    push_element(stack, "tr", %{})
+  end
+
+  defp ensure_tr([{"tr", _, _} | _] = stack), do: stack
+  defp ensure_tr(stack), do: stack
 
   # Close <p> if it's currently open and tag is in @closes_p
   defp maybe_close_p(stack, tag) when tag in @closes_p do
