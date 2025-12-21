@@ -12,6 +12,10 @@ defmodule PureHtml.TreeBuilder do
   accumulate in reverse order (for efficient prepending).
   """
 
+  # --------------------------------------------------------------------------
+  # Element categories
+  # --------------------------------------------------------------------------
+
   @void_elements ~w(area base br col embed hr img input link meta param source track wbr)
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_cells ~w(td th)
@@ -33,6 +37,10 @@ defmodule PureHtml.TreeBuilder do
     "th" => ["td", "th"]
   }
 
+  # --------------------------------------------------------------------------
+  # Public API
+  # --------------------------------------------------------------------------
+
   @doc """
   Builds a document from a stream of tokens.
 
@@ -50,6 +58,10 @@ defmodule PureHtml.TreeBuilder do
 
     {doctype, finalize(stack)}
   end
+
+  # --------------------------------------------------------------------------
+  # Token processing
+  # --------------------------------------------------------------------------
 
   # Explicit html tag
   defp process({:start_tag, "html", attrs, _}, []) do
@@ -171,7 +183,6 @@ defmodule PureHtml.TreeBuilder do
   # Errors - ignore
   defp process({:error, _}, stack), do: stack
 
-  # Helper for processing start tags (stack first for piping)
   defp process_start_tag(stack, tag, attrs, true) do
     add_child(stack, {tag, attrs, []})
   end
@@ -184,20 +195,21 @@ defmodule PureHtml.TreeBuilder do
     push_element(stack, tag, attrs)
   end
 
-  # Ensure we're in a proper table context for td/th (need tr and tbody)
+  # --------------------------------------------------------------------------
+  # Table context
+  # --------------------------------------------------------------------------
+
   defp ensure_table_context(stack) do
     stack
     |> ensure_tbody()
     |> ensure_tr()
   end
 
-  # Ensure tbody exists when inside table
   defp ensure_tbody([{"table", _, _} | _] = stack), do: push_element(stack, "tbody", %{})
   defp ensure_tbody([{tag, _, _} | _] = stack) when tag in @table_sections, do: stack
   defp ensure_tbody([{"tr", _, _} | _] = stack), do: stack
   defp ensure_tbody(stack), do: stack
 
-  # Ensure tr exists when inside tbody/thead/tfoot
   defp ensure_tr([{tag, _, _} | _] = stack) when tag in @table_sections do
     push_element(stack, "tr", %{})
   end
@@ -205,14 +217,16 @@ defmodule PureHtml.TreeBuilder do
   defp ensure_tr([{"tr", _, _} | _] = stack), do: stack
   defp ensure_tr(stack), do: stack
 
-  # Close <p> if it's currently open and tag is in @closes_p
+  # --------------------------------------------------------------------------
+  # Implicit closing
+  # --------------------------------------------------------------------------
+
   defp maybe_close_p(stack, tag) when tag in @closes_p do
     close_p_if_open(stack)
   end
 
   defp maybe_close_p(stack, _tag), do: stack
 
-  # Close <p> if it's on top of the stack (don't reverse - finalize will do that)
   defp close_p_if_open([{"p", attrs, children} | rest]) do
     add_child(rest, {"p", attrs, children})
   end
@@ -228,7 +242,10 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_same(stack, _tag), do: stack
 
-  # Transition to body context (ensure html/head/body exist, head is closed)
+  # --------------------------------------------------------------------------
+  # Document structure
+  # --------------------------------------------------------------------------
+
   defp in_body(stack) do
     stack
     |> ensure_html()
@@ -237,38 +254,31 @@ defmodule PureHtml.TreeBuilder do
     |> ensure_body()
   end
 
-  # Ensure html element exists
   defp ensure_html([]), do: [{"html", %{}, []}]
   defp ensure_html([{"html", _, _} | _] = stack), do: stack
   defp ensure_html(stack), do: stack
 
-  # Ensure head element exists (must be called after ensure_html)
   defp ensure_head([{"html", _, _}] = stack), do: ensure_head(stack, stack)
   defp ensure_head([{"head", _, _} | _] = stack), do: stack
   defp ensure_head([{"body", _, _} | _] = stack), do: stack
   defp ensure_head(stack), do: stack
 
-  # Head found - return original stack unchanged
   defp ensure_head([{"html", _, [{"head", _, _} | _]}], original), do: original
 
-  # Skip non-head child, keep checking
   defp ensure_head([{"html", attrs, [_ | rest]}], original) do
     ensure_head([{"html", attrs, rest}], original)
   end
 
-  # No head found - create one with original children
   defp ensure_head([{"html", attrs, []}], [{"html", _, children}]) do
     [{"head", %{}, []}, {"html", attrs, children}]
   end
 
-  # Close head if it's open (move to body context)
   defp close_head([{"head", attrs, children} | rest]) do
     add_child(rest, {"head", attrs, children})
   end
 
   defp close_head(stack), do: stack
 
-  # Ensure body element exists
   defp ensure_body([{"body", _, _} | _] = stack), do: stack
 
   defp ensure_body([{"html", attrs, children}]) do
@@ -281,18 +291,19 @@ defmodule PureHtml.TreeBuilder do
 
   defp ensure_body([]), do: []
 
-  # Check if body is in stack
   defp has_body?([{"body", _, _} | _]), do: true
   defp has_body?([_ | rest]), do: has_body?(rest)
   defp has_body?([]), do: false
 
-  # Foster parent text - add before table element
+  # --------------------------------------------------------------------------
+  # Foster parenting
+  # --------------------------------------------------------------------------
+
   defp foster_text(stack, text) do
     foster_content(stack, text, [], &add_foster_text/2)
   end
 
   defp foster_content([{"table", attrs, children} | rest], content, acc, add_fn) do
-    # Add content to parent (before table), rebuild stack
     rest = add_fn.(rest, content)
     rebuild_stack(acc, [{"table", attrs, children} | rest])
   end
@@ -318,12 +329,14 @@ defmodule PureHtml.TreeBuilder do
   defp rebuild_stack([], stack), do: stack
   defp rebuild_stack([elem | rest], stack), do: rebuild_stack(rest, [elem | stack])
 
-  # Push a new element onto the stack (stack first for piping)
+  # --------------------------------------------------------------------------
+  # Stack operations
+  # --------------------------------------------------------------------------
+
   defp push_element(stack, tag, attrs) do
     [{tag, attrs, []} | stack]
   end
 
-  # Add a child to the current element (top of stack)
   defp add_child(stack, child)
 
   defp add_child([{tag, attrs, children} | rest], child) do
@@ -334,7 +347,6 @@ defmodule PureHtml.TreeBuilder do
     [child]
   end
 
-  # Add text, coalescing with previous text if possible (stack first for piping)
   defp add_text(stack, text)
 
   defp add_text([{tag, attrs, [prev_text | rest_children]} | rest], text)
@@ -348,7 +360,6 @@ defmodule PureHtml.TreeBuilder do
 
   defp add_text([], _text), do: []
 
-  # Close a tag - find it in stack, pop everything up to it
   defp close_tag(tag, stack) do
     case pop_until(tag, stack, []) do
       {:found, element, rest} -> add_child(rest, element)
@@ -356,7 +367,6 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  # Pop elements until we find the matching tag
   defp pop_until(_tag, [], _acc), do: :not_found
 
   defp pop_until(tag, [{tag, attrs, children} | rest], acc) do
@@ -380,7 +390,10 @@ defmodule PureHtml.TreeBuilder do
 
   defp reverse_children(other), do: other
 
-  # Finalize - close all open elements and return tree
+  # --------------------------------------------------------------------------
+  # Finalization
+  # --------------------------------------------------------------------------
+
   defp finalize(stack) do
     stack
     |> close_through_head()
@@ -388,7 +401,6 @@ defmodule PureHtml.TreeBuilder do
     |> do_finalize()
   end
 
-  # Close all elements through head (for finalization)
   defp close_through_head([{"html", _, _}] = stack), do: stack
   defp close_through_head([{"body", _, _} | _] = stack), do: stack
 
@@ -399,12 +411,10 @@ defmodule PureHtml.TreeBuilder do
 
   defp close_through_head([]), do: [{"html", %{}, [{"head", %{}, []}]}]
 
-  # Single element left - this is the root, reverse all children
   defp do_finalize([{tag, attrs, children}]) do
     {tag, attrs, reverse_all(children)}
   end
 
-  # Multiple elements - close top and add to parent, don't reverse yet
   defp do_finalize([{tag, attrs, children} | rest]) do
     child = {tag, attrs, children}
     do_finalize(add_child(rest, child))
@@ -412,7 +422,6 @@ defmodule PureHtml.TreeBuilder do
 
   defp do_finalize([]), do: nil
 
-  # Recursively reverse children at all levels (called only on root)
   defp reverse_all(children) do
     children
     |> Enum.reverse()
