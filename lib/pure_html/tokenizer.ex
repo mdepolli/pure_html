@@ -131,8 +131,14 @@ defmodule PureHtml.Tokenizer do
     {token, %{state | deferred_token: nil}}
   end
 
-  @eof_flush_states [:data, :rawtext, :rcdata, :script_data, :script_data_escaped,
-                     :script_data_double_escaped]
+  @eof_flush_states [
+    :data,
+    :rawtext,
+    :rcdata,
+    :script_data,
+    :script_data_escaped,
+    :script_data_double_escaped
+  ]
 
   defp next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
        when s in @eof_flush_states do
@@ -514,7 +520,12 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :script_data_escaped_less_than_sign, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    emit_char(state, "<" <> char, state: :script_data_double_escape_start, buffer: char, input: rest)
+
+    emit_char(state, "<" <> char,
+      state: :script_data_double_escape_start,
+      buffer: char,
+      input: rest
+    )
   end
 
   defp step(%{state: :script_data_escaped_less_than_sign, input: _} = state) do
@@ -646,11 +657,15 @@ defmodule PureHtml.Tokenizer do
 
   defp step(%{state: :script_data_double_escaped_dash_dash, input: ""} = _state), do: nil
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<c::utf8, rest::binary>>} = state) do
+  defp step(
+         %{state: :script_data_double_escaped_dash_dash, input: <<c::utf8, rest::binary>>} = state
+       ) do
     emit_char(state, <<c::utf8>>, state: :script_data_double_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_less_than_sign, input: <<?/, rest::binary>>} = state) do
+  defp step(
+         %{state: :script_data_double_escaped_less_than_sign, input: <<?/, rest::binary>>} = state
+       ) do
     emit_char(state, "/", state: :script_data_double_escape_end, buffer: "", input: rest)
   end
 
@@ -1927,13 +1942,15 @@ defmodule PureHtml.Tokenizer do
     {:emit, state.token, struct!(state, all_updates)}
   end
 
-  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) when tag in @rawtext_elements do
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates)
+       when tag in @rawtext_elements do
     base_updates = [state: :rawtext, token: nil]
     all_updates = Keyword.merge(base_updates, updates)
     {:emit, state.token, struct!(state, all_updates)}
   end
 
-  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) when tag in @rcdata_elements do
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates)
+       when tag in @rcdata_elements do
     base_updates = [state: :rcdata, token: nil]
     all_updates = Keyword.merge(base_updates, updates)
     {:emit, state.token, struct!(state, all_updates)}
