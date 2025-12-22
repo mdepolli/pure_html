@@ -273,6 +273,27 @@ defmodule PureHtml.TreeBuilder do
     {stack, af, nid}
   end
 
+  # Special handling for <a> - if already active, run adoption agency first
+  defp do_process_html_start_tag("a", attrs, _, stack, af, nid) do
+    {stack, nid} = in_body(stack, nid)
+
+    # Per HTML5 spec: if <a> is in AF, run adoption agency and remove it
+    {stack, af, nid} =
+      if has_formatting_entry?(af, "a") do
+        {stack, af, nid} = run_adoption_agency("a", stack, af, nid)
+        # Remove any remaining <a> from AF (in case adoption agency didn't)
+        af = remove_formatting_entry(af, "a")
+        {stack, af, nid}
+      else
+        {stack, af, nid}
+      end
+
+    {stack, nid} = push_element(stack, nid, "a", attrs)
+    [{id, _, _, _} | _] = stack
+    af = apply_noahs_ark([{id, "a", attrs} | af], "a", attrs)
+    {stack, af, nid}
+  end
+
   # Formatting elements - track in active formatting list
   defp do_process_html_start_tag(tag, attrs, _, stack, af, nid)
        when tag in @formatting_elements do
@@ -379,6 +400,24 @@ defmodule PureHtml.TreeBuilder do
     |> Enum.find_value(fn
       {{id, ^tag, attrs}, idx} -> {idx, {id, tag, attrs}}
       _ -> nil
+    end)
+  end
+
+  # Check if a formatting element exists in AF (before any marker)
+  defp has_formatting_entry?(af, tag) do
+    af
+    |> Enum.take_while(&(&1 != :marker))
+    |> Enum.any?(fn
+      {_, ^tag, _} -> true
+      _ -> false
+    end)
+  end
+
+  # Remove a formatting element entry from AF
+  defp remove_formatting_entry(af, tag) do
+    Enum.reject(af, fn
+      {_, ^tag, _} -> true
+      _ -> false
     end)
   end
 
@@ -516,13 +555,28 @@ defmodule PureHtml.TreeBuilder do
   # We want: closest_to_target{...{top_of_stack{...children}}}
   defp close_elements_into([], children), do: children
 
-  defp close_elements_into(elements, children) do
-    # Process in order: top_of_stack first (becomes innermost)
-    # Each subsequent element wraps around the previous result
-    Enum.reduce(elements, children, fn {id, tag, attrs, elem_children}, inner_children ->
-      closed = {id, tag, attrs, elem_children ++ inner_children}
-      [closed]
-    end)
+  defp close_elements_into(elements, fe_original_children) do
+    # Close each formatting element between (keeping their own children)
+    # Nest them if multiple: innermost first
+    # Then prepend to FE's original children as siblings
+    nested = nest_formatting_elements(elements)
+    [nested | fe_original_children]
+  end
+
+  # Nest multiple formatting elements: first in list (closest to FB) becomes innermost
+  # Stack order is [top..., closest_to_fe], we want closest_to_fe to be outermost
+  defp nest_formatting_elements(elements) do
+    # Reverse so closest to FE (deepest in stack) is first, then fold
+    elements
+    |> Enum.reverse()
+    |> do_nest_formatting()
+  end
+
+  defp do_nest_formatting([{id, tag, attrs, children}]), do: {id, tag, attrs, children}
+
+  defp do_nest_formatting([{id, tag, attrs, children} | rest]) do
+    inner = do_nest_formatting(rest)
+    {id, tag, attrs, [inner | children]}
   end
 
   # Find the furthest block - the special element CLOSEST to the formatting element
