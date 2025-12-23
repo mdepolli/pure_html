@@ -138,6 +138,14 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
     "#{indent}\"#{text}\"\n"
   end
 
+  # Template content document fragment
+  defp serialize_child({:content, children}, depth) do
+    indent = "| " <> String.duplicate("  ", depth)
+    content_line = "#{indent}content\n"
+    children_lines = children |> Enum.map(&serialize_child(&1, depth + 1)) |> Enum.join()
+    content_line <> children_lines
+  end
+
   defp serialize_child(node, depth) do
     serialize_node(node, depth)
   end

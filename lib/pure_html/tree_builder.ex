@@ -228,8 +228,10 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Check if we're inside a table (need foster parenting for non-table elements)
+  # Stop at template boundaries - template creates isolated parsing context
   defp in_table_context?([{_, "table", _, _} | _]), do: true
   defp in_table_context?([{_, tag, _, _} | _]) when tag in @table_context, do: true
+  defp in_table_context?([{_, "template", _, _} | _]), do: false
   defp in_table_context?([{_, "body", _, _} | _]), do: false
   defp in_table_context?([{_, "html", _, _} | _]), do: false
   defp in_table_context?([_ | rest]), do: in_table_context?(rest)
@@ -700,9 +702,9 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
 
   # Clear the stack back to a table body context per HTML5 spec
-  # Pop elements until we reach tbody, thead, tfoot, table, or html
+  # Pop elements until we reach tbody, thead, tfoot, table, template, or html
   defp clear_to_table_body_context([{_, tag, _, _} | _] = stack)
-       when tag in @table_sections or tag in ["table", "html"] do
+       when tag in @table_sections or tag in ["table", "template", "html"] do
     stack
   end
 
@@ -717,6 +719,7 @@ defmodule PureHtml.TreeBuilder do
   # Clear the stack to the table element itself (for </table>)
   # Foster-close any non-table elements to body
   defp clear_to_table_context([{_, "table", _, _} | _] = stack), do: stack
+  defp clear_to_table_context([{_, "template", _, _} | _] = stack), do: stack
   defp clear_to_table_context([{_, "html", _, _} | _] = stack), do: stack
 
   defp clear_to_table_context([{id, tag, attrs, children} | rest]) do
@@ -1166,6 +1169,12 @@ defmodule PureHtml.TreeBuilder do
 
   defp strip_ids({_id, {ns, tag}, attrs, children}) do
     {{ns, tag}, attrs, Enum.map(children, &strip_ids/1)}
+  end
+
+  defp strip_ids({id, "template", attrs, children}) when is_integer(id) do
+    # Template elements have their children wrapped in a content document fragment
+    stripped_children = Enum.map(children, &strip_ids/1)
+    {"template", attrs, [{:content, stripped_children}]}
   end
 
   defp strip_ids({id, tag, attrs, children}) when is_integer(id) do
