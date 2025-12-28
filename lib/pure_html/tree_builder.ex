@@ -239,9 +239,32 @@ defmodule PureHtml.TreeBuilder do
 
   defp do_process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
        when tag in @head_elements do
-    {stack, nid} = ensure_html(stack, nid)
-    {stack, nid} = ensure_head(stack, nid)
-    process_start_tag(stack, af, nid, tag, attrs, self_closing)
+    cond do
+      in_template?(stack) ->
+        # Inside template - just push element, don't mess with document head
+        {stack, nid} = push_element(stack, nid, tag, attrs)
+        {stack, af, nid}
+
+      has_body?(stack) ->
+        # Already in body context - template can go here too (HTML5 spec)
+        {stack, nid} = push_element(stack, nid, tag, attrs)
+        {stack, af, nid}
+
+      true ->
+        # In head context - ensure we're in head and reopen if needed
+        {stack, nid} = ensure_html(stack, nid)
+        {stack, nid} = ensure_head(stack, nid)
+
+        # If head was closed, reopen it to add the element inside
+        {stack, nid} =
+          if head_on_stack?(stack) do
+            {stack, nid}
+          else
+            reopen_head(stack, nid)
+          end
+
+        process_start_tag(stack, af, nid, tag, attrs, self_closing)
+    end
   end
 
   defp do_process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @void_elements do
@@ -873,6 +896,48 @@ defmodule PureHtml.TreeBuilder do
   defp has_body?([{_, "body", _, _} | _]), do: true
   defp has_body?([_ | rest]), do: has_body?(rest)
   defp has_body?([]), do: false
+
+  # Check if head is currently on the stack (not just as a child of html)
+  defp head_on_stack?([{_, "head", _, _} | _]), do: true
+  defp head_on_stack?([_ | rest]), do: head_on_stack?(rest)
+  defp head_on_stack?([]), do: false
+
+  # Reopen head by finding it in html's children and pushing it back onto stack
+  defp reopen_head([{html_id, "html", html_attrs, children}], nid) do
+    case find_and_remove_head(children, []) do
+      {head_tuple, remaining_children} ->
+        # Found head - push it back onto stack
+        {head_id, head_attrs, head_children} = head_tuple
+        stack = [
+          {head_id, "head", head_attrs, head_children},
+          {html_id, "html", html_attrs, remaining_children}
+        ]
+
+        {stack, nid}
+
+      nil ->
+        # No head found, create one
+        {[{nid, "head", %{}, []}, {html_id, "html", html_attrs, children}], nid + 1}
+    end
+  end
+
+  defp reopen_head([current | rest], nid) do
+    {rest, nid} = reopen_head(rest, nid)
+    {[current | rest], nid}
+  end
+
+  defp reopen_head([], nid), do: {[], nid}
+
+  # Find head in children list and return it along with remaining children
+  defp find_and_remove_head([], _acc), do: nil
+
+  defp find_and_remove_head([{id, "head", attrs, children} | rest], acc) do
+    {{id, attrs, children}, Enum.reverse(acc) ++ rest}
+  end
+
+  defp find_and_remove_head([child | rest], acc) do
+    find_and_remove_head(rest, [child | acc])
+  end
 
   # --------------------------------------------------------------------------
   # Foster parenting
