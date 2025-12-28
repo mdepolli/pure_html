@@ -811,11 +811,25 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
 
   defp in_body(stack, nid) do
-    {stack, nid} = ensure_html(stack, nid)
-    {stack, nid} = ensure_head(stack, nid)
-    stack = close_head(stack)
-    ensure_body(stack, nid)
+    if in_template?(stack) do
+      # Inside template - don't mess with head/body structure
+      # Content stays inside the template
+      {stack, nid}
+    else
+      {stack, nid} = ensure_html(stack, nid)
+      {stack, nid} = ensure_head(stack, nid)
+      stack = close_head(stack)
+      ensure_body(stack, nid)
+    end
   end
+
+  # Check if we're currently inside a template element
+  defp in_template?([{_, "template", _, _} | _]), do: true
+  defp in_template?([{_, "html", _, _} | _]), do: false
+  defp in_template?([{_, "body", _, _} | _]), do: false
+  defp in_template?([{_, "head", _, _} | _]), do: false
+  defp in_template?([_ | rest]), do: in_template?(rest)
+  defp in_template?([]), do: false
 
   defp ensure_html([], nid), do: {[{nid, "html", %{}, []}], nid + 1}
   defp ensure_html([{_, "html", _, _} | _] = stack, nid), do: {stack, nid}
@@ -1042,6 +1056,9 @@ defmodule PureHtml.TreeBuilder do
     finalize_pop({id, {:svg, tag}, attrs, children}, acc, rest)
   end
 
+  # Template creates a scope boundary - don't look beyond it
+  defp pop_until(_tag, [{_, "template", _, _} | _], _acc), do: :not_found
+
   defp pop_until(tag, [current | rest], acc) do
     pop_until(tag, rest, [current | acc])
   end
@@ -1116,9 +1133,18 @@ defmodule PureHtml.TreeBuilder do
   defp foster_aware_add_child([{_, next_tag, _, _} | _] = rest, child)
        when next_tag in @table_context do
     # Only foster-parent if child is not a valid table element
+    # But check if we have a body to foster to first
     case child do
-      {_, child_tag, _, _} when child_tag in @table_elements -> add_child(rest, child)
-      _ -> foster_add_to_body(rest, child, [])
+      {_, child_tag, _, _} when child_tag in @table_elements ->
+        add_child(rest, child)
+
+      _ ->
+        if has_body?(rest) do
+          foster_add_to_body(rest, child, [])
+        else
+          # No body to foster to (e.g., inside template in head) - add normally
+          add_child(rest, child)
+        end
     end
   end
 
