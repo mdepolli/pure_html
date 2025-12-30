@@ -41,9 +41,9 @@ defmodule PureHtml.TreeBuilder do
   @table_context ~w(table tbody thead tfoot tr)
   @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
 
-  @closes_p ~w(address article aside blockquote center details dialog dir div dl
+  @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
-               hr listing main menu nav ol p pre section summary table ul)
+               hr li listing main menu nav ol p pre section summary table ul)
 
   # Tags that implicitly close other tags (key always closes itself plus listed tags)
   @implicit_closes %{
