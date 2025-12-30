@@ -322,11 +322,16 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp do_process_html_start_tag("frameset", attrs, _, state) do
-    state
-    |> ensure_html()
-    |> close_head()
-    |> push_element("frameset", attrs)
+  defp do_process_html_start_tag("frameset", attrs, _, %State{stack: stack, mode: mode} = state) do
+    # Frameset is only valid before body content - ignore if body exists or has content
+    if mode == :in_body or has_tag?(stack, "body") or has_body_content?(stack) do
+      state
+    else
+      state
+      |> ensure_html()
+      |> close_head()
+      |> push_element("frameset", attrs)
+    end
   end
 
   # <frame> is only valid in frameset, ignore in body
@@ -1003,6 +1008,14 @@ defmodule PureHtml.TreeBuilder do
     Enum.any?(nodes, fn
       %{tag: t} -> t == tag
       _ -> false
+    end)
+  end
+
+  # Check if stack has any body content (elements other than html/head, or text)
+  defp has_body_content?(stack) do
+    Enum.any?(stack, fn
+      %{tag: tag} -> tag not in ["html", "head"]
+      _ -> true
     end)
   end
 
