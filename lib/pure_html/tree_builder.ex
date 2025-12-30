@@ -751,9 +751,11 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Clear active formatting list up to the last marker
-  defp clear_af_to_marker([:marker | rest]), do: rest
-  defp clear_af_to_marker([_ | rest]), do: clear_af_to_marker(rest)
-  defp clear_af_to_marker([]), do: []
+  defp clear_af_to_marker(af) do
+    af
+    |> Enum.drop_while(&(&1 != :marker))
+    |> Enum.drop(1)
+  end
 
   # --------------------------------------------------------------------------
   # Table context
@@ -1106,9 +1108,12 @@ defmodule PureHtml.TreeBuilder do
     {[{nid, {ns, tag}, attrs, []} | stack], nid + 1}
   end
 
-  defp foreign_namespace([{_, {ns, _}, _, _} | _]) when ns in [:svg, :math], do: ns
-  defp foreign_namespace([_ | rest]), do: foreign_namespace(rest)
-  defp foreign_namespace([]), do: nil
+  defp foreign_namespace(stack) do
+    Enum.find_value(stack, fn
+      {_, {ns, _}, _, _} when ns in [:svg, :math] -> ns
+      _ -> nil
+    end)
+  end
 
   defp add_child(stack, child)
 
