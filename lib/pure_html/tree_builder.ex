@@ -122,7 +122,7 @@ defmodule PureHtml.TreeBuilder do
     {stack, nid} = ensure_head(stack, nid)
     stack = close_head(stack)
 
-    if has_body?(stack) do
+    if has_tag?(stack, "body") do
       # Body already exists - ignore this tag (HTML5 spec allows adopting attrs but we skip that)
       {stack, af, nid}
     else
@@ -217,7 +217,7 @@ defmodule PureHtml.TreeBuilder do
 
   # Character data - whitespace before body is ignored
   defp process({:character, text}, stack, af, nid) do
-    case {has_body?(stack), String.trim(text)} do
+    case {has_tag?(stack, "body"), String.trim(text)} do
       {false, ""} ->
         {stack, af, nid}
 
@@ -274,7 +274,7 @@ defmodule PureHtml.TreeBuilder do
         # Inside template - use process_start_tag which handles void elements
         process_start_tag(stack, af, nid, tag, attrs, self_closing)
 
-      has_body?(stack) ->
+      has_tag?(stack, "body") ->
         # Already in body context - use process_start_tag which handles void elements
         process_start_tag(stack, af, nid, tag, attrs, self_closing)
 
@@ -285,7 +285,7 @@ defmodule PureHtml.TreeBuilder do
 
         # If head was closed, reopen it to add the element inside
         {stack, nid} =
-          if head_on_stack?(stack) do
+          if has_tag?(stack, "head") do
             {stack, nid}
           else
             reopen_head(stack, nid)
@@ -921,14 +921,10 @@ defmodule PureHtml.TreeBuilder do
 
   defp ensure_body([], nid), do: {[], nid}
 
-  defp has_body?([{_, "body", _, _} | _]), do: true
-  defp has_body?([_ | rest]), do: has_body?(rest)
-  defp has_body?([]), do: false
-
-  # Check if head is currently on the stack (not just as a child of html)
-  defp head_on_stack?([{_, "head", _, _} | _]), do: true
-  defp head_on_stack?([_ | rest]), do: head_on_stack?(rest)
-  defp head_on_stack?([]), do: false
+  # Generic helper to check if a tag exists in a list of stack elements
+  defp has_tag?(nodes, tag) do
+    Enum.any?(nodes, fn {_, t, _, _} -> t == tag end)
+  end
 
   # Reopen head by finding it in html's children and pushing it back onto stack
   defp reopen_head([{html_id, "html", html_attrs, children}], nid) do
@@ -936,6 +932,7 @@ defmodule PureHtml.TreeBuilder do
       {head_tuple, remaining_children} ->
         # Found head - push it back onto stack
         {head_id, head_attrs, head_children} = head_tuple
+
         stack = [
           {head_id, "head", head_attrs, head_children},
           {html_id, "html", html_attrs, remaining_children}
@@ -1199,7 +1196,7 @@ defmodule PureHtml.TreeBuilder do
 
   # Ensure head exists during finalization
   defp ensure_head_final([{html_id, "html", attrs, children}]) do
-    if has_head_child?(children) do
+    if has_tag?(children, "head") do
       [{html_id, "html", attrs, children}]
     else
       # Add empty head to html's children
@@ -1212,10 +1209,6 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp ensure_head_final([]), do: []
-
-  defp has_head_child?([{_, "head", _, _} | _]), do: true
-  defp has_head_child?([_ | rest]), do: has_head_child?(rest)
-  defp has_head_child?([]), do: false
 
   # Ensure body exists during finalization (doesn't need nid tracking)
   defp ensure_body_final([{_, "body", _, _} | _] = stack), do: stack
@@ -1253,7 +1246,7 @@ defmodule PureHtml.TreeBuilder do
         add_child(rest, child)
 
       _ ->
-        if has_body?(rest) do
+        if has_tag?(rest, "body") do
           foster_add_to_body(rest, child, [])
         else
           # No body to foster to (e.g., inside template in head) - add normally
