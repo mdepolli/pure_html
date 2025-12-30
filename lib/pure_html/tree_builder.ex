@@ -116,13 +116,19 @@ defmodule PureHtml.TreeBuilder do
     {stack, af, nid}
   end
 
-  # Explicit body tag
+  # Explicit body tag - ignore if body already exists
   defp process({:start_tag, "body", attrs, _}, stack, af, nid) do
     {stack, nid} = ensure_html(stack, nid)
     {stack, nid} = ensure_head(stack, nid)
     stack = close_head(stack)
-    {stack, nid} = push_element(stack, nid, "body", attrs)
-    {stack, af, nid}
+
+    if has_body?(stack) do
+      # Body already exists - ignore this tag (HTML5 spec allows adopting attrs but we skip that)
+      {stack, af, nid}
+    else
+      {stack, nid} = push_element(stack, nid, "body", attrs)
+      {stack, af, nid}
+    end
   end
 
   # SVG element - enter SVG namespace
@@ -265,14 +271,12 @@ defmodule PureHtml.TreeBuilder do
        when tag in @head_elements do
     cond do
       in_template?(stack) ->
-        # Inside template - just push element, don't mess with document head
-        {stack, nid} = push_element(stack, nid, tag, attrs)
-        {stack, af, nid}
+        # Inside template - use process_start_tag which handles void elements
+        process_start_tag(stack, af, nid, tag, attrs, self_closing)
 
       has_body?(stack) ->
-        # Already in body context - template can go here too (HTML5 spec)
-        {stack, nid} = push_element(stack, nid, tag, attrs)
-        {stack, af, nid}
+        # Already in body context - use process_start_tag which handles void elements
+        process_start_tag(stack, af, nid, tag, attrs, self_closing)
 
       true ->
         # In head context - ensure we're in head and reopen if needed
