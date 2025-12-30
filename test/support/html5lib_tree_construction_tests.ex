@@ -78,15 +78,22 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
   end
 
   @doc """
-  Serializes a document (tuple tree) to the html5lib tree format for comparison.
+  Serializes a document to the html5lib tree format for comparison.
 
-  Document format: `{doctype, tree}` where:
+  Document format: `{doctype, nodes}` where:
   - doctype: `{name, public_id, system_id}` or nil
-  - tree: `{tag, attrs, children}` tuple or nil
+  - nodes: list of top-level nodes (comments and html element)
   """
-  def serialize_document({doctype, tree}) do
+  def serialize_document({doctype, nodes}) when is_list(nodes) do
     doctype_str = serialize_doctype(doctype)
-    tree_str = if tree, do: serialize_node(tree, 0), else: ""
+    nodes_str = nodes |> Enum.map(&serialize_node(&1, 0)) |> Enum.join()
+    doctype_str <> nodes_str
+  end
+
+  # Legacy support for single node (shouldn't be needed but just in case)
+  def serialize_document({doctype, tree}) when is_tuple(tree) do
+    doctype_str = serialize_doctype(doctype)
+    tree_str = serialize_node(tree, 0)
     doctype_str <> tree_str
   end
 

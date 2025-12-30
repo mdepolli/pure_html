@@ -37,7 +37,19 @@ defmodule PureHtml.TreeBuilder do
     "optgroup" => ["optgroup"],
     "tr" => ["tr"],
     "td" => ["td", "th"],
-    "th" => ["td", "th"]
+    "th" => ["td", "th"],
+    # Heading elements close other heading elements
+    "h1" => ["h1", "h2", "h3", "h4", "h5", "h6"],
+    "h2" => ["h1", "h2", "h3", "h4", "h5", "h6"],
+    "h3" => ["h1", "h2", "h3", "h4", "h5", "h6"],
+    "h4" => ["h1", "h2", "h3", "h4", "h5", "h6"],
+    "h5" => ["h1", "h2", "h3", "h4", "h5", "h6"],
+    "h6" => ["h1", "h2", "h3", "h4", "h5", "h6"]
+  }
+
+  # Tag name corrections per HTML5 spec
+  @tag_corrections %{
+    "image" => "img"
   }
 
   # Formatting elements tracked for adoption agency algorithm
@@ -59,20 +71,29 @@ defmodule PureHtml.TreeBuilder do
   @doc """
   Builds a document from a stream of tokens.
 
-  Returns `{doctype, tree}` where tree is a nested tuple structure.
+  Returns `{doctype, nodes}` where nodes is a list of top-level nodes.
+  The list typically contains comments (if any) followed by the html element.
   """
   def build(tokens) do
-    {doctype, stack, _af, _next_id} =
-      Enum.reduce(tokens, {nil, [], [], 0}, fn
-        {:doctype, name, public_id, system_id, _}, {_, stack, af, nid} ->
-          {{name, public_id, system_id}, stack, af, nid}
+    # Accumulator: {doctype, stack, af, nid, pre_html_comments}
+    {doctype, stack, _af, _next_id, pre_html_comments} =
+      Enum.reduce(tokens, {nil, [], [], 0, []}, fn
+        {:doctype, name, public_id, system_id, _}, {_, stack, af, nid, comments} ->
+          {{name, public_id, system_id}, stack, af, nid, comments}
 
-        token, {doctype, stack, af, nid} ->
+        {:comment, text}, {doctype, [], af, nid, comments} ->
+          # Comment before html element - collect it
+          {doctype, [], af, nid, [{:comment, text} | comments]}
+
+        token, {doctype, stack, af, nid, comments} ->
           {new_stack, new_af, new_nid} = process(token, stack, af, nid)
-          {doctype, new_stack, new_af, new_nid}
+          {doctype, new_stack, new_af, new_nid, comments}
       end)
 
-    {doctype, finalize(stack)}
+    # Finalize and prepend pre-html comments
+    html_node = finalize(stack)
+    nodes = Enum.reverse(pre_html_comments) ++ [html_node]
+    {doctype, nodes}
   end
 
   # --------------------------------------------------------------------------
@@ -120,6 +141,9 @@ defmodule PureHtml.TreeBuilder do
 
   # Inside foreign content (SVG/MathML) - elements inherit namespace
   defp process({:start_tag, tag, attrs, self_closing}, stack, af, nid) do
+    # Apply tag name corrections (e.g., image -> img)
+    tag = Map.get(@tag_corrections, tag, tag)
+
     case foreign_namespace(stack) do
       nil ->
         process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
@@ -1152,6 +1176,7 @@ defmodule PureHtml.TreeBuilder do
   defp finalize(stack) do
     stack
     |> close_through_head()
+    |> ensure_head_final()
     |> ensure_body_final()
     |> do_finalize()
     |> strip_ids()
@@ -1167,6 +1192,26 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp close_through_head([]), do: [{0, "html", %{}, [{1, "head", %{}, []}]}]
+
+  # Ensure head exists during finalization
+  defp ensure_head_final([{html_id, "html", attrs, children}]) do
+    if has_head_child?(children) do
+      [{html_id, "html", attrs, children}]
+    else
+      # Add empty head to html's children
+      [{html_id, "html", attrs, [{0, "head", %{}, []} | children]}]
+    end
+  end
+
+  defp ensure_head_final([current | rest]) do
+    [current | ensure_head_final(rest)]
+  end
+
+  defp ensure_head_final([]), do: []
+
+  defp has_head_child?([{_, "head", _, _} | _]), do: true
+  defp has_head_child?([_ | rest]), do: has_head_child?(rest)
+  defp has_head_child?([]), do: false
 
   # Ensure body exists during finalization (doesn't need nid tracking)
   defp ensure_body_final([{_, "body", _, _} | _] = stack), do: stack
