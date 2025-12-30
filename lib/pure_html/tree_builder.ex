@@ -34,7 +34,7 @@ defmodule PureHtml.TreeBuilder do
   # Element categories
   # --------------------------------------------------------------------------
 
-  @void_elements ~w(area base basefont bgsound br col embed hr img input keygen link meta param source track wbr)
+  @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_cells ~w(td th)
   @table_sections ~w(tbody thead tfoot)
@@ -322,6 +322,18 @@ defmodule PureHtml.TreeBuilder do
     |> ensure_html()
     |> close_head()
     |> push_element("frameset", attrs)
+  end
+
+  # <frame> is only valid in frameset, ignore in body
+  defp do_process_html_start_tag("frame", _, _, state), do: state
+
+  # <col> is only valid in colgroup/table/template context, ignore in body
+  defp do_process_html_start_tag("col", attrs, _, %State{stack: stack, mode: mode} = state) do
+    if mode == :in_template or in_template?(stack) or in_table_context?(stack) do
+      add_child_to_stack(state, {"col", attrs, []})
+    else
+      state
+    end
   end
 
   # <hr> in select context should close option/optgroup first and skip in_body
