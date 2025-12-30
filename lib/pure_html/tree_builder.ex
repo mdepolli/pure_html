@@ -33,8 +33,8 @@ defmodule PureHtml.TreeBuilder do
     "li" => ["li"],
     "dt" => ["dt", "dd"],
     "dd" => ["dt", "dd"],
-    "option" => ["option", "optgroup"],
-    "optgroup" => ["optgroup"],
+    "option" => ["option"],
+    "optgroup" => ["option", "optgroup"],
     "tr" => ["tr"],
     "td" => ["td", "th"],
     "th" => ["td", "th"],
@@ -161,7 +161,13 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # End tags for implicit elements
-  defp process({:end_tag, "html"}, stack, af, nid), do: {stack, af, nid}
+  # </html> closes head and creates body (transitions to "after body" mode)
+  defp process({:end_tag, "html"}, stack, af, nid) do
+    stack = close_head(stack)
+    {stack, nid} = ensure_body(stack, nid)
+    {stack, af, nid}
+  end
+
   defp process({:end_tag, "head"}, stack, af, nid), do: {close_head(stack), af, nid}
   defp process({:end_tag, "body"}, stack, af, nid), do: {stack, af, nid}
 
@@ -181,6 +187,30 @@ defmodule PureHtml.TreeBuilder do
   defp process({:end_tag, tag}, stack, af, nid) when tag in @formatting_elements do
     {stack, af, nid} = run_adoption_agency(tag, stack, af, nid)
     {stack, af, nid}
+  end
+
+  # End tag for p - if no p in scope, create empty p (only in body context)
+  defp process({:end_tag, "p"}, stack, af, nid) do
+    case close_tag("p", stack) do
+      ^stack ->
+        # No p was found
+        if has_tag?(stack, "head") do
+          # In head context - ignore
+          {stack, af, nid}
+        else
+          # In body context (or no structure yet) - create empty p
+          {stack, nid} = in_body(stack, nid)
+          {add_child(stack, {nid, "p", %{}, []}), af, nid + 1}
+        end
+
+      new_stack ->
+        {new_stack, af, nid}
+    end
+  end
+
+  # End tag for br - treat as start tag (HTML5 spec)
+  defp process({:end_tag, "br"}, stack, af, nid) do
+    process({:start_tag, "br", %{}, true}, stack, af, nid)
   end
 
   # End tag - pop and nest in parent
@@ -286,20 +316,28 @@ defmodule PureHtml.TreeBuilder do
         process_start_tag(stack, af, nid, tag, attrs, self_closing)
 
       true ->
-        # In head context - ensure we're in head and reopen if needed
+        # In head context - ensure we're in head
         {stack, nid} = ensure_html(stack, nid)
         {stack, nid} = ensure_head(stack, nid)
 
-        # If head was closed, reopen it to add the element inside
-        {stack, nid} =
+        # If head is not on stack, reopen it temporarily to add the element
+        stack =
           if has_tag?(stack, "head") do
-            {stack, nid}
+            stack
           else
-            reopen_head(stack, nid)
+            reopen_head_for_element(stack)
           end
 
         process_start_tag(stack, af, nid, tag, attrs, self_closing)
     end
+  end
+
+  # Frameset replaces body - it's a sibling of head, not a child of body
+  defp do_process_html_start_tag("frameset", attrs, _, stack, af, nid) do
+    {stack, nid} = ensure_html(stack, nid)
+    stack = close_head(stack)
+    {stack, nid} = push_element(stack, nid, "frameset", attrs)
+    {stack, af, nid}
   end
 
   defp do_process_html_start_tag(tag, attrs, _, stack, af, nid) when tag in @void_elements do
@@ -571,7 +609,11 @@ defmodule PureHtml.TreeBuilder do
     af = List.delete_at(af, fe_idx)
     # Remove all formatting elements that were between FB and FE
     formatting_ids = MapSet.new(Enum.map(formatting_between, fn {id, _, _, _} -> id end))
-    Enum.reject(af, fn {id, _, _} -> MapSet.member?(formatting_ids, id) end)
+
+    Enum.reject(af, fn
+      :marker -> false
+      {id, _, _} -> MapSet.member?(formatting_ids, id)
+    end)
   end
 
   # Wrap children of each element with a clone of the formatting element
@@ -738,7 +780,10 @@ defmodule PureHtml.TreeBuilder do
     matching_indices =
       af
       |> Enum.with_index()
-      |> Enum.filter(fn {{_id, t, a}, _idx} -> t == tag and a == attrs end)
+      |> Enum.filter(fn
+        {:marker, _idx} -> false
+        {{_id, t, a}, _idx} -> t == tag and a == attrs
+      end)
       |> Enum.map(fn {_entry, idx} -> idx end)
 
     if length(matching_indices) > 3 do
@@ -933,42 +978,27 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Reopen head by finding it in html's children and pushing it back onto stack
-  defp reopen_head([{html_id, "html", html_attrs, children}], nid) do
-    case find_and_remove_head(children, []) do
-      {head_tuple, remaining_children} ->
-        # Found head - push it back onto stack
-        {head_id, head_attrs, head_children} = head_tuple
+  defp reopen_head_for_element([{html_id, "html", html_attrs, children}]) do
+    case Enum.split_while(children, &(not match?({_, "head", _, _}, &1))) do
+      {before, [{id, "head", head_attrs, head_children} | after_head]} ->
+        remaining_children = Enum.reverse(before) ++ after_head
 
-        stack = [
-          {head_id, "head", head_attrs, head_children},
+        [
+          {id, "head", head_attrs, head_children},
           {html_id, "html", html_attrs, remaining_children}
         ]
 
-        {stack, nid}
-
-      nil ->
+      _ ->
         # No head found, create one
-        {[{nid, "head", %{}, []}, {html_id, "html", html_attrs, children}], nid + 1}
+        [{0, "head", %{}, []}, {html_id, "html", html_attrs, children}]
     end
   end
 
-  defp reopen_head([current | rest], nid) do
-    {rest, nid} = reopen_head(rest, nid)
-    {[current | rest], nid}
+  defp reopen_head_for_element([current | rest]) do
+    [current | reopen_head_for_element(rest)]
   end
 
-  defp reopen_head([], nid), do: {[], nid}
-
-  # Find head in children list and return it along with remaining children
-  defp find_and_remove_head([], _acc), do: nil
-
-  defp find_and_remove_head([{id, "head", attrs, children} | rest], acc) do
-    {{id, attrs, children}, Enum.reverse(acc) ++ rest}
-  end
-
-  defp find_and_remove_head([child | rest], acc) do
-    find_and_remove_head(rest, [child | acc])
-  end
+  defp reopen_head_for_element([]), do: []
 
   # --------------------------------------------------------------------------
   # Foster parenting
@@ -1208,8 +1238,8 @@ defmodule PureHtml.TreeBuilder do
     if has_tag?(children, "head") do
       [{html_id, "html", attrs, children}]
     else
-      # Add empty head to html's children
-      [{html_id, "html", attrs, [{0, "head", %{}, []} | children]}]
+      # Add empty head to end of children (oldest position, will be first after reversal)
+      [{html_id, "html", attrs, children ++ [{0, "head", %{}, []}]}]
     end
   end
 
@@ -1220,10 +1250,17 @@ defmodule PureHtml.TreeBuilder do
   defp ensure_head_final([]), do: []
 
   # Ensure body exists during finalization (doesn't need nid tracking)
+  # Skip if body or frameset already exists
   defp ensure_body_final([{_, "body", _, _} | _] = stack), do: stack
+  defp ensure_body_final([{_, "frameset", _, _} | _] = stack), do: stack
 
   defp ensure_body_final([{html_id, "html", attrs, children}]) do
-    [{0, "body", %{}, []}, {html_id, "html", attrs, children}]
+    # Don't add body if frameset exists in html's children
+    if has_tag?(children, "frameset") do
+      [{html_id, "html", attrs, children}]
+    else
+      [{0, "body", %{}, []}, {html_id, "html", attrs, children}]
+    end
   end
 
   defp ensure_body_final([current | rest]) do
