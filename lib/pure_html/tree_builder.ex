@@ -45,25 +45,26 @@ defmodule PureHtml.TreeBuilder do
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
                hr listing main menu nav ol p pre section summary table ul)
 
+  # Tags that implicitly close other tags (key always closes itself plus listed tags)
   @self_closing %{
-    "li" => ["li"],
-    "dt" => ["dt", "dd"],
-    "dd" => ["dt", "dd"],
-    "option" => ["option"],
-    "optgroup" => ["option", "optgroup"],
-    "tr" => ["tr"],
-    "td" => ["td", "th"],
-    "th" => ["td", "th"],
-    "h1" => ["h1", "h2", "h3", "h4", "h5", "h6"],
-    "h2" => ["h1", "h2", "h3", "h4", "h5", "h6"],
-    "h3" => ["h1", "h2", "h3", "h4", "h5", "h6"],
-    "h4" => ["h1", "h2", "h3", "h4", "h5", "h6"],
-    "h5" => ["h1", "h2", "h3", "h4", "h5", "h6"],
-    "h6" => ["h1", "h2", "h3", "h4", "h5", "h6"],
-    "rb" => ["rb", "rt", "rtc", "rp"],
-    "rt" => ["rb", "rt", "rp"],
-    "rtc" => ["rb", "rt", "rtc", "rp"],
-    "rp" => ["rb", "rt", "rp"]
+    "li" => [],
+    "dt" => ["dd"],
+    "dd" => ["dt"],
+    "option" => [],
+    "optgroup" => ["option"],
+    "tr" => [],
+    "td" => ["th"],
+    "th" => ["td"],
+    "h1" => ["h2", "h3", "h4", "h5", "h6"],
+    "h2" => ["h1", "h3", "h4", "h5", "h6"],
+    "h3" => ["h1", "h2", "h4", "h5", "h6"],
+    "h4" => ["h1", "h2", "h3", "h5", "h6"],
+    "h5" => ["h1", "h2", "h3", "h4", "h6"],
+    "h6" => ["h1", "h2", "h3", "h4", "h5"],
+    "rb" => ["rt", "rtc", "rp"],
+    "rt" => ["rb", "rp"],
+    "rtc" => ["rb", "rt", "rp"],
+    "rp" => ["rb", "rt"]
   }
 
   @tag_corrections %{"image" => "img"}
@@ -865,7 +866,9 @@ defmodule PureHtml.TreeBuilder do
     find_p_in_stack(rest, [elem | acc])
   end
 
-  for {tag, closes} <- @self_closing do
+  for {tag, also_closes} <- @self_closing do
+    closes = [tag | also_closes]
+
     defp maybe_close_same(%State{stack: [%{tag: top_tag} = elem | rest]} = state, unquote(tag))
          when top_tag in unquote(closes) do
       %{state | stack: add_child(rest, elem)}
