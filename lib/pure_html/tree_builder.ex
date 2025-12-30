@@ -46,7 +46,7 @@ defmodule PureHtml.TreeBuilder do
                hr listing main menu nav ol p pre section summary table ul)
 
   # Tags that implicitly close other tags (key always closes itself plus listed tags)
-  @self_closing %{
+  @implicit_closes %{
     "li" => [],
     "dt" => ["dd"],
     "dd" => ["dt"],
@@ -866,7 +866,7 @@ defmodule PureHtml.TreeBuilder do
     find_p_in_stack(rest, [elem | acc])
   end
 
-  for {tag, also_closes} <- @self_closing do
+  for {tag, also_closes} <- @implicit_closes do
     closes = [tag | also_closes]
 
     defp maybe_close_same(%State{stack: [%{tag: top_tag} = elem | rest]} = state, unquote(tag))
