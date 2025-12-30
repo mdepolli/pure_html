@@ -34,7 +34,7 @@ defmodule PureHtml.TreeBuilder do
   # Element categories
   # --------------------------------------------------------------------------
 
-  @void_elements ~w(area base br col embed hr img input link meta param source track wbr)
+  @void_elements ~w(area base br col embed hr img input keygen link meta param source track wbr)
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_cells ~w(td th)
   @table_sections ~w(tbody thead tfoot)
