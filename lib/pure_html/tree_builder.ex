@@ -257,15 +257,22 @@ defmodule PureHtml.TreeBuilder do
     do_process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
   end
 
+  # Generic scope check: search for target_tags, stopping at boundary_tags
+  defp in_scope?(nodes, target_tags, boundary_tags) do
+    Enum.reduce_while(nodes, false, fn {_, tag, _, _}, _acc ->
+      cond do
+        tag in target_tags -> {:halt, true}
+        tag in boundary_tags -> {:halt, false}
+        true -> {:cont, false}
+      end
+    end)
+  end
+
   # Check if we're inside a table (need foster parenting for non-table elements)
   # Stop at template boundaries - template creates isolated parsing context
-  defp in_table_context?([{_, "table", _, _} | _]), do: true
-  defp in_table_context?([{_, tag, _, _} | _]) when tag in @table_context, do: true
-  defp in_table_context?([{_, "template", _, _} | _]), do: false
-  defp in_table_context?([{_, "body", _, _} | _]), do: false
-  defp in_table_context?([{_, "html", _, _} | _]), do: false
-  defp in_table_context?([_ | rest]), do: in_table_context?(rest)
-  defp in_table_context?([]), do: false
+  defp in_table_context?(stack) do
+    in_scope?(stack, ["table" | @table_context], ["template", "body", "html"])
+  end
 
   defp do_process_html_start_tag(tag, attrs, self_closing, stack, af, nid)
        when tag in @head_elements do
@@ -875,12 +882,9 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Check if we're currently inside a template element
-  defp in_template?([{_, "template", _, _} | _]), do: true
-  defp in_template?([{_, "html", _, _} | _]), do: false
-  defp in_template?([{_, "body", _, _} | _]), do: false
-  defp in_template?([{_, "head", _, _} | _]), do: false
-  defp in_template?([_ | rest]), do: in_template?(rest)
-  defp in_template?([]), do: false
+  defp in_template?(stack) do
+    in_scope?(stack, ["template"], ["html", "body", "head"])
+  end
 
   defp ensure_html([], nid), do: {[{nid, "html", %{}, []}], nid + 1}
   defp ensure_html([{_, "html", _, _} | _] = stack, nid), do: {stack, nid}
