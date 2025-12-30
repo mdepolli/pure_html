@@ -871,16 +871,47 @@ defmodule PureHtml.TreeBuilder do
     find_p_in_stack(rest, [elem | acc])
   end
 
+  # Scope boundaries that prevent implicit closing
+  @implicit_close_boundaries ~w(table template body html)
+
   for {tag, also_closes} <- @implicit_closes do
     closes = [tag | also_closes]
 
-    defp maybe_close_same(%State{stack: [%{tag: top_tag} = elem | rest]} = state, unquote(tag))
-         when top_tag in unquote(closes) do
-      %{state | stack: add_child(rest, elem)}
+    defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
+      case pop_to_implicit_close(stack, unquote(closes), []) do
+        {:ok, new_stack} -> %{state | stack: new_stack}
+        :not_found -> state
+      end
     end
   end
 
   defp maybe_close_same(state, _tag), do: state
+
+  defp pop_to_implicit_close([], _closes, _acc), do: :not_found
+
+  defp pop_to_implicit_close([%{tag: tag} | _], _closes, _acc)
+       when tag in @implicit_close_boundaries,
+       do: :not_found
+
+  defp pop_to_implicit_close([%{tag: tag} = elem | rest], closes, acc) do
+    if tag in closes do
+      # Found match - first close accumulated elements into the target, then close target
+      closed_elem = Enum.reduce(acc, elem, &add_child_to_elem/2)
+      {:ok, add_child(rest, closed_elem)}
+    else
+      pop_to_implicit_close(rest, closes, [elem | acc])
+    end
+  end
+
+  defp add_child_to_elem(child, parent) do
+    %{parent | children: [close_element(child) | parent.children]}
+  end
+
+  defp close_element(%{children: children} = elem) do
+    %{elem | children: Enum.reverse(children)}
+  end
+
+  defp close_element(other), do: other
 
   # --------------------------------------------------------------------------
   # Mode transitions
