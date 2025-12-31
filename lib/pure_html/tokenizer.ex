@@ -136,8 +136,17 @@ defmodule PureHtml.Tokenizer do
     :rawtext,
     :rcdata,
     :script_data,
+    :script_data_less_than_sign,
+    :script_data_escape_start,
+    :script_data_escape_start_dash,
     :script_data_escaped,
-    :script_data_double_escaped
+    :script_data_escaped_dash,
+    :script_data_escaped_dash_dash,
+    :script_data_escaped_less_than_sign,
+    :script_data_double_escaped,
+    :script_data_double_escaped_dash,
+    :script_data_double_escaped_dash_dash,
+    :script_data_double_escaped_less_than_sign
   ]
 
   defp next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
@@ -427,9 +436,10 @@ defmodule PureHtml.Tokenizer do
 
   defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
-    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    state = append_to_tag_name(state, char)
-    continue(state, buffer: state.buffer <> char, input: rest)
+    lower_char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    state = append_to_tag_name(state, lower_char)
+    # Keep original case in buffer for potential emission
+    continue(state, buffer: state.buffer <> <<c>>, input: rest)
   end
 
   defp step(%{state: :script_data_end_tag_name, input: _} = state) do
@@ -572,9 +582,10 @@ defmodule PureHtml.Tokenizer do
 
   defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
-    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    state = append_to_tag_name(state, char)
-    continue(state, buffer: state.buffer <> char, input: rest)
+    lower_char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
+    state = append_to_tag_name(state, lower_char)
+    # Keep original case in buffer for potential emission
+    continue(state, buffer: state.buffer <> <<c>>, input: rest)
   end
 
   defp step(%{state: :script_data_escaped_end_tag_name, input: _} = state) do
