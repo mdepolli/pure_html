@@ -191,7 +191,7 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process({:end_tag, tag}, state) when tag in @formatting_elements do
-    run_adoption_agency(tag, state)
+    run_adoption_agency(state, tag)
   end
 
   defp process({:end_tag, "p"}, %State{stack: stack} = state) do
@@ -482,13 +482,13 @@ defmodule PureHtml.TreeBuilder do
   # Adoption agency algorithm
   # --------------------------------------------------------------------------
 
-  defp run_adoption_agency(subject, state) do
-    run_adoption_agency_outer_loop(subject, state, 0)
+  defp run_adoption_agency(state, subject) do
+    run_adoption_agency_outer_loop(state, subject, 0)
   end
 
-  defp run_adoption_agency_outer_loop(_subject, state, iteration) when iteration >= 8, do: state
+  defp run_adoption_agency_outer_loop(state, _subject, iteration) when iteration >= 8, do: state
 
-  defp run_adoption_agency_outer_loop(subject, %State{stack: stack, af: af} = state, iteration) do
+  defp run_adoption_agency_outer_loop(%State{stack: stack, af: af} = state, subject, iteration) do
     case find_formatting_entry(af, subject) do
       nil ->
         if iteration == 0 do
@@ -519,7 +519,7 @@ defmodule PureHtml.TreeBuilder do
                     fb_idx
                   )
 
-                run_adoption_agency_outer_loop(subject, state, iteration + 1)
+                run_adoption_agency_outer_loop(state, subject, iteration + 1)
             end
         end
     end
@@ -582,8 +582,7 @@ defmodule PureHtml.TreeBuilder do
 
     fb_empty = %{ref: fb_ref, tag: fb_tag, attrs: fb_attrs, children: []}
 
-    formatting_to_clone =
-      Enum.map(formatting_to_clone_list, fn %{tag: tag, attrs: attrs} -> {tag, attrs} end)
+    formatting_to_clone = Enum.map(formatting_to_clone_list, &{&1.tag, &1.attrs})
 
     formatting_stack_elements = create_formatting_stack_elements(formatting_to_clone)
 
@@ -617,7 +616,7 @@ defmodule PureHtml.TreeBuilder do
 
   defp remove_formatting_from_af(af, fe_idx, formatting_between) do
     af = List.delete_at(af, fe_idx)
-    formatting_refs = MapSet.new(Enum.map(formatting_between, fn %{ref: ref} -> ref end))
+    formatting_refs = MapSet.new(formatting_between, & &1.ref)
 
     Enum.reject(af, fn
       :marker -> false
@@ -732,8 +731,9 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_existing_a(%State{af: af} = state) do
     if has_formatting_entry?(af, "a") do
-      state = run_adoption_agency("a", state)
-      %{state | af: remove_formatting_entry(state.af, "a")}
+      state
+      |> run_adoption_agency("a")
+      |> then(fn s -> %{s | af: remove_formatting_entry(s.af, "a")} end)
     else
       state
     end
@@ -902,10 +902,9 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
 
   # Already in body - fast path (O(1) instead of scanning stack)
-  defp transition_to(%State{mode: :in_body} = state, :in_body), do: state
-  defp transition_to(%State{mode: :in_select} = state, :in_body), do: state
-  defp transition_to(%State{mode: :in_table} = state, :in_body), do: state
-  defp transition_to(%State{mode: :in_template} = state, :in_body), do: state
+  defp transition_to(%State{mode: mode} = state, :in_body)
+       when mode in [:in_body, :in_select, :in_table, :in_template],
+       do: state
 
   # Transition to in_body from earlier modes
   defp transition_to(%State{mode: :initial} = state, :in_body) do
