@@ -276,16 +276,11 @@ defmodule PureHtml.TreeBuilder do
 
   defp process_html_start_tag(tag, attrs, self_closing, %State{stack: stack} = state)
        when tag not in @table_elements do
-    cond do
-      # Select creates a boundary - don't foster parent from inside select
-      in_select?(stack) ->
-        do_process_html_start_tag(tag, attrs, self_closing, state)
-
-      in_table_context?(stack) ->
-        process_foster_start_tag(tag, attrs, self_closing, state)
-
-      true ->
-        do_process_html_start_tag(tag, attrs, self_closing, state)
+    # Foster parent in table context, unless inside select (which creates a boundary)
+    if in_table_context?(stack) and not in_select?(stack) do
+      process_foster_start_tag(tag, attrs, self_closing, state)
+    else
+      do_process_html_start_tag(tag, attrs, self_closing, state)
     end
   end
 
@@ -300,30 +295,14 @@ defmodule PureHtml.TreeBuilder do
          %State{stack: stack, mode: mode} = state
        )
        when tag in @head_elements do
-    cond do
-      mode == :in_template ->
-        process_start_tag(state, tag, attrs, self_closing)
-
-      mode in [:in_body, :in_table, :in_select] ->
-        process_start_tag(state, tag, attrs, self_closing)
-
-      has_tag?(stack, "body") ->
-        process_start_tag(state, tag, attrs, self_closing)
-
-      true ->
-        state =
-          state
-          |> ensure_html()
-          |> ensure_head()
-
-        state =
-          if state.mode == :in_head do
-            state
-          else
-            %{state | stack: reopen_head_for_element(state.stack)}
-          end
-
-        process_start_tag(state, tag, attrs, self_closing)
+    if mode in [:in_template, :in_body, :in_table, :in_select] or has_tag?(stack, "body") do
+      process_start_tag(state, tag, attrs, self_closing)
+    else
+      state
+      |> ensure_html()
+      |> ensure_head()
+      |> maybe_reopen_head()
+      |> process_start_tag(tag, attrs, self_closing)
     end
   end
 
@@ -380,14 +359,12 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @table_cells do
-    state =
-      state
-      |> in_body()
-      |> clear_to_table_body_context()
-      |> ensure_table_context()
-
-    state = push_element(state, tag, attrs)
-    %{state | af: [:marker | state.af]}
+    state
+    |> in_body()
+    |> clear_to_table_body_context()
+    |> ensure_table_context()
+    |> push_element(tag, attrs)
+    |> then(fn s -> %{s | af: [:marker | s.af]} end)
   end
 
   defp do_process_html_start_tag("tr", attrs, _, state) do
@@ -399,29 +376,18 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp do_process_html_start_tag("a", attrs, _, state) do
-    state = in_body(state)
-
-    state =
-      if has_formatting_entry?(state.af, "a") do
-        state = run_adoption_agency("a", state)
-        %{state | af: remove_formatting_entry(state.af, "a")}
-      else
-        state
-      end
-
-    state = push_element(state, "a", attrs)
-    [%{ref: ref} | _] = state.stack
-    %{state | af: apply_noahs_ark([{ref, "a", attrs} | state.af], "a", attrs)}
+    state
+    |> in_body()
+    |> maybe_close_existing_a()
+    |> push_element("a", attrs)
+    |> add_formatting_entry("a", attrs)
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @formatting_elements do
-    state =
-      state
-      |> in_body()
-      |> push_element(tag, attrs)
-
-    [%{ref: ref} | _] = state.stack
-    %{state | af: apply_noahs_ark([{ref, tag, attrs} | state.af], tag, attrs)}
+    state
+    |> in_body()
+    |> push_element(tag, attrs)
+    |> add_formatting_entry(tag, attrs)
   end
 
   # Table, select, and template push mode onto stack
@@ -760,6 +726,19 @@ defmodule PureHtml.TreeBuilder do
     end)
   end
 
+  defp add_formatting_entry(%State{stack: [%{ref: ref} | _], af: af} = state, tag, attrs) do
+    %{state | af: apply_noahs_ark([{ref, tag, attrs} | af], tag, attrs)}
+  end
+
+  defp maybe_close_existing_a(%State{af: af} = state) do
+    if has_formatting_entry?(af, "a") do
+      state = run_adoption_agency("a", state)
+      %{state | af: remove_formatting_entry(state.af, "a")}
+    else
+      state
+    end
+  end
+
   defp apply_noahs_ark(af, tag, attrs) do
     matching_indices =
       af
@@ -1071,6 +1050,12 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp reopen_head_for_element([]), do: []
+
+  defp maybe_reopen_head(%State{mode: :in_head} = state), do: state
+
+  defp maybe_reopen_head(%State{stack: stack} = state) do
+    %{state | stack: reopen_head_for_element(stack)}
+  end
 
   # --------------------------------------------------------------------------
   # Foster parenting
