@@ -62,6 +62,7 @@ defmodule PureHtml.Tokenizer do
 
   # Guards
   defguardp is_ascii_alpha(c) when c in ?a..?z or c in ?A..?Z
+  defguardp is_ascii_lower(c) when c in ?a..?z
   defguardp is_ascii_upper(c) when c in ?A..?Z
   defguardp is_ascii_digit(c) when c in ?0..?9
   defguardp is_ascii_whitespace(c) when c in ~c[\t\n\f ]
@@ -281,10 +282,17 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
-       when is_ascii_alpha(c) do
-    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    state = append_to_tag_name(state, char)
-    continue(state, buffer: state.buffer <> char, input: rest)
+       when is_ascii_upper(c) do
+    state
+    |> append_to_tag_name(<<c + 32>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
+  end
+
+  defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_lower(c) do
+    state
+    |> append_to_tag_name(<<c>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
   defp step(%{state: :rawtext_end_tag_name, input: _} = state) do
@@ -358,10 +366,17 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
-       when is_ascii_alpha(c) do
-    char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    state = append_to_tag_name(state, char)
-    continue(state, buffer: state.buffer <> char, input: rest)
+       when is_ascii_upper(c) do
+    state
+    |> append_to_tag_name(<<c + 32>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
+  end
+
+  defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_lower(c) do
+    state
+    |> append_to_tag_name(<<c>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
   defp step(%{state: :rcdata_end_tag_name, input: _} = state) do
@@ -435,11 +450,17 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
-       when is_ascii_alpha(c) do
-    lower_char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    state = append_to_tag_name(state, lower_char)
-    # Keep original case in buffer for potential emission
-    continue(state, buffer: state.buffer <> <<c>>, input: rest)
+       when is_ascii_upper(c) do
+    state
+    |> append_to_tag_name(<<c + 32>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
+  end
+
+  defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_lower(c) do
+    state
+    |> append_to_tag_name(<<c>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
   defp step(%{state: :script_data_end_tag_name, input: _} = state) do
@@ -581,11 +602,17 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
-       when is_ascii_alpha(c) do
-    lower_char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
-    state = append_to_tag_name(state, lower_char)
-    # Keep original case in buffer for potential emission
-    continue(state, buffer: state.buffer <> <<c>>, input: rest)
+       when is_ascii_upper(c) do
+    state
+    |> append_to_tag_name(<<c + 32>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
+  end
+
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
+       when is_ascii_lower(c) do
+    state
+    |> append_to_tag_name(<<c>>)
+    |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
   defp step(%{state: :script_data_escaped_end_tag_name, input: _} = state) do

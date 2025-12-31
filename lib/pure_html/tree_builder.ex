@@ -293,7 +293,12 @@ defmodule PureHtml.TreeBuilder do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp do_process_html_start_tag(tag, attrs, self_closing, %State{stack: stack, mode: mode} = state)
+  defp do_process_html_start_tag(
+         tag,
+         attrs,
+         self_closing,
+         %State{stack: stack, mode: mode} = state
+       )
        when tag in @head_elements do
     cond do
       mode == :in_template ->
