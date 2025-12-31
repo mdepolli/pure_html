@@ -50,6 +50,7 @@ defmodule PureHtml.TreeBuilder do
     "li" => [],
     "dt" => ["dd"],
     "dd" => ["dt"],
+    "button" => [],
     "option" => [],
     "optgroup" => ["option"],
     "tr" => [],
@@ -195,17 +196,17 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process({:end_tag, "p"}, %State{stack: stack} = state) do
-    case close_tag("p", stack) do
-      ^stack ->
+    case close_p_in_scope(stack) do
+      {:found, new_stack} ->
+        %{state | stack: new_stack}
+
+      :not_found ->
         if has_tag?(stack, "head") do
           state
         else
           state = in_body(state)
           add_child_to_stack(state, new_element("p"))
         end
-
-      new_stack ->
-        %{state | stack: new_stack}
     end
   end
 
@@ -845,10 +846,37 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
+  # Button scope boundaries for closing <p>
+  @button_scope_boundaries ~w(applet caption html table td th marquee object template button)
+
+  # Close <p> respecting button scope (for </p> end tag)
+  defp close_p_in_scope(stack) do
+    case find_p_in_stack(stack, []) do
+      nil ->
+        :not_found
+
+      {above_p, p_elem, below_p} ->
+        nested_above =
+          above_p
+          |> Enum.reduce(nil, fn elem, inner ->
+            children = if inner, do: [inner | elem.children], else: elem.children
+            %{elem | children: children}
+          end)
+
+        p_children = if nested_above, do: [nested_above | p_elem.children], else: p_elem.children
+        closed_p = %{p_elem | children: p_children}
+        {:found, foster_aware_add_child(below_p, closed_p)}
+    end
+  end
+
   defp find_p_in_stack([], _acc), do: nil
 
   defp find_p_in_stack([%{ref: ref, tag: "p", attrs: attrs, children: children} | rest], acc) do
-    {Enum.reverse(acc), %{ref: ref, attrs: attrs, children: children}, rest}
+    {Enum.reverse(acc), %{ref: ref, tag: "p", attrs: attrs, children: children}, rest}
+  end
+
+  defp find_p_in_stack([%{tag: tag} | _rest], _acc) when tag in @button_scope_boundaries do
+    nil
   end
 
   defp find_p_in_stack([elem | rest], acc) do
