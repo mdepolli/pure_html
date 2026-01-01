@@ -488,16 +488,10 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Close option/optgroup if we're in select context
-  # <hr> in select should close option first, then optgroup
   defp close_option_optgroup_in_select(%State{stack: [%{tag: tag} = elem | rest]} = state)
        when tag in ["option", "optgroup"] do
-    if in_select?(rest) do
-      new_state = %{state | stack: foster_aware_add_child(rest, elem)}
-      # Recursively close optgroup if option was closed
-      close_option_optgroup_in_select(new_state)
-    else
-      state
-    end
+    %{state | stack: foster_aware_add_child(rest, elem)}
+    |> close_option_optgroup_in_select()
   end
 
   defp close_option_optgroup_in_select(state), do: state
