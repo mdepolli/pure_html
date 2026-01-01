@@ -820,12 +820,12 @@ defmodule PureHtml.TreeBuilder do
   defp do_clear_to_table_context([%{tag: "table"} | _] = stack), do: stack
   defp do_clear_to_table_context([%{tag: "template"} | _] = stack), do: stack
   defp do_clear_to_table_context([%{tag: "html"} | _] = stack), do: stack
+  defp do_clear_to_table_context([_ | []] = stack), do: stack
+  defp do_clear_to_table_context([]), do: []
 
   defp do_clear_to_table_context([elem | rest]) do
     do_clear_to_table_context(foster_aware_add_child(rest, elem))
   end
-
-  defp do_clear_to_table_context([]), do: []
 
   defp ensure_table_context(state) do
     state
