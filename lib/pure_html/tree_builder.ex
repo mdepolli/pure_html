@@ -314,9 +314,11 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp do_process_html_start_tag("frameset", attrs, _, %State{stack: stack, mode: mode} = state) do
-    # Frameset is only valid before body content - ignore if body exists or has content
-    if mode == :in_body or has_tag?(stack, "body") or has_body_content?(stack) do
+  # Frameset is only valid before body content - ignore if body exists or has content
+  defp do_process_html_start_tag("frameset", _, _, %State{mode: :in_body} = state), do: state
+
+  defp do_process_html_start_tag("frameset", attrs, _, %State{stack: stack} = state) do
+    if has_tag?(stack, "body") or has_body_content?(stack) do
       state
     else
       state
@@ -330,8 +332,12 @@ defmodule PureHtml.TreeBuilder do
   defp do_process_html_start_tag("frame", _, _, state), do: state
 
   # <col> is only valid in colgroup/table/template context, ignore in body
-  defp do_process_html_start_tag("col", attrs, _, %State{stack: stack, mode: mode} = state) do
-    if mode == :in_template or in_template?(stack) or in_table_context?(stack) do
+  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_template} = state) do
+    add_child_to_stack(state, {"col", attrs, []})
+  end
+
+  defp do_process_html_start_tag("col", attrs, _, %State{stack: stack} = state) do
+    if in_template?(stack) or in_table_context?(stack) do
       add_child_to_stack(state, {"col", attrs, []})
     else
       state
@@ -1228,10 +1234,13 @@ defmodule PureHtml.TreeBuilder do
   # HTML integration points allow HTML content inside foreign elements
   @html_integration_encodings ["text/html", "application/xhtml+xml"]
 
-  defp html_integration_point?([%{tag: {:svg, tag}} | _]) when tag in ~w(foreignObject desc title),
-    do: true
+  defp html_integration_point?([%{tag: {:svg, tag}} | _])
+       when tag in ~w(foreignObject desc title),
+       do: true
 
-  defp html_integration_point?([%{tag: {:math, "annotation-xml"}, attrs: %{"encoding" => encoding}} | _]) do
+  defp html_integration_point?([
+         %{tag: {:math, "annotation-xml"}, attrs: %{"encoding" => encoding}} | _
+       ]) do
     String.downcase(encoding) in @html_integration_encodings
   end
 
@@ -1249,10 +1258,11 @@ defmodule PureHtml.TreeBuilder do
   defp html_breakout_tag?(tag), do: tag in @html_breakout_tags
 
   defp close_foreign_content(%State{stack: stack} = state) do
-    {foreign, rest} = Enum.split_while(stack, fn
-      %{tag: {ns, _}} when ns in [:svg, :math] -> true
-      _ -> false
-    end)
+    {foreign, rest} =
+      Enum.split_while(stack, fn
+        %{tag: {ns, _}} when ns in [:svg, :math] -> true
+        _ -> false
+      end)
 
     closed =
       Enum.reduce(foreign, nil, fn elem, inner ->
