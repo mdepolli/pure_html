@@ -756,22 +756,21 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp apply_noahs_ark(af, tag, attrs) do
-    matching_indices =
-      af
-      |> Enum.with_index()
-      |> Enum.filter(fn
-        {:marker, _idx} -> false
-        {{_ref, t, a}, _idx} -> t == tag and a == attrs
-      end)
-      |> Enum.map(fn {_entry, idx} -> idx end)
-
-    if length(matching_indices) > 3 do
-      oldest_idx = Enum.max(matching_indices)
-      List.delete_at(af, oldest_idx)
-    else
-      af
-    end
+    af
+    |> Enum.with_index()
+    |> Enum.filter(fn
+      {:marker, _idx} -> false
+      {{_ref, t, a}, _idx} -> t == tag and a == attrs
+    end)
+    |> Enum.map(fn {_entry, idx} -> idx end)
+    |> remove_oldest_if_over_limit(af)
   end
+
+  defp remove_oldest_if_over_limit(indices, af) when length(indices) > 3 do
+    List.delete_at(af, Enum.max(indices))
+  end
+
+  defp remove_oldest_if_over_limit(_indices, af), do: af
 
   defp clear_af_to_marker(af) do
     af
