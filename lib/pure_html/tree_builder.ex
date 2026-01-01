@@ -93,8 +93,13 @@ defmodule PureHtml.TreeBuilder do
   def build(tokens) do
     {doctype, %State{stack: stack}, pre_html_comments} =
       Enum.reduce(tokens, {nil, %State{}, []}, fn
-        {:doctype, name, public_id, system_id, _}, {_, state, comments} ->
+        # Doctype only matters in initial mode
+        {:doctype, name, public_id, system_id, _}, {_, %State{mode: :initial} = state, comments} ->
           {{name, public_id, system_id}, state, comments}
+
+        # Doctype after initial mode is ignored
+        {:doctype, _, _, _, _}, acc ->
+          acc
 
         {:comment, text}, {doctype, %State{stack: []} = state, comments} ->
           {doctype, state, [{:comment, text} | comments]}
@@ -247,6 +252,14 @@ defmodule PureHtml.TreeBuilder do
     add_text_to_stack(state, text)
   end
 
+  # In colgroup: whitespace stays, non-whitespace closes colgroup and reprocesses
+  defp process({:character, text}, %State{stack: [%{tag: "colgroup"} | _]} = state) do
+    case String.trim(text) do
+      "" -> add_text_to_stack(state, text)
+      _ -> process({:character, text}, close_current_element(state))
+    end
+  end
+
   defp process({:character, text}, %State{stack: [%{tag: tag} | _]} = state)
        when tag in @table_context do
     case foster_reconstruct_active_formatting(state) do
@@ -397,6 +410,13 @@ defmodule PureHtml.TreeBuilder do
     state
     |> clear_to_table_context()
     |> push_element(tag, attrs)
+  end
+
+  # Caption closes open rows/sections back to table level
+  defp do_process_html_start_tag("caption", attrs, _, %State{mode: :in_table} = state) do
+    state
+    |> clear_to_table_context()
+    |> push_element("caption", attrs)
   end
 
   defp do_process_html_start_tag("tr", attrs, _, state) do
@@ -1267,7 +1287,11 @@ defmodule PureHtml.TreeBuilder do
     %{state | stack: [new_element(tag, attrs) | stack]}
   end
 
-  defp push_foreign_element(state, ns, tag, attrs, self_closing \\ false)
+  defp close_current_element(%State{stack: [elem | rest]} = state) do
+    %{state | stack: add_child(rest, elem)}
+  end
+
+  defp push_foreign_element(state, ns, tag, attrs, self_closing)
 
   defp push_foreign_element(%State{stack: stack} = state, ns, tag, attrs, true) do
     %{state | stack: add_child(stack, {{ns, tag}, attrs, []})}

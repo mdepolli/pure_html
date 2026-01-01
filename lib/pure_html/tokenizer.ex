@@ -132,22 +132,21 @@ defmodule PureHtml.Tokenizer do
     {token, %{state | deferred_token: nil}}
   end
 
+  # States where EOF should flush pending chars and terminate.
+  # Excludes "less_than_sign" states which have implicit pending '<' to emit via step.
   @eof_flush_states [
     :data,
     :rawtext,
     :rcdata,
     :script_data,
-    :script_data_less_than_sign,
     :script_data_escape_start,
     :script_data_escape_start_dash,
     :script_data_escaped,
     :script_data_escaped_dash,
     :script_data_escaped_dash_dash,
-    :script_data_escaped_less_than_sign,
     :script_data_double_escaped,
     :script_data_double_escaped_dash,
-    :script_data_double_escaped_dash_dash,
-    :script_data_double_escaped_less_than_sign
+    :script_data_double_escaped_dash_dash
   ]
 
   defp next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
@@ -181,8 +180,11 @@ defmodule PureHtml.Tokenizer do
       {:continue, new_state} ->
         next_token(new_state)
 
-      nil ->
+      nil when state.pending_chars == [] ->
         nil
+
+      nil ->
+        {flush_pending(state.pending_chars), %{state | pending_chars: []}}
     end
   end
 
