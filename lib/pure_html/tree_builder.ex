@@ -1110,21 +1110,28 @@ defmodule PureHtml.TreeBuilder do
   # Foster parenting
   # --------------------------------------------------------------------------
 
-  defp process_foster_start_tag(tag, attrs, self_closing, %State{stack: stack, af: af} = state) do
-    if self_closing or tag in @void_elements do
-      %{state | stack: foster_element(stack, {tag, attrs, []})}
-    else
-      {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
+  # Void/self-closing - foster as complete element
+  defp process_foster_start_tag(tag, attrs, true, %State{stack: stack} = state) do
+    %{state | stack: foster_element(stack, {tag, attrs, []})}
+  end
 
-      new_af =
-        if tag in @formatting_elements do
-          apply_noahs_ark([{new_ref, tag, attrs} | af], tag, attrs)
-        else
-          af
-        end
+  defp process_foster_start_tag(tag, attrs, _, %State{stack: stack} = state)
+       when tag in @void_elements do
+    %{state | stack: foster_element(stack, {tag, attrs, []})}
+  end
 
-      %{state | stack: new_stack, af: new_af}
-    end
+  # Formatting element - push and update AF with noah's ark
+  defp process_foster_start_tag(tag, attrs, _, %State{stack: stack, af: af} = state)
+       when tag in @formatting_elements do
+    {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
+    new_af = apply_noahs_ark([{new_ref, tag, attrs} | af], tag, attrs)
+    %{state | stack: new_stack, af: new_af}
+  end
+
+  # Other element - just push
+  defp process_foster_start_tag(tag, attrs, _, %State{stack: stack} = state) do
+    {new_stack, _new_ref} = foster_push_element(stack, tag, attrs)
+    %{state | stack: new_stack}
   end
 
   defp foster_push_element(stack, tag, attrs) do
