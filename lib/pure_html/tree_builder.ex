@@ -248,12 +248,9 @@ defmodule PureHtml.TreeBuilder do
 
   defp process({:character, text}, %State{stack: [%{tag: tag} | _]} = state)
        when tag in @table_context do
-    {state, reconstructed} = foster_reconstruct_active_formatting(state)
-
-    if reconstructed do
-      add_text_to_stack(state, text)
-    else
-      foster_text_to_stack(state, text)
+    case foster_reconstruct_active_formatting(state) do
+      {state, true} -> add_text_to_stack(state, text)
+      {state, false} -> foster_text_to_stack(state, text)
     end
   end
 
@@ -721,19 +718,13 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
 
   defp reconstruct_active_formatting(%State{stack: stack, af: af} = state) do
-    entries_to_reconstruct =
-      af
-      |> Enum.take_while(&(&1 != :marker))
-      |> Enum.reverse()
-      |> Enum.filter(fn {ref, _tag, _attrs} ->
-        find_in_stack_by_ref(stack, ref) == nil
-      end)
-
-    if entries_to_reconstruct == [] do
-      state
-    else
-      reconstruct_entries(state, entries_to_reconstruct)
-    end
+    af
+    |> Enum.take_while(&(&1 != :marker))
+    |> Enum.reverse()
+    |> Enum.filter(fn {ref, _tag, _attrs} ->
+      find_in_stack_by_ref(stack, ref) == nil
+    end)
+    |> then(&reconstruct_entries(state, &1))
   end
 
   defp reconstruct_entries(state, []), do: state
