@@ -2167,7 +2167,7 @@ defmodule PureHtml.Tokenizer do
     chars_until(input, stop_chars, [])
   end
 
-  defp chars_until(<<c, rest::binary>>, stop_chars, acc) when c in [?<, ?&, 0] do
+  defp chars_until(<<c, rest::binary>>, stop_chars, acc) when c < 128 do
     if c in stop_chars do
       {acc |> Enum.reverse() |> IO.iodata_to_binary(), <<c, rest::binary>>}
     else
@@ -2176,6 +2176,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp chars_until(<<c::utf8, rest::binary>>, stop_chars, acc) do
+    # Multi-byte UTF-8 characters are never stop chars
     chars_until(rest, stop_chars, [<<c::utf8>> | acc])
   end
 
