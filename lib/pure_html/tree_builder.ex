@@ -38,6 +38,7 @@ defmodule PureHtml.TreeBuilder do
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_cells ~w(td th)
   @table_sections ~w(tbody thead tfoot)
+  @table_row_context ~w(tr tbody thead tfoot)
   @table_context ~w(table tbody thead tfoot tr)
   @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
 
@@ -195,7 +196,7 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process({:end_tag, "table"}, %State{stack: stack} = state) do
-    stack = clear_to_table_context(stack)
+    stack = do_clear_to_table_context(stack)
     %{state | stack: close_tag("table", stack)} |> pop_mode()
   end
 
@@ -340,19 +341,18 @@ defmodule PureHtml.TreeBuilder do
   # <frame> is only valid in frameset, ignore in body
   defp do_process_html_start_tag("frame", _, _, state), do: state
 
-  # <col> is only valid in colgroup/table/template context
-  defp do_process_html_start_tag("col", attrs, _, %State{mode: mode} = state)
-       when mode in [:in_template, :in_table] do
+  # <col> needs colgroup wrapper in table context
+  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_table} = state) do
+    state
+    |> ensure_colgroup()
+    |> add_child_to_stack({"col", attrs, []})
+  end
+
+  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_template} = state) do
     add_child_to_stack(state, {"col", attrs, []})
   end
 
-  defp do_process_html_start_tag("col", attrs, _, %State{stack: stack} = state) do
-    if in_template?(stack) or in_table_context?(stack) do
-      add_child_to_stack(state, {"col", attrs, []})
-    else
-      state
-    end
-  end
+  defp do_process_html_start_tag("col", _, _, state), do: state
 
   # <hr> in select context should close option/optgroup first
   defp do_process_html_start_tag("hr", attrs, _, %State{mode: :in_select} = state) do
@@ -385,10 +385,18 @@ defmodule PureHtml.TreeBuilder do
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @table_cells do
     state
     |> in_body()
-    |> clear_to_table_body_context()
+    |> clear_to_table_row_context()
     |> ensure_table_context()
     |> push_element(tag, attrs)
     |> then(fn s -> %{s | af: [:marker | s.af]} end)
+  end
+
+  # Table sections close any open colgroup
+  defp do_process_html_start_tag(tag, attrs, _, %State{mode: :in_table} = state)
+       when tag in @table_sections do
+    state
+    |> clear_to_table_context()
+    |> push_element(tag, attrs)
   end
 
   defp do_process_html_start_tag("tr", attrs, _, state) do
@@ -790,15 +798,34 @@ defmodule PureHtml.TreeBuilder do
 
   defp do_clear_to_table_body_context([]), do: []
 
-  defp clear_to_table_context([%{tag: "table"} | _] = stack), do: stack
-  defp clear_to_table_context([%{tag: "template"} | _] = stack), do: stack
-  defp clear_to_table_context([%{tag: "html"} | _] = stack), do: stack
-
-  defp clear_to_table_context([elem | rest]) do
-    clear_to_table_context(foster_aware_add_child(rest, elem))
+  defp clear_to_table_row_context(%State{stack: stack} = state) do
+    %{state | stack: do_clear_to_table_row_context(stack)}
   end
 
-  defp clear_to_table_context([]), do: []
+  defp do_clear_to_table_row_context([%{tag: tag} | _] = stack)
+       when tag in @table_row_context or tag in ["table", "template", "html"] do
+    stack
+  end
+
+  defp do_clear_to_table_row_context([elem | rest]) do
+    do_clear_to_table_row_context(foster_aware_add_child(rest, elem))
+  end
+
+  defp do_clear_to_table_row_context([]), do: []
+
+  defp clear_to_table_context(%State{stack: stack} = state) do
+    %{state | stack: do_clear_to_table_context(stack)}
+  end
+
+  defp do_clear_to_table_context([%{tag: "table"} | _] = stack), do: stack
+  defp do_clear_to_table_context([%{tag: "template"} | _] = stack), do: stack
+  defp do_clear_to_table_context([%{tag: "html"} | _] = stack), do: stack
+
+  defp do_clear_to_table_context([elem | rest]) do
+    do_clear_to_table_context(foster_aware_add_child(rest, elem))
+  end
+
+  defp do_clear_to_table_context([]), do: []
 
   defp ensure_table_context(state) do
     state
@@ -822,6 +849,34 @@ defmodule PureHtml.TreeBuilder do
 
   defp ensure_tr(%State{stack: [%{tag: "tr"} | _]} = state), do: state
   defp ensure_tr(state), do: state
+
+  defp ensure_colgroup(%State{stack: [%{tag: "colgroup"} | _]} = state), do: state
+
+  defp ensure_colgroup(%State{stack: [%{tag: "table"} | _]} = state) do
+    push_element(state, "colgroup", %{})
+  end
+
+  # Close td/th back to tr
+  defp ensure_colgroup(%State{stack: [%{tag: tag} = elem | rest]} = state)
+       when tag in ["td", "th"] do
+    %{state | stack: add_child(rest, elem)}
+    |> ensure_colgroup()
+  end
+
+  # Close tr back to tbody/table section
+  defp ensure_colgroup(%State{stack: [%{tag: "tr"} = elem | rest]} = state) do
+    %{state | stack: add_child(rest, elem)}
+    |> ensure_colgroup()
+  end
+
+  # Close tbody/thead/tfoot back to table
+  defp ensure_colgroup(%State{stack: [%{tag: tag} = elem | rest]} = state)
+       when tag in @table_sections do
+    %{state | stack: add_child(rest, elem)}
+    |> ensure_colgroup()
+  end
+
+  defp ensure_colgroup(state), do: state
 
   # --------------------------------------------------------------------------
   # Implicit closing
