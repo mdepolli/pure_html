@@ -166,10 +166,18 @@ defmodule PureHtml.TreeBuilder do
 
   defp process({:start_tag, tag, attrs, self_closing}, %State{stack: stack} = state) do
     tag = Map.get(@tag_corrections, tag, tag)
+    ns = foreign_namespace(stack)
 
-    case foreign_namespace(stack) do
-      nil -> process_html_start_tag(tag, attrs, self_closing, state)
-      ns -> push_foreign_element(state, ns, tag, attrs, self_closing)
+    cond do
+      is_nil(ns) or html_integration_point?(stack) ->
+        process_html_start_tag(tag, attrs, self_closing, state)
+
+      html_breakout_tag?(tag) ->
+        state = close_foreign_content(state)
+        process_html_start_tag(tag, attrs, self_closing, state)
+
+      true ->
+        push_foreign_element(state, ns, tag, attrs, self_closing)
     end
   end
 
@@ -1211,6 +1219,41 @@ defmodule PureHtml.TreeBuilder do
       %{tag: {ns, _}} when ns in [:svg, :math] -> ns
       _ -> nil
     end)
+  end
+
+  # HTML integration points allow HTML content inside foreign elements
+  @html_integration_encodings ["text/html", "application/xhtml+xml"]
+
+  defp html_integration_point?([%{tag: {:svg, tag}} | _]) when tag in ~w(foreignObject desc title),
+    do: true
+
+  defp html_integration_point?([%{tag: {:math, "annotation-xml"}, attrs: %{"encoding" => encoding}} | _]) do
+    String.downcase(encoding) in @html_integration_encodings
+  end
+
+  defp html_integration_point?(_), do: false
+
+  # Tags that break out of foreign content (SVG/MathML) back to HTML
+  @html_breakout_tags ~w(b big blockquote body br center code dd div dl dt em embed
+                         h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol
+                         p pre ruby s small span strong strike sub sup table tt u ul var)
+
+  defp html_breakout_tag?(tag), do: tag in @html_breakout_tags
+
+  defp close_foreign_content(%State{stack: stack} = state) do
+    {foreign, rest} = Enum.split_while(stack, fn
+      %{tag: {ns, _}} when ns in [:svg, :math] -> true
+      _ -> false
+    end)
+
+    closed =
+      Enum.reduce(foreign, nil, fn elem, inner ->
+        children = if inner, do: [inner | elem.children], else: elem.children
+        %{elem | children: children}
+      end)
+
+    new_stack = if closed, do: add_child(rest, closed), else: rest
+    %{state | stack: new_stack}
   end
 
   defp add_child([%{children: children} = parent | rest], child) do
