@@ -292,7 +292,8 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
-      emit_rawtext_buffer(state, rest)
+      # Include the '>' that triggered this - it's not a valid end tag
+      emit_char(state, "</" <> state.buffer <> ">", state: :rawtext, token: nil, input: rest)
     end
   end
 
@@ -376,7 +377,8 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
-      emit_rcdata_buffer(state, rest)
+      # Include the '>' that triggered this - it's not a valid end tag
+      emit_char(state, "</" <> state.buffer <> ">", state: :rcdata, token: nil, input: rest)
     end
   end
 
@@ -460,7 +462,8 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
-      emit_script_buffer(state, rest)
+      # Include the '>' that triggered this - it's not a valid end tag
+      emit_char(state, "</" <> state.buffer <> ">", state: :script_data, token: nil, input: rest)
     end
   end
 
@@ -612,7 +615,8 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
-      emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil, input: rest)
+      # Include the '>' that triggered this - it's not a valid end tag
+      emit_char(state, "</" <> state.buffer <> ">", state: :script_data_escaped, token: nil, input: rest)
     end
   end
 
