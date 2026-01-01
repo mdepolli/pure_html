@@ -296,14 +296,16 @@ defmodule PureHtml.TreeBuilder do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp do_process_html_start_tag(
-         tag,
-         attrs,
-         self_closing,
-         %State{stack: stack, mode: mode} = state
-       )
+  # Head elements in body modes - just process
+  defp do_process_html_start_tag(tag, attrs, self_closing, %State{mode: mode} = state)
+       when tag in @head_elements and mode in [:in_template, :in_body, :in_table, :in_select] do
+    process_start_tag(state, tag, attrs, self_closing)
+  end
+
+  # Head elements with body in stack but different mode (e.g., foster parenting)
+  defp do_process_html_start_tag(tag, attrs, self_closing, %State{stack: stack} = state)
        when tag in @head_elements do
-    if mode in [:in_template, :in_body, :in_table, :in_select] or has_tag?(stack, "body") do
+    if has_tag?(stack, "body") do
       process_start_tag(state, tag, attrs, self_closing)
     else
       state
