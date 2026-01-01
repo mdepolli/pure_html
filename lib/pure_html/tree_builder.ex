@@ -556,15 +556,6 @@ defmodule PureHtml.TreeBuilder do
     end)
   end
 
-  defp has_formatting_entry?(af, tag) do
-    af
-    |> Enum.take_while(&(&1 != :marker))
-    |> Enum.any?(fn
-      {_, ^tag, _} -> true
-      _ -> false
-    end)
-  end
-
   defp remove_formatting_entry(af, tag) do
     Enum.reject(af, fn
       {_, ^tag, _} -> true
@@ -746,12 +737,14 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp maybe_close_existing_a(%State{af: af} = state) do
-    if has_formatting_entry?(af, "a") do
-      state
-      |> run_adoption_agency("a")
-      |> then(fn s -> %{s | af: remove_formatting_entry(s.af, "a")} end)
-    else
-      state
+    case find_formatting_entry(af, "a") do
+      nil ->
+        state
+
+      _ ->
+        state
+        |> run_adoption_agency("a")
+        |> then(fn s -> %{s | af: remove_formatting_entry(s.af, "a")} end)
     end
   end
 
