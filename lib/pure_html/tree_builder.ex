@@ -509,11 +509,7 @@ defmodule PureHtml.TreeBuilder do
   defp run_adoption_agency_outer_loop(%State{stack: stack, af: af} = state, subject, iteration) do
     case find_formatting_entry(af, subject) do
       nil ->
-        if iteration == 0 do
-          %{state | stack: close_tag(subject, stack)}
-        else
-          state
-        end
+        handle_no_formatting_entry(state, subject, iteration)
 
       {af_idx, {fe_ref, _fe_tag, _fe_attrs}} ->
         case find_in_stack_by_ref(stack, fe_ref) do
@@ -542,6 +538,14 @@ defmodule PureHtml.TreeBuilder do
         end
     end
   end
+
+  # First iteration with no formatting entry - close the tag
+  defp handle_no_formatting_entry(%State{stack: stack} = state, subject, 0) do
+    %{state | stack: close_tag(subject, stack)}
+  end
+
+  # Subsequent iterations with no formatting entry - done
+  defp handle_no_formatting_entry(state, _subject, _iteration), do: state
 
   defp find_formatting_entry(af, tag) do
     af
