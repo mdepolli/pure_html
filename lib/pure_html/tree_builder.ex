@@ -1189,18 +1189,15 @@ defmodule PureHtml.TreeBuilder do
   defp add_foster_text([], _text), do: []
 
   defp foster_reconstruct_active_formatting(%State{stack: stack, af: af} = state) do
-    entries_to_reconstruct =
-      af
-      |> Enum.take_while(&(&1 != :marker))
-      |> Enum.reverse()
-      |> Enum.filter(fn {ref, _tag, _attrs} ->
-        find_in_stack_by_ref(stack, ref) == nil
-      end)
-
-    if entries_to_reconstruct == [] do
-      {state, false}
-    else
-      {foster_reconstruct_entries(state, entries_to_reconstruct), true}
+    af
+    |> Enum.take_while(&(&1 != :marker))
+    |> Enum.reverse()
+    |> Enum.filter(fn {ref, _tag, _attrs} ->
+      find_in_stack_by_ref(stack, ref) == nil
+    end)
+    |> case do
+      [] -> {state, false}
+      entries -> {foster_reconstruct_entries(state, entries), true}
     end
   end
 
