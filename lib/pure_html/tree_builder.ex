@@ -43,7 +43,7 @@ defmodule PureHtml.TreeBuilder do
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
-               hr li listing main menu nav ol p pre section summary table ul)
+               hr li listing main menu nav ol p plaintext pre rb rp rt rtc section summary table ul)
 
   # Tags that implicitly close other tags (key always closes itself plus listed tags)
   @implicit_closes %{
@@ -152,16 +152,16 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp process({:start_tag, "svg", attrs, _}, state) do
+  defp process({:start_tag, "svg", attrs, self_closing}, state) do
     state
     |> in_body()
-    |> push_foreign_element(:svg, "svg", attrs)
+    |> push_foreign_element(:svg, "svg", attrs, self_closing)
   end
 
-  defp process({:start_tag, "math", attrs, _}, state) do
+  defp process({:start_tag, "math", attrs, self_closing}, state) do
     state
     |> in_body()
-    |> push_foreign_element(:math, "math", attrs)
+    |> push_foreign_element(:math, "math", attrs, self_closing)
   end
 
   defp process({:start_tag, tag, attrs, self_closing}, %State{stack: stack} = state) do
@@ -203,18 +203,17 @@ defmodule PureHtml.TreeBuilder do
     run_adoption_agency(state, tag)
   end
 
+  defp process({:end_tag, "p"}, %State{stack: stack, mode: :in_body} = state) do
+    case close_p_in_scope(stack) do
+      {:found, new_stack} -> %{state | stack: new_stack}
+      :not_found -> add_child_to_stack(state, new_element("p"))
+    end
+  end
+
   defp process({:end_tag, "p"}, %State{stack: stack} = state) do
     case close_p_in_scope(stack) do
-      {:found, new_stack} ->
-        %{state | stack: new_stack}
-
-      :not_found ->
-        if has_tag?(stack, "head") do
-          state
-        else
-          state = in_body(state)
-          add_child_to_stack(state, new_element("p"))
-        end
+      {:found, new_stack} -> %{state | stack: new_stack}
+      :not_found -> state
     end
   end
 
@@ -887,6 +886,11 @@ defmodule PureHtml.TreeBuilder do
     nil
   end
 
+  # Foreign elements (SVG/MathML) are also scope boundaries
+  defp find_p_in_stack([%{tag: {ns, _}} | _rest], _acc) when ns in [:svg, :math] do
+    nil
+  end
+
   defp find_p_in_stack([elem | rest], acc) do
     find_p_in_stack(rest, [elem | acc])
   end
@@ -1230,6 +1234,10 @@ defmodule PureHtml.TreeBuilder do
   defp html_integration_point?([%{tag: {:math, "annotation-xml"}, attrs: %{"encoding" => encoding}} | _]) do
     String.downcase(encoding) in @html_integration_encodings
   end
+
+  # MathML text integration points
+  defp html_integration_point?([%{tag: {:math, tag}} | _]) when tag in ~w(mi mo mn ms mtext),
+    do: true
 
   defp html_integration_point?(_), do: false
 
