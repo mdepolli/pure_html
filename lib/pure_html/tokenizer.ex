@@ -138,6 +138,7 @@ defmodule PureHtml.Tokenizer do
     :data,
     :rawtext,
     :rcdata,
+    :plaintext,
     :script_data,
     :script_data_escape_start,
     :script_data_escape_start_dash,
@@ -234,6 +235,18 @@ defmodule PureHtml.Tokenizer do
 
   defp step(%{state: :rawtext, input: input} = state) do
     {chars, rest} = chars_until(input, [?<, 0])
+    emit_char(state, chars, input: rest)
+  end
+
+  # PLAINTEXT state - consumes everything until EOF, no end tag recognition
+  defp step(%{state: :plaintext, input: <<0, rest::binary>>} = state) do
+    emit_char(state, <<0xFFFD::utf8>>, input: rest)
+  end
+
+  defp step(%{state: :plaintext, input: ""} = _state), do: nil
+
+  defp step(%{state: :plaintext, input: input} = state) do
+    {chars, rest} = chars_until(input, [0])
     emit_char(state, chars, input: rest)
   end
 
@@ -1975,6 +1988,12 @@ defmodule PureHtml.Tokenizer do
 
   @rawtext_elements ~w(style xmp iframe noembed noframes)
   @rcdata_elements ~w(textarea title)
+
+  defp emit(%{token: {:start_tag, "plaintext", _, false}} = state, updates) do
+    base_updates = [state: :plaintext, token: nil]
+    all_updates = Keyword.merge(base_updates, updates)
+    {:emit, state.token, struct!(state, all_updates)}
+  end
 
   defp emit(%{token: {:start_tag, "script", _, false}} = state, updates) do
     base_updates = [state: :script_data, token: nil]
