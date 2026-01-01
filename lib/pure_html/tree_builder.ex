@@ -137,19 +137,19 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process({:start_tag, "body", attrs, _}, state) do
-    state =
-      state
-      |> ensure_html()
-      |> ensure_head()
-      |> close_head()
+    state
+    |> ensure_html()
+    |> ensure_head()
+    |> close_head()
+    |> then(fn
+      %State{mode: :after_head} = s ->
+        s
+        |> push_element("body", attrs)
+        |> set_mode(:in_body)
 
-    if has_tag?(state.stack, "body") do
-      state
-    else
-      state
-      |> push_element("body", attrs)
-      |> set_mode(:in_body)
-    end
+      s ->
+        s
+    end)
   end
 
   defp process({:start_tag, "svg", attrs, self_closing}, state) do
@@ -257,9 +257,11 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp process({:character, text}, %State{stack: stack} = state) do
-    case {has_tag?(stack, "body"), String.trim(text)} do
-      {false, ""} ->
+  # Whitespace-only text before body - ignore
+  defp process({:character, text}, %State{mode: mode} = state)
+       when mode in [:initial, :before_head, :in_head, :after_head] do
+    case String.trim(text) do
+      "" ->
         state
 
       _ ->
@@ -268,6 +270,14 @@ defmodule PureHtml.TreeBuilder do
         |> reconstruct_active_formatting()
         |> add_text_to_stack(text)
     end
+  end
+
+  # In body modes - process text
+  defp process({:character, text}, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> add_text_to_stack(text)
   end
 
   defp process({:comment, _text}, %State{stack: []} = state), do: state
@@ -333,8 +343,9 @@ defmodule PureHtml.TreeBuilder do
   # <frame> is only valid in frameset, ignore in body
   defp do_process_html_start_tag("frame", _, _, state), do: state
 
-  # <col> is only valid in colgroup/table/template context, ignore in body
-  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_template} = state) do
+  # <col> is only valid in colgroup/table/template context
+  defp do_process_html_start_tag("col", attrs, _, %State{mode: mode} = state)
+       when mode in [:in_template, :in_table] do
     add_child_to_stack(state, {"col", attrs, []})
   end
 
@@ -346,18 +357,18 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  # <hr> in select context should close option/optgroup first and skip in_body
-  defp do_process_html_start_tag("hr", attrs, _, %State{stack: stack} = state) do
-    if in_select?(stack) do
-      state
-      |> close_option_optgroup_in_select()
-      |> add_child_to_stack({"hr", attrs, []})
-    else
-      state
-      |> in_body()
-      |> maybe_close_p("hr")
-      |> add_child_to_stack({"hr", attrs, []})
-    end
+  # <hr> in select context should close option/optgroup first
+  defp do_process_html_start_tag("hr", attrs, _, %State{mode: :in_select} = state) do
+    state
+    |> close_option_optgroup_in_select()
+    |> add_child_to_stack({"hr", attrs, []})
+  end
+
+  defp do_process_html_start_tag("hr", attrs, _, state) do
+    state
+    |> in_body()
+    |> maybe_close_p("hr")
+    |> add_child_to_stack({"hr", attrs, []})
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
