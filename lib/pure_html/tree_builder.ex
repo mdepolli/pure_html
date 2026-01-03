@@ -575,46 +575,63 @@ defmodule PureHtml.TreeBuilder do
   defp run_adoption_agency_outer_loop(state, _subject, iteration) when iteration >= 8, do: state
 
   defp run_adoption_agency_outer_loop(%State{stack: stack, af: af} = state, subject, iteration) do
-    case find_formatting_entry(af, subject) do
-      nil ->
+    case locate_formatting_element(af, stack, subject) do
+      :not_in_af ->
         handle_no_formatting_entry(state, subject, iteration)
 
-      {af_idx, {fe_ref, _fe_tag, _fe_attrs}} ->
-        case find_in_stack_by_ref(stack, fe_ref) do
-          nil ->
-            %{state | af: List.delete_at(af, af_idx)}
+      {:not_in_stack, af_idx} ->
+        %{state | af: List.delete_at(af, af_idx)}
 
-          stack_idx ->
-            # Check if formatting element is in scope (step 7 of adoption agency)
-            if not element_in_scope?(stack, stack_idx) do
-              # Parse error - element not in scope, just return
-              state
-            else
-              case find_furthest_block(stack, stack_idx) do
-                nil ->
-                  {new_stack, new_af} = pop_to_formatting_element(stack, af, af_idx, stack_idx)
-                  %{state | stack: new_stack, af: new_af}
+      :not_in_scope ->
+        state
 
-                fb_idx ->
-                  {_, fe_tag, fe_attrs} = Enum.at(af, af_idx)
+      {:no_furthest_block, af_idx, stack_idx} ->
+        {new_stack, new_af} = pop_to_formatting_element(stack, af, af_idx, stack_idx)
+        %{state | stack: new_stack, af: new_af}
 
-                  state =
-                    run_adoption_agency_with_furthest_block(
-                      state,
-                      {af_idx, fe_ref, fe_tag, fe_attrs},
-                      stack_idx,
-                      fb_idx
-                    )
-
-                  run_adoption_agency_outer_loop(state, subject, iteration + 1)
-              end
-            end
-        end
+      {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx} ->
+        state
+        |> run_adoption_agency_with_furthest_block({af_idx, fe_ref, fe_tag, fe_attrs}, stack_idx, fb_idx)
+        |> run_adoption_agency_outer_loop(subject, iteration + 1)
     end
   end
 
+  # Locate formatting element and determine what action to take.
+  # Uses `with` to express the "happy path" declaratively:
+  # 1. Find the formatting entry in AF
+  # 2. Find its position in the stack
+  # 3. Verify it's in scope
+  # Then determine if there's a furthest block.
+  defp locate_formatting_element(af, stack, subject) do
+    with {:ok, af_idx, fe_ref, fe_tag, fe_attrs} <- find_formatting_entry_result(af, subject),
+         {:ok, stack_idx} <- find_in_stack_result(stack, fe_ref, af_idx),
+         :ok <- check_in_scope(stack, stack_idx) do
+      case find_furthest_block(stack, stack_idx) do
+        nil -> {:no_furthest_block, af_idx, stack_idx}
+        fb_idx -> {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx}
+      end
+    end
+  end
+
+  defp find_formatting_entry_result(af, subject) do
+    case find_formatting_entry(af, subject) do
+      nil -> :not_in_af
+      {af_idx, {fe_ref, fe_tag, fe_attrs}} -> {:ok, af_idx, fe_ref, fe_tag, fe_attrs}
+    end
+  end
+
+  defp find_in_stack_result(stack, fe_ref, af_idx) do
+    case find_in_stack_by_ref(stack, fe_ref) do
+      nil -> {:not_in_stack, af_idx}
+      stack_idx -> {:ok, stack_idx}
+    end
+  end
+
+  defp check_in_scope(stack, stack_idx) do
+    if element_in_scope?(stack, stack_idx), do: :ok, else: :not_in_scope
+  end
+
   # Check if the element at stack_idx is in scope
-  # Returns true if no scope boundary is between current node and target
   defp element_in_scope?(stack, target_idx) do
     stack
     |> Enum.take(target_idx)
@@ -1010,29 +1027,19 @@ defmodule PureHtml.TreeBuilder do
       nil ->
         {stack, af}
 
-      {above_p, %{ref: p_ref, attrs: p_attrs, children: p_children}, below_p} ->
-        # Collect refs of elements that will be closed (above_p and p itself)
-        closed_refs = MapSet.new([p_ref | Enum.map(above_p, & &1.ref)])
-
-        # Clear those from AF
-        new_af =
-          Enum.reject(af, fn
-            :marker -> false
-            {ref, _, _} -> MapSet.member?(closed_refs, ref)
-          end)
-
-        nested_above =
-          above_p
-          |> Enum.reduce(nil, fn elem, inner ->
-            children = if inner, do: [inner | elem.children], else: elem.children
-            %{elem | children: children}
-          end)
-
-        p_children = if nested_above, do: [nested_above | p_children], else: p_children
-        closed_p = %{ref: p_ref, tag: "p", attrs: p_attrs, children: p_children}
-
+      {above_p, p_elem, below_p} ->
+        closed_refs = MapSet.new([p_elem.ref | Enum.map(above_p, & &1.ref)])
+        new_af = reject_refs_from_af(af, closed_refs)
+        closed_p = close_with_elements_above(p_elem, above_p)
         {add_child(below_p, closed_p), new_af}
     end
+  end
+
+  defp reject_refs_from_af(af, refs) do
+    Enum.reject(af, fn
+      :marker -> false
+      {ref, _, _} -> MapSet.member?(refs, ref)
+    end)
   end
 
   # Button scope boundaries for closing <p>
@@ -1045,17 +1052,19 @@ defmodule PureHtml.TreeBuilder do
         :not_found
 
       {above_p, p_elem, below_p} ->
-        nested_above =
-          above_p
-          |> Enum.reduce(nil, fn elem, inner ->
-            children = if inner, do: [inner | elem.children], else: elem.children
-            %{elem | children: children}
-          end)
-
-        p_children = if nested_above, do: [nested_above | p_elem.children], else: p_elem.children
-        closed_p = %{p_elem | children: p_children}
+        closed_p = close_with_elements_above(p_elem, above_p)
         {:found, foster_aware_add_child(below_p, closed_p)}
     end
+  end
+
+  # Nest elements into each other and add to parent's children
+  defp close_with_elements_above(parent, []), do: parent
+
+  defp close_with_elements_above(parent, above) do
+    nested = Enum.reduce(above, fn elem, inner ->
+      %{elem | children: [inner | elem.children]}
+    end)
+    %{parent | children: [nested | parent.children]}
   end
 
   defp find_p_in_stack([], _acc), do: nil

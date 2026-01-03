@@ -88,7 +88,7 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
   """
   def serialize_document({doctype, nodes}) when is_list(nodes) do
     doctype_str = serialize_doctype(doctype)
-    nodes_str = nodes |> Enum.map(&serialize_node(&1, 0)) |> Enum.join()
+    nodes_str = Enum.map_join(nodes, "", &serialize_node(&1, 0))
     doctype_str <> nodes_str
   end
 
@@ -129,15 +129,11 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
     attr_lines =
       attrs
       |> Enum.sort()
-      |> Enum.map(fn {name, value} ->
+      |> Enum.map_join("", fn {name, value} ->
         "#{indent}  #{name}=\"#{value}\"\n"
       end)
-      |> Enum.join()
 
-    children_lines =
-      children
-      |> Enum.map(&serialize_child(&1, depth + 1))
-      |> Enum.join()
+    children_lines = Enum.map_join(children, "", &serialize_child(&1, depth + 1))
 
     tag_line <> attr_lines <> children_lines
   end
@@ -151,7 +147,7 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
   defp serialize_child({:content, children}, depth) do
     indent = "| " <> String.duplicate("  ", depth)
     content_line = "#{indent}content\n"
-    children_lines = children |> Enum.map(&serialize_child(&1, depth + 1)) |> Enum.join()
+    children_lines = Enum.map_join(children, "", &serialize_child(&1, depth + 1))
     content_line <> children_lines
   end
 

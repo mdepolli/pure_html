@@ -29,7 +29,7 @@ defmodule PureHtml.BenchmarkTest do
         Throughput: #{Float.round(throughput_mb_s, 2)} MB/s
     """)
 
-    assert length(tokens) > 0
+    assert tokens != []
   end
 
   test "TreeBuilder: Wikipedia homepage", %{tokens: tokens} do
