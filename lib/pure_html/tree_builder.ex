@@ -42,6 +42,9 @@ defmodule PureHtml.TreeBuilder do
   @table_context ~w(table tbody thead tfoot tr)
   @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
 
+  # Scope boundaries for "have an element in scope" - adoption agency check
+  @scope_boundaries ~w(applet caption html marquee object table td th template)
+
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
                hr li listing main menu nav ol p plaintext pre rb rp rt rtc section summary table ul)
@@ -200,9 +203,18 @@ defmodule PureHtml.TreeBuilder do
     %{state | stack: close_tag(tag, stack), af: clear_af_to_marker(af)}
   end
 
-  defp process({:end_tag, "table"}, %State{stack: stack} = state) do
+  defp process({:end_tag, "table"}, %State{stack: stack, af: af} = state) do
+    # Find elements that will be closed (everything above and including the table)
+    closed_refs = get_refs_to_close_for_table(stack)
+    # Clear those elements from AF
+    af =
+      Enum.reject(af, fn
+        :marker -> false
+        {ref, _, _} -> MapSet.member?(closed_refs, ref)
+      end)
+
     stack = do_clear_to_table_context(stack)
-    %{state | stack: close_tag("table", stack)} |> pop_mode()
+    %{state | stack: close_tag("table", stack), af: af} |> pop_mode()
   end
 
   defp process({:end_tag, tag}, state) when tag in @formatting_elements do
@@ -262,24 +274,41 @@ defmodule PureHtml.TreeBuilder do
 
   defp process({:character, text}, %State{stack: [%{tag: tag} | _]} = state)
        when tag in @table_context do
-    case foster_reconstruct_active_formatting(state) do
-      {state, true} -> add_text_to_stack(state, text)
-      {state, false} -> foster_text_to_stack(state, text)
+    # Whitespace-only text goes directly into table, non-whitespace is foster parented
+    if String.trim(text) == "" do
+      add_text_to_stack(state, text)
+    else
+      case foster_reconstruct_active_formatting(state) do
+        {state, true} -> add_text_to_stack(state, text)
+        {state, false} -> foster_text_to_stack(state, text)
+      end
     end
   end
 
-  # Whitespace-only text before body - ignore
+  # Text in pre-body modes: whitespace stays, non-whitespace triggers body transition
   defp process({:character, text}, %State{mode: mode} = state)
        when mode in [:initial, :before_head, :in_head, :after_head] do
-    case String.trim(text) do
+    case String.trim_leading(text) do
       "" ->
-        state
+        # All whitespace - add to current location if we have a stack
+        case state.stack do
+          [] -> state
+          _ -> add_text_to_stack(state, text)
+        end
 
-      _ ->
+      trimmed ->
+        # Has non-whitespace content
+        leading_ws = String.slice(text, 0, String.length(text) - String.length(trimmed))
+
+        state =
+          if leading_ws != "" and state.stack != [],
+            do: add_text_to_stack(state, leading_ws),
+            else: state
+
         state
         |> in_body()
         |> reconstruct_active_formatting()
-        |> add_text_to_stack(text)
+        |> add_text_to_stack(trimmed)
     end
   end
 
@@ -431,13 +460,24 @@ defmodule PureHtml.TreeBuilder do
     state
     |> in_body()
     |> maybe_close_existing_a()
+    |> reconstruct_active_formatting()
     |> push_element("a", attrs)
     |> add_formatting_entry("a", attrs)
+  end
+
+  defp do_process_html_start_tag("nobr", attrs, _, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> maybe_close_existing_nobr()
+    |> push_element("nobr", attrs)
+    |> add_formatting_entry("nobr", attrs)
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @formatting_elements do
     state
     |> in_body()
+    |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
     |> add_formatting_entry(tag, attrs)
   end
@@ -545,26 +585,40 @@ defmodule PureHtml.TreeBuilder do
             %{state | af: List.delete_at(af, af_idx)}
 
           stack_idx ->
-            case find_furthest_block(stack, stack_idx) do
-              nil ->
-                {new_stack, new_af} = pop_to_formatting_element(stack, af, af_idx, stack_idx)
-                %{state | stack: new_stack, af: new_af}
+            # Check if formatting element is in scope (step 7 of adoption agency)
+            if not element_in_scope?(stack, stack_idx) do
+              # Parse error - element not in scope, just return
+              state
+            else
+              case find_furthest_block(stack, stack_idx) do
+                nil ->
+                  {new_stack, new_af} = pop_to_formatting_element(stack, af, af_idx, stack_idx)
+                  %{state | stack: new_stack, af: new_af}
 
-              fb_idx ->
-                {_, fe_tag, fe_attrs} = Enum.at(af, af_idx)
+                fb_idx ->
+                  {_, fe_tag, fe_attrs} = Enum.at(af, af_idx)
 
-                state =
-                  run_adoption_agency_with_furthest_block(
-                    state,
-                    {af_idx, fe_ref, fe_tag, fe_attrs},
-                    stack_idx,
-                    fb_idx
-                  )
+                  state =
+                    run_adoption_agency_with_furthest_block(
+                      state,
+                      {af_idx, fe_ref, fe_tag, fe_attrs},
+                      stack_idx,
+                      fb_idx
+                    )
 
-                run_adoption_agency_outer_loop(state, subject, iteration + 1)
+                  run_adoption_agency_outer_loop(state, subject, iteration + 1)
+              end
             end
         end
     end
+  end
+
+  # Check if the element at stack_idx is in scope
+  # Returns true if no scope boundary is between current node and target
+  defp element_in_scope?(stack, target_idx) do
+    stack
+    |> Enum.take(target_idx)
+    |> Enum.all?(fn %{tag: tag} -> tag not in @scope_boundaries end)
   end
 
   # First iteration with no formatting entry - close the tag
@@ -706,7 +760,17 @@ defmodule PureHtml.TreeBuilder do
     closed_fe = %{ref: fe_ref, tag: fe_tag, attrs: fe_attrs, children: fe_children}
 
     final_stack = add_child(rest, closed_fe)
+
+    # Remove the formatting element and any formatting elements that were above it
+    above_refs = MapSet.new(above_fe, & &1.ref)
     af = List.delete_at(af, af_idx)
+
+    af =
+      Enum.reject(af, fn
+        :marker -> false
+        {ref, _, _} -> MapSet.member?(above_refs, ref)
+      end)
+
     {final_stack, af}
   end
 
@@ -776,6 +840,18 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
+  defp maybe_close_existing_nobr(%State{af: af} = state) do
+    case find_formatting_entry(af, "nobr") do
+      nil ->
+        state
+
+      _ ->
+        state
+        |> run_adoption_agency("nobr")
+        |> then(fn s -> %{s | af: remove_formatting_entry(s.af, "nobr")} end)
+    end
+  end
+
   defp apply_noahs_ark(af, tag, attrs) do
     af
     |> Enum.with_index()
@@ -835,6 +911,24 @@ defmodule PureHtml.TreeBuilder do
 
   defp clear_to_table_context(%State{stack: stack} = state) do
     %{state | stack: do_clear_to_table_context(stack)}
+  end
+
+  # Get refs of all elements that will be closed when table closes
+  defp get_refs_to_close_for_table(stack) do
+    do_get_refs_to_close_for_table(stack, MapSet.new())
+  end
+
+  defp do_get_refs_to_close_for_table([%{tag: "table", ref: ref} | _], acc) do
+    MapSet.put(acc, ref)
+  end
+
+  defp do_get_refs_to_close_for_table([%{tag: "template"} | _], acc), do: acc
+  defp do_get_refs_to_close_for_table([%{tag: "html"} | _], acc), do: acc
+  defp do_get_refs_to_close_for_table([_ | []], acc), do: acc
+  defp do_get_refs_to_close_for_table([], acc), do: acc
+
+  defp do_get_refs_to_close_for_table([%{ref: ref} | rest], acc) do
+    do_get_refs_to_close_for_table(rest, MapSet.put(acc, ref))
   end
 
   defp do_clear_to_table_context([%{tag: "table"} | _] = stack), do: stack
@@ -902,18 +996,31 @@ defmodule PureHtml.TreeBuilder do
   # Implicit closing
   # --------------------------------------------------------------------------
 
-  defp maybe_close_p(%State{stack: stack} = state, tag) when tag in @closes_p do
-    %{state | stack: close_p_if_open(stack)}
+  defp maybe_close_p(%State{stack: stack, af: af} = state, tag) when tag in @closes_p do
+    case close_p_if_open_with_af(stack, af) do
+      {new_stack, new_af} -> %{state | stack: new_stack, af: new_af}
+    end
   end
 
   defp maybe_close_p(state, _tag), do: state
 
-  defp close_p_if_open(stack) do
+  # Close p and also clear AF entries for closed elements
+  defp close_p_if_open_with_af(stack, af) do
     case find_p_in_stack(stack, []) do
       nil ->
-        stack
+        {stack, af}
 
       {above_p, %{ref: p_ref, attrs: p_attrs, children: p_children}, below_p} ->
+        # Collect refs of elements that will be closed (above_p and p itself)
+        closed_refs = MapSet.new([p_ref | Enum.map(above_p, & &1.ref)])
+
+        # Clear those from AF
+        new_af =
+          Enum.reject(af, fn
+            :marker -> false
+            {ref, _, _} -> MapSet.member?(closed_refs, ref)
+          end)
+
         nested_above =
           above_p
           |> Enum.reduce(nil, fn elem, inner ->
@@ -924,7 +1031,7 @@ defmodule PureHtml.TreeBuilder do
         p_children = if nested_above, do: [nested_above | p_children], else: p_children
         closed_p = %{ref: p_ref, tag: "p", attrs: p_attrs, children: p_children}
 
-        add_child(below_p, closed_p)
+        {add_child(below_p, closed_p), new_af}
     end
   end
 
@@ -972,12 +1079,21 @@ defmodule PureHtml.TreeBuilder do
 
   # Scope boundaries that prevent implicit closing
   @implicit_close_boundaries ~w(table template body html)
+  @li_scope_boundaries ~w(ol ul table template body html)
 
-  for {tag, also_closes} <- @implicit_closes do
+  # li has special scope boundaries (list item scope)
+  defp maybe_close_same(%State{stack: stack} = state, "li") do
+    case pop_to_implicit_close(stack, ["li"], [], @li_scope_boundaries) do
+      {:ok, new_stack} -> %{state | stack: new_stack}
+      :not_found -> state
+    end
+  end
+
+  for {tag, also_closes} <- @implicit_closes, tag != "li" do
     closes = [tag | also_closes]
 
     defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
-      case pop_to_implicit_close(stack, unquote(closes), []) do
+      case pop_to_implicit_close(stack, unquote(closes), [], @implicit_close_boundaries) do
         {:ok, new_stack} -> %{state | stack: new_stack}
         :not_found -> state
       end
@@ -986,19 +1102,20 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_same(state, _tag), do: state
 
-  defp pop_to_implicit_close([], _closes, _acc), do: :not_found
+  defp pop_to_implicit_close([], _closes, _acc, _boundaries), do: :not_found
 
-  defp pop_to_implicit_close([%{tag: tag} | _], _closes, _acc)
-       when tag in @implicit_close_boundaries,
-       do: :not_found
+  defp pop_to_implicit_close([%{tag: tag} = elem | rest], closes, acc, boundaries) do
+    cond do
+      tag in boundaries ->
+        :not_found
 
-  defp pop_to_implicit_close([%{tag: tag} = elem | rest], closes, acc) do
-    if tag in closes do
-      # Found match - first close accumulated elements into the target, then close target
-      closed_elem = Enum.reduce(acc, elem, &add_child_to_elem/2)
-      {:ok, add_child(rest, closed_elem)}
-    else
-      pop_to_implicit_close(rest, closes, [elem | acc])
+      tag in closes ->
+        # Found match - first close accumulated elements into the target, then close target
+        closed_elem = Enum.reduce(acc, elem, &add_child_to_elem/2)
+        {:ok, add_child(rest, closed_elem)}
+
+      true ->
+        pop_to_implicit_close(rest, closes, [elem | acc], boundaries)
     end
   end
 
@@ -1069,6 +1186,12 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
   # Document structure
   # --------------------------------------------------------------------------
+
+  defp in_body(%State{mode: mode, stack: []} = state)
+       when mode in [:in_body, :in_select, :in_table, :in_template] do
+    # Mode says in_body but stack is empty - need to create structure
+    transition_to(%{state | mode: :initial}, :in_body)
+  end
 
   defp in_body(%State{mode: mode} = state)
        when mode in [:in_body, :in_select, :in_table, :in_template] do

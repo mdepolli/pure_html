@@ -9,8 +9,8 @@ defmodule PureHtml.Html5libTreeConstructionTest do
 
     describe filename do
       for {test, index} <- Enum.with_index(H5.parse_file(path)) do
-        # Skip fragment tests for now
-        if test.document_fragment == nil do
+        # Skip fragment tests and script-off tests (we assume scripting enabled)
+        if test.document_fragment == nil and not test.script_off do
           @tag :html5lib
           @tag :tree_construction
           @tag test_file: filename

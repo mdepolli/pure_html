@@ -26,7 +26,9 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
   def parse_file(path) do
     path
     |> File.read!()
-    |> String.split("\n\n")
+    # Split on blank lines followed by #data to properly separate tests
+    # (handles empty data sections that have blank lines within the test)
+    |> String.split(~r/\n\n(?=#data\n)/)
     |> Enum.map(&parse_test/1)
     |> Enum.reject(&is_nil/1)
   end

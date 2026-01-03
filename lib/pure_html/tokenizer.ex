@@ -616,7 +616,11 @@ defmodule PureHtml.Tokenizer do
       emit(state, input: rest)
     else
       # Include the '>' that triggered this - it's not a valid end tag
-      emit_char(state, "</" <> state.buffer <> ">", state: :script_data_escaped, token: nil, input: rest)
+      emit_char(state, "</" <> state.buffer <> ">",
+        state: :script_data_escaped,
+        token: nil,
+        input: rest
+      )
     end
   end
 
@@ -1990,7 +1994,7 @@ defmodule PureHtml.Tokenizer do
     {:continue, struct!(state, updates)}
   end
 
-  @rawtext_elements ~w(style xmp iframe noembed noframes)
+  @rawtext_elements ~w(style xmp iframe noembed noframes noscript)
   @rcdata_elements ~w(textarea title)
 
   defp emit(%{token: {:start_tag, "plaintext", _, false}} = state, updates) do
