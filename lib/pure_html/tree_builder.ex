@@ -346,6 +346,16 @@ defmodule PureHtml.TreeBuilder do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
+  # Template in body mode needs special handling (push mode)
+  defp do_process_html_start_tag("template", attrs, _, %State{mode: mode} = state)
+       when mode in [:in_body, :in_table, :in_select] do
+    state
+    |> reconstruct_active_formatting()
+    |> push_element("template", attrs)
+    |> push_mode(:in_template)
+    |> then(fn s -> %{s | af: [:marker | s.af]} end)
+  end
+
   # Head elements in body modes - just process
   defp do_process_html_start_tag(tag, attrs, self_closing, %State{mode: mode} = state)
        when tag in @head_elements and mode in [:in_template, :in_body, :in_table, :in_select] do
@@ -433,6 +443,12 @@ defmodule PureHtml.TreeBuilder do
     |> then(fn s -> %{s | af: [:marker | s.af]} end)
   end
 
+  # Table sections, caption, colgroup in template mode are ignored
+  defp do_process_html_start_tag(tag, _, _, %State{mode: :in_template} = state)
+       when tag in @table_sections or tag in ["caption", "colgroup"] do
+    state
+  end
+
   # Table sections close any open colgroup
   defp do_process_html_start_tag(tag, attrs, _, %State{mode: :in_table} = state)
        when tag in @table_sections do
@@ -497,15 +513,6 @@ defmodule PureHtml.TreeBuilder do
     |> reconstruct_active_formatting()
     |> push_element("select", attrs)
     |> push_mode(:in_select)
-  end
-
-  defp do_process_html_start_tag("template", attrs, _, state) do
-    state
-    |> in_body()
-    |> reconstruct_active_formatting()
-    |> push_element("template", attrs)
-    |> push_mode(:in_template)
-    |> then(fn s -> %{s | af: [:marker | s.af]} end)
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) do
@@ -979,7 +986,24 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp ensure_tr(%State{stack: [%{tag: "tr"} | _]} = state), do: state
+
+  # Template with existing table row structure - create new tr for td/th
+  defp ensure_tr(%State{stack: [%{tag: "template", children: children} | _]} = state) do
+    if has_table_row_structure?(children) do
+      push_element(state, "tr", %{})
+    else
+      state
+    end
+  end
+
   defp ensure_tr(state), do: state
+
+  defp has_table_row_structure?(children) do
+    Enum.any?(children, fn
+      %{tag: tag} when tag in ~w(tr tbody thead tfoot) -> true
+      _ -> false
+    end)
+  end
 
   defp ensure_colgroup(%State{stack: [%{tag: "colgroup"} | _]} = state), do: state
 
