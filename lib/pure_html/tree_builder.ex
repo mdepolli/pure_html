@@ -1045,15 +1045,22 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_close_p(state, _tag), do: state
 
-  # Close p and also clear AF entries for closed elements
+  # Close p and clear AF entries for non-formatting elements only
+  # Formatting elements stay in AF for reconstruction
   defp close_p_if_open_with_af(stack, af) do
     case find_p_in_stack(stack, []) do
       nil ->
         {stack, af}
 
       {above_p, p_elem, below_p} ->
-        closed_refs = MapSet.new([p_elem.ref | Enum.map(above_p, & &1.ref)])
-        new_af = reject_refs_from_af(af, closed_refs)
+        # Only clear refs for non-formatting elements (p itself and non-formatting above)
+        non_formatting_refs =
+          [p_elem | above_p]
+          |> Enum.reject(fn %{tag: tag} -> tag in @formatting_elements end)
+          |> Enum.map(& &1.ref)
+          |> MapSet.new()
+
+        new_af = reject_refs_from_af(af, non_formatting_refs)
         closed_p = close_with_elements_above(p_elem, above_p)
         {add_child(below_p, closed_p), new_af}
     end
