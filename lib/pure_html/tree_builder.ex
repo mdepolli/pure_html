@@ -1283,10 +1283,16 @@ defmodule PureHtml.TreeBuilder do
   defp close_head(state), do: state
 
   defp ensure_body(%State{stack: [%{tag: "body"} | _]} = state), do: state
+  defp ensure_body(%State{stack: [%{tag: "frameset"} | _]} = state), do: state
 
-  defp ensure_body(%State{stack: [%{tag: "html"} = html]} = state) do
-    body = new_element("body")
-    %{state | stack: [body, html], mode: :in_body}
+  defp ensure_body(%State{stack: [%{tag: "html", children: children} = html]} = state) do
+    # Don't create body if frameset exists
+    if has_tag?(children, "frameset") do
+      state
+    else
+      body = new_element("body")
+      %{state | stack: [body, html], mode: :in_body}
+    end
   end
 
   defp ensure_body(%State{stack: [current | rest]} = state) do
