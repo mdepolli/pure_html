@@ -385,7 +385,7 @@ defmodule PureHtml.TreeBuilder do
     |> reconstruct_active_formatting()
     |> push_element("template", attrs)
     |> push_mode(:in_template)
-    |> then(fn s -> %{s | af: [:marker | s.af]} end)
+    |> push_af_marker()
   end
 
   # Head elements in body modes - just process
@@ -497,7 +497,7 @@ defmodule PureHtml.TreeBuilder do
     |> clear_to_table_row_context()
     |> ensure_table_context()
     |> push_element(tag, attrs)
-    |> then(fn s -> %{s | af: [:marker | s.af]} end)
+    |> push_af_marker()
   end
 
   # Table sections, caption, colgroup in template mode are ignored
@@ -591,16 +591,12 @@ defmodule PureHtml.TreeBuilder do
 
   defp maybe_set_frameset_not_ok_for_element(state, _tag), do: state
 
-  defp process_start_tag(state, tag, attrs, true) do
-    add_child_to_stack(state, {tag, attrs, []})
-  end
-
-  defp process_start_tag(state, tag, attrs, _) when tag in @void_elements do
-    add_child_to_stack(state, {tag, attrs, []})
-  end
-
-  defp process_start_tag(state, tag, attrs, _) do
-    push_element(state, tag, attrs)
+  defp process_start_tag(state, tag, attrs, self_closing) do
+    if self_closing or tag in @void_elements do
+      add_child_to_stack(state, {tag, attrs, []})
+    else
+      push_element(state, tag, attrs)
+    end
   end
 
   # --------------------------------------------------------------------------
@@ -923,27 +919,15 @@ defmodule PureHtml.TreeBuilder do
     %{state | af: apply_noahs_ark([{ref, tag, attrs} | af], tag, attrs)}
   end
 
-  defp maybe_close_existing_a(%State{af: af} = state) do
-    case find_formatting_entry(af, "a") do
-      nil ->
-        state
+  defp maybe_close_existing_a(state), do: maybe_close_existing_formatting(state, "a")
+  defp maybe_close_existing_nobr(state), do: maybe_close_existing_formatting(state, "nobr")
 
-      _ ->
-        state
-        |> run_adoption_agency("a")
-        |> then(fn s -> %{s | af: remove_formatting_entry(s.af, "a")} end)
-    end
-  end
-
-  defp maybe_close_existing_nobr(%State{af: af} = state) do
-    case find_formatting_entry(af, "nobr") do
-      nil ->
-        state
-
-      _ ->
-        state
-        |> run_adoption_agency("nobr")
-        |> then(fn s -> %{s | af: remove_formatting_entry(s.af, "nobr")} end)
+  defp maybe_close_existing_formatting(%State{af: af} = state, tag) do
+    if find_formatting_entry(af, tag) do
+      state = run_adoption_agency(state, tag)
+      %{state | af: remove_formatting_entry(state.af, tag)}
+    else
+      state
     end
   end
 
@@ -963,6 +947,8 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp remove_oldest_if_over_limit(_indices, af), do: af
+
+  defp push_af_marker(%State{af: af} = state), do: %{state | af: [:marker | af]}
 
   defp clear_af_to_marker(af) do
     af
@@ -1076,30 +1062,17 @@ defmodule PureHtml.TreeBuilder do
     end)
   end
 
+  @colgroup_close_tags ["td", "th", "tr"] ++ @table_sections
+
   defp ensure_colgroup(%State{stack: [%{tag: "colgroup"} | _]} = state), do: state
 
   defp ensure_colgroup(%State{stack: [%{tag: "table"} | _]} = state) do
     push_element(state, "colgroup", %{})
   end
 
-  # Close td/th back to tr
   defp ensure_colgroup(%State{stack: [%{tag: tag} = elem | rest]} = state)
-       when tag in ["td", "th"] do
-    %{state | stack: add_child(rest, elem)}
-    |> ensure_colgroup()
-  end
-
-  # Close tr back to tbody/table section
-  defp ensure_colgroup(%State{stack: [%{tag: "tr"} = elem | rest]} = state) do
-    %{state | stack: add_child(rest, elem)}
-    |> ensure_colgroup()
-  end
-
-  # Close tbody/thead/tfoot back to table
-  defp ensure_colgroup(%State{stack: [%{tag: tag} = elem | rest]} = state)
-       when tag in @table_sections do
-    %{state | stack: add_child(rest, elem)}
-    |> ensure_colgroup()
+       when tag in @colgroup_close_tags do
+    ensure_colgroup(%{state | stack: add_child(rest, elem)})
   end
 
   defp ensure_colgroup(state), do: state
@@ -1252,35 +1225,25 @@ defmodule PureHtml.TreeBuilder do
        do: state
 
   # Transition to in_body from earlier modes
-  defp transition_to(%State{mode: :initial} = state, :in_body) do
+  defp transition_to(%State{mode: mode} = state, :in_body) do
     state
-    |> ensure_html()
-    |> ensure_head()
-    |> close_head()
+    |> maybe_ensure_html(mode)
+    |> maybe_ensure_head(mode)
+    |> maybe_close_head(mode)
     |> ensure_body()
     |> set_mode(:in_body)
   end
 
-  defp transition_to(%State{mode: :before_head} = state, :in_body) do
-    state
-    |> ensure_head()
-    |> close_head()
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+  defp maybe_ensure_html(state, :initial), do: ensure_html(state)
+  defp maybe_ensure_html(state, _), do: state
 
-  defp transition_to(%State{mode: :in_head} = state, :in_body) do
-    state
-    |> close_head()
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+  defp maybe_ensure_head(state, mode) when mode in [:initial, :before_head], do: ensure_head(state)
+  defp maybe_ensure_head(state, _), do: state
 
-  defp transition_to(%State{mode: :after_head} = state, :in_body) do
-    state
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+  defp maybe_close_head(state, mode) when mode in [:initial, :before_head, :in_head],
+    do: close_head(state)
+
+  defp maybe_close_head(state, _), do: state
 
   defp set_mode(state, mode), do: %{state | mode: mode}
 
@@ -1379,12 +1342,7 @@ defmodule PureHtml.TreeBuilder do
   defp set_frameset_not_ok(state), do: %{state | frameset_ok: false}
 
   # Extract only whitespace characters from text
-  defp extract_whitespace(text) do
-    text
-    |> String.graphemes()
-    |> Enum.filter(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
-    |> Enum.join()
-  end
+  defp extract_whitespace(text), do: String.replace(text, ~r/[^ \t\n\r\f]/, "")
 
   defp ensure_body(%State{stack: [%{tag: "body"} | _]} = state), do: state
   defp ensure_body(%State{stack: [%{tag: "frameset"} | _]} = state), do: state
@@ -1491,11 +1449,7 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp foster_element(stack, element) do
-    foster_content(stack, element, [], &add_foster_child/2)
-  end
-
-  defp add_foster_child(stack, element) do
-    add_child(stack, element)
+    foster_content(stack, element, [], &add_child/2)
   end
 
   defp foster_text(stack, text) do
