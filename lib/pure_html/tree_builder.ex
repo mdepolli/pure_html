@@ -216,12 +216,7 @@ defmodule PureHtml.TreeBuilder do
   defp process({:end_tag, "table"}, %State{stack: stack, af: af} = state) do
     # Find elements that will be closed (everything above and including the table)
     closed_refs = get_refs_to_close_for_table(stack)
-    # Clear those elements from AF
-    af =
-      Enum.reject(af, fn
-        :marker -> false
-        {ref, _, _} -> MapSet.member?(closed_refs, ref)
-      end)
+    af = reject_refs_from_af(af, closed_refs)
 
     stack = do_clear_to_table_context(stack)
     %{state | stack: close_tag("table", stack), af: af} |> pop_mode()
@@ -231,17 +226,16 @@ defmodule PureHtml.TreeBuilder do
     run_adoption_agency(state, tag)
   end
 
-  defp process({:end_tag, "p"}, %State{stack: stack, mode: :in_body} = state) do
+  defp process({:end_tag, "p"}, %State{stack: stack, mode: mode} = state) do
     case close_p_in_scope(stack) do
-      {:found, new_stack} -> %{state | stack: new_stack}
-      :not_found -> add_child_to_stack(state, new_element("p"))
-    end
-  end
+      {:found, new_stack} ->
+        %{state | stack: new_stack}
 
-  defp process({:end_tag, "p"}, %State{stack: stack} = state) do
-    case close_p_in_scope(stack) do
-      {:found, new_stack} -> %{state | stack: new_stack}
-      :not_found -> state
+      :not_found when mode == :in_body ->
+        add_child_to_stack(state, new_element("p"))
+
+      :not_found ->
+        state
     end
   end
 
@@ -525,7 +519,7 @@ defmodule PureHtml.TreeBuilder do
   defp do_process_html_start_tag("a", attrs, _, state) do
     state
     |> in_body()
-    |> maybe_close_existing_a()
+    |> maybe_close_existing_formatting("a")
     |> reconstruct_active_formatting()
     |> push_element("a", attrs)
     |> add_formatting_entry("a", attrs)
@@ -535,7 +529,7 @@ defmodule PureHtml.TreeBuilder do
     state
     |> in_body()
     |> reconstruct_active_formatting()
-    |> maybe_close_existing_nobr()
+    |> maybe_close_existing_formatting("nobr")
     |> push_element("nobr", attrs)
     |> add_formatting_entry("nobr", attrs)
   end
@@ -777,43 +771,33 @@ defmodule PureHtml.TreeBuilder do
 
   defp partition_between_elements(between, af) do
     Enum.split_with(between, fn %{ref: elem_ref} ->
-      find_af_entry_by_ref(af, elem_ref) != nil
+      ref_in_af?(af, elem_ref)
     end)
   end
 
-  defp find_af_entry_by_ref(af, target_ref) do
-    af
-    |> Enum.with_index()
-    |> Enum.find_value(fn
-      {{^target_ref, tag, attrs}, idx} -> {idx, {target_ref, tag, attrs}}
-      _ -> nil
+  defp ref_in_af?(af, target_ref) do
+    Enum.any?(af, fn
+      {^target_ref, _, _} -> true
+      _ -> false
     end)
   end
 
   defp remove_formatting_from_af(af, fe_idx, formatting_between) do
     af = List.delete_at(af, fe_idx)
     formatting_refs = MapSet.new(formatting_between, & &1.ref)
-
-    Enum.reject(af, fn
-      :marker -> false
-      {ref, _, _} -> MapSet.member?(formatting_refs, ref)
-    end)
+    reject_refs_from_af(af, formatting_refs)
   end
 
   defp wrap_children_with_fe_clone(elements, fe_tag, fe_attrs) do
-    Enum.map(elements, fn %{ref: ref, tag: tag, attrs: attrs, children: children} ->
-      wrapped_children = [{fe_tag, fe_attrs, children}]
-      %{ref: ref, tag: tag, attrs: attrs, children: wrapped_children}
+    Enum.map(elements, fn elem ->
+      %{elem | children: [{fe_tag, fe_attrs, elem.children}]}
     end)
   end
 
   defp find_furthest_block(stack, fe_idx) do
-    elements =
-      stack
-      |> Enum.take(fe_idx)
-      |> Enum.with_index()
-
-    elements
+    stack
+    |> Enum.take(fe_idx)
+    |> Enum.with_index()
     |> Enum.reverse()
     |> Enum.find_value(fn
       {%{tag: tag}, idx} when is_binary(tag) and tag in @special_elements -> idx
@@ -838,13 +822,7 @@ defmodule PureHtml.TreeBuilder do
 
     # Remove the formatting element and any formatting elements that were above it
     above_refs = MapSet.new(above_fe, & &1.ref)
-    af = List.delete_at(af, af_idx)
-
-    af =
-      Enum.reject(af, fn
-        :marker -> false
-        {ref, _, _} -> MapSet.member?(above_refs, ref)
-      end)
+    af = List.delete_at(af, af_idx) |> reject_refs_from_af(above_refs)
 
     {final_stack, af}
   end
@@ -852,21 +830,17 @@ defmodule PureHtml.TreeBuilder do
   defp close_elements_into([], children), do: children
 
   defp close_elements_into(elements, fe_original_children) do
-    nested = nest_formatting_elements(elements)
+    # Nest elements from innermost to outermost
+    nested =
+      Enum.reduce(elements, nil, fn elem, inner ->
+        if inner do
+          %{elem | children: [inner | elem.children]}
+        else
+          elem
+        end
+      end)
+
     [nested | fe_original_children]
-  end
-
-  defp nest_formatting_elements(elements) do
-    elements
-    |> Enum.reverse()
-    |> do_nest_formatting()
-  end
-
-  defp do_nest_formatting([elem]), do: elem
-
-  defp do_nest_formatting([elem | rest]) do
-    inner = do_nest_formatting(rest)
-    %{elem | children: [inner | elem.children]}
   end
 
   # --------------------------------------------------------------------------
@@ -903,9 +877,6 @@ defmodule PureHtml.TreeBuilder do
     %{state | af: apply_noahs_ark([{ref, tag, attrs} | af], tag, attrs)}
   end
 
-  defp maybe_close_existing_a(state), do: maybe_close_existing_formatting(state, "a")
-  defp maybe_close_existing_nobr(state), do: maybe_close_existing_formatting(state, "nobr")
-
   defp maybe_close_existing_formatting(%State{af: af} = state, tag) do
     if find_formatting_entry(af, tag) do
       state = run_adoption_agency(state, tag)
@@ -916,21 +887,20 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp apply_noahs_ark(af, tag, attrs) do
-    af
-    |> Enum.with_index()
-    |> Enum.filter(fn
-      {:marker, _idx} -> false
-      {{_ref, t, a}, _idx} -> t == tag and a == attrs
-    end)
-    |> Enum.map(fn {_entry, idx} -> idx end)
-    |> remove_oldest_if_over_limit(af)
-  end
+    matching_indices =
+      af
+      |> Enum.with_index()
+      |> Enum.flat_map(fn
+        {{_ref, ^tag, ^attrs}, idx} -> [idx]
+        _ -> []
+      end)
 
-  defp remove_oldest_if_over_limit(indices, af) when length(indices) > 3 do
-    List.delete_at(af, Enum.max(indices))
+    if length(matching_indices) > 3 do
+      List.delete_at(af, Enum.max(matching_indices))
+    else
+      af
+    end
   end
-
-  defp remove_oldest_if_over_limit(_indices, af), do: af
 
   defp push_af_marker(%State{af: af} = state), do: %{state | af: [:marker | af]}
 
@@ -971,17 +941,11 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Get refs of all elements that will be closed when table closes
-  defp get_refs_to_close_for_table(stack) do
-    do_get_refs_to_close_for_table(stack, MapSet.new())
-  end
+  defp get_refs_to_close_for_table(stack), do: do_get_refs_to_close_for_table(stack, MapSet.new())
 
-  defp do_get_refs_to_close_for_table([%{tag: "table", ref: ref} | _], acc) do
-    MapSet.put(acc, ref)
-  end
-
-  defp do_get_refs_to_close_for_table([%{tag: "template"} | _], acc), do: acc
-  defp do_get_refs_to_close_for_table([%{tag: "html"} | _], acc), do: acc
-  defp do_get_refs_to_close_for_table([_ | []], acc), do: acc
+  defp do_get_refs_to_close_for_table([%{tag: "table", ref: ref} | _], acc), do: MapSet.put(acc, ref)
+  defp do_get_refs_to_close_for_table([%{tag: tag} | _], acc) when tag in ["template", "html"], do: acc
+  defp do_get_refs_to_close_for_table([_], acc), do: acc
   defp do_get_refs_to_close_for_table([], acc), do: acc
 
   defp do_get_refs_to_close_for_table([%{ref: ref} | rest], acc) do
@@ -1119,8 +1083,8 @@ defmodule PureHtml.TreeBuilder do
 
   defp find_p_in_stack([], _acc), do: nil
 
-  defp find_p_in_stack([%{ref: ref, tag: "p", attrs: attrs, children: children} | rest], acc) do
-    {Enum.reverse(acc), %{ref: ref, tag: "p", attrs: attrs, children: children}, rest}
+  defp find_p_in_stack([%{tag: "p"} = p_elem | rest], acc) do
+    {Enum.reverse(acc), p_elem, rest}
   end
 
   defp find_p_in_stack([%{tag: tag} | _rest], _acc) when tag in @button_scope_boundaries do
@@ -1591,23 +1555,24 @@ defmodule PureHtml.TreeBuilder do
 
   defp pop_until(_target, [], _acc), do: :not_found
 
-  defp pop_until(target, [%{tag: elem_tag} = elem | rest], acc) when elem_tag == target do
-    finalize_pop(elem, acc, rest)
+  defp pop_until(target, [%{tag: tag} = elem | rest], acc) do
+    cond do
+      tag_matches?(tag, target) ->
+        finalize_pop(elem, acc, rest)
+
+      # Template is a boundary - can't close elements across it (unless closing template itself)
+      tag == "template" ->
+        :not_found
+
+      true ->
+        pop_until(target, rest, [elem | acc])
+    end
   end
 
-  defp pop_until(target, [%{tag: {:svg, svg_tag}} = elem | rest], acc) when svg_tag == target do
-    finalize_pop(elem, acc, rest)
-  end
-
-  defp pop_until(target, [%{tag: {:math, math_tag}} = elem | rest], acc) when math_tag == target do
-    finalize_pop(elem, acc, rest)
-  end
-
-  defp pop_until(_target, [%{tag: "template"} | _], _acc), do: :not_found
-
-  defp pop_until(target, [current | rest], acc) do
-    pop_until(target, rest, [current | acc])
-  end
+  defp tag_matches?(tag, target) when tag == target, do: true
+  defp tag_matches?({:svg, tag}, target) when tag == target, do: true
+  defp tag_matches?({:math, tag}, target) when tag == target, do: true
+  defp tag_matches?(_, _), do: false
 
   defp finalize_pop(elem, acc, rest) do
     nested_above =
