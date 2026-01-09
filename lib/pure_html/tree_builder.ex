@@ -314,17 +314,6 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp maybe_add_leading_whitespace(state, ""), do: state
-  defp maybe_add_leading_whitespace(state, ws), do: add_text_to_stack(state, ws)
-
-  defp process_text_to_body(state, text) do
-    state
-    |> in_body()
-    |> reconstruct_active_formatting()
-    |> add_text_to_stack(text)
-    |> set_frameset_not_ok()
-  end
-
   # In frameset/after frameset modes - only whitespace is kept, non-whitespace is ignored
   defp process({:character, text}, %State{mode: mode} = state)
        when mode in [:in_frameset, :after_frameset] do
@@ -350,6 +339,18 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp process({:error, _}, state), do: state
+
+  # Character processing helpers
+  defp maybe_add_leading_whitespace(state, ""), do: state
+  defp maybe_add_leading_whitespace(state, ws), do: add_text_to_stack(state, ws)
+
+  defp process_text_to_body(state, text) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> add_text_to_stack(text)
+    |> set_frameset_not_ok()
+  end
 
   # --------------------------------------------------------------------------
   # HTML start tag processing
@@ -664,7 +665,7 @@ defmodule PureHtml.TreeBuilder do
   # 3. Verify it's in scope
   # Then determine if there's a furthest block.
   defp locate_formatting_element(af, stack, subject) do
-    with {:ok, af_idx, fe_ref, fe_tag, fe_attrs} <- find_formatting_entry_result(af, subject),
+    with {:ok, af_idx, {fe_ref, fe_tag, fe_attrs}} <- find_formatting_entry_result(af, subject),
          {:ok, stack_idx} <- find_in_stack_result(stack, fe_ref, af_idx),
          :ok <- check_in_scope(stack, stack_idx) do
       case find_furthest_block(stack, stack_idx) do
@@ -677,7 +678,7 @@ defmodule PureHtml.TreeBuilder do
   defp find_formatting_entry_result(af, subject) do
     case find_formatting_entry(af, subject) do
       nil -> :not_in_af
-      {af_idx, {fe_ref, fe_tag, fe_attrs}} -> {:ok, af_idx, fe_ref, fe_tag, fe_attrs}
+      {af_idx, entry} -> {:ok, af_idx, entry}
     end
   end
 
@@ -808,15 +809,9 @@ defmodule PureHtml.TreeBuilder do
   defp pop_to_formatting_element(stack, af, af_idx, stack_idx) do
     {above_fe, [fe | rest]} = Enum.split(stack, stack_idx)
 
-    closed_above =
-      Enum.reduce(above_fe, nil, fn elem, inner ->
-        children = if inner, do: [inner | elem.children], else: elem.children
-        %{elem | children: children}
-      end)
-
-    %{ref: fe_ref, tag: fe_tag, attrs: fe_attrs, children: fe_children} = fe
-    fe_children = if closed_above, do: [closed_above | fe_children], else: fe_children
-    closed_fe = %{ref: fe_ref, tag: fe_tag, attrs: fe_attrs, children: fe_children}
+    closed_above = nest_elements(above_fe)
+    fe_children = if closed_above, do: [closed_above | fe.children], else: fe.children
+    closed_fe = %{fe | children: fe_children}
 
     final_stack = add_child(rest, closed_fe)
 
@@ -830,17 +825,7 @@ defmodule PureHtml.TreeBuilder do
   defp close_elements_into([], children), do: children
 
   defp close_elements_into(elements, fe_original_children) do
-    # Nest elements from innermost to outermost
-    nested =
-      Enum.reduce(elements, nil, fn elem, inner ->
-        if inner do
-          %{elem | children: [inner | elem.children]}
-        else
-          elem
-        end
-      end)
-
-    [nested | fe_original_children]
+    [nest_elements(elements) | fe_original_children]
   end
 
   # --------------------------------------------------------------------------
@@ -927,7 +912,7 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp clear_to_table_context(%State{stack: stack} = state) do
-    %{state | stack: do_clear_to_table_context(stack)}
+    %{state | stack: clear_to_context(stack, @table_boundaries)}
   end
 
   defp clear_to_context([%{tag: tag} | _] = stack, boundaries) do
@@ -940,6 +925,15 @@ defmodule PureHtml.TreeBuilder do
     clear_to_context(foster_aware_add_child(rest, elem), boundaries)
   end
 
+  # Clears to table context but preserves single-element stacks (for end_tag table)
+  defp do_clear_to_table_context([%{tag: tag} | _] = stack) when tag in @table_boundaries, do: stack
+  defp do_clear_to_table_context([_] = stack), do: stack
+  defp do_clear_to_table_context([]), do: []
+
+  defp do_clear_to_table_context([elem | rest]) do
+    do_clear_to_table_context(foster_aware_add_child(rest, elem))
+  end
+
   # Get refs of all elements that will be closed when table closes
   defp get_refs_to_close_for_table(stack), do: do_get_refs_to_close_for_table(stack, MapSet.new())
 
@@ -950,14 +944,6 @@ defmodule PureHtml.TreeBuilder do
 
   defp do_get_refs_to_close_for_table([%{ref: ref} | rest], acc) do
     do_get_refs_to_close_for_table(rest, MapSet.put(acc, ref))
-  end
-
-  defp do_clear_to_table_context([%{tag: tag} | _] = stack) when tag in @table_boundaries, do: stack
-  defp do_clear_to_table_context([_] = stack), do: stack
-  defp do_clear_to_table_context([]), do: []
-
-  defp do_clear_to_table_context([elem | rest]) do
-    do_clear_to_table_context(foster_aware_add_child(rest, elem))
   end
 
   defp ensure_table_context(state) do
@@ -1072,12 +1058,8 @@ defmodule PureHtml.TreeBuilder do
   # Nest elements into each other and add to parent's children
   defp close_with_elements_above(parent, []), do: parent
 
-  defp close_with_elements_above(parent, above) do
-    nested =
-      Enum.reduce(above, fn elem, inner ->
-        %{elem | children: [inner | elem.children]}
-      end)
-
+  defp close_with_elements_above(parent, [first | rest]) do
+    nested = Enum.reduce(rest, first, fn elem, inner -> %{elem | children: [inner | elem.children]} end)
     %{parent | children: [nested | parent.children]}
   end
 
@@ -1162,25 +1144,43 @@ defmodule PureHtml.TreeBuilder do
        do: state
 
   # Transition to in_body from earlier modes
-  defp transition_to(%State{mode: mode} = state, :in_body) do
+  defp transition_to(%State{mode: :initial} = state, :in_body) do
     state
-    |> maybe_ensure_html(mode)
-    |> maybe_ensure_head(mode)
-    |> maybe_close_head(mode)
+    |> ensure_html()
+    |> ensure_head()
+    |> close_head()
     |> ensure_body()
     |> set_mode(:in_body)
   end
 
-  defp maybe_ensure_html(state, :initial), do: ensure_html(state)
-  defp maybe_ensure_html(state, _), do: state
+  defp transition_to(%State{mode: :before_head} = state, :in_body) do
+    state
+    |> ensure_head()
+    |> close_head()
+    |> ensure_body()
+    |> set_mode(:in_body)
+  end
 
-  defp maybe_ensure_head(state, mode) when mode in [:initial, :before_head], do: ensure_head(state)
-  defp maybe_ensure_head(state, _), do: state
+  defp transition_to(%State{mode: :in_head} = state, :in_body) do
+    state
+    |> close_head()
+    |> ensure_body()
+    |> set_mode(:in_body)
+  end
 
-  defp maybe_close_head(state, mode) when mode in [:initial, :before_head, :in_head],
-    do: close_head(state)
+  defp transition_to(%State{mode: :after_head} = state, :in_body) do
+    state
+    |> ensure_body()
+    |> set_mode(:in_body)
+  end
 
-  defp maybe_close_head(state, _), do: state
+  # Frameset modes - ensure body exists (no-op if frameset already present)
+  defp transition_to(%State{mode: mode} = state, :in_body)
+       when mode in [:in_frameset, :after_frameset] do
+    state
+    |> ensure_body()
+    |> set_mode(:in_body)
+  end
 
   defp set_mode(state, mode), do: %{state | mode: mode}
 
@@ -1230,24 +1230,18 @@ defmodule PureHtml.TreeBuilder do
   defp ensure_html(%State{stack: [%{tag: "html"} | _]} = state), do: state
   defp ensure_html(state), do: state
 
-  defp ensure_head(%State{stack: [%{tag: "html"} = html]} = state) do
-    ensure_head_check([html], state)
+  defp ensure_head(%State{stack: [%{tag: "html", children: children} = html]} = state) do
+    if has_tag?(children, "head") do
+      state
+    else
+      head = new_element("head")
+      %{state | stack: [head, html], mode: :in_head}
+    end
   end
 
   defp ensure_head(%State{stack: [%{tag: "head"} | _]} = state), do: state
   defp ensure_head(%State{stack: [%{tag: "body"} | _]} = state), do: state
   defp ensure_head(state), do: state
-
-  defp ensure_head_check([%{tag: "html", children: [%{tag: "head"} | _]}], state), do: state
-
-  defp ensure_head_check([%{tag: "html", children: [_ | rest]} = html], state) do
-    ensure_head_check([%{html | children: rest}], state)
-  end
-
-  defp ensure_head_check([%{tag: "html", children: []}], %State{stack: [html]} = state) do
-    head = new_element("head")
-    %{state | stack: [head, html], mode: :in_head}
-  end
 
   defp close_head(%State{stack: [%{tag: "head"} = head | rest]} = state) do
     %{state | stack: add_child(rest, head), mode: :after_head}
@@ -1440,12 +1434,18 @@ defmodule PureHtml.TreeBuilder do
     foster_reconstruct_entries(%{state | stack: new_stack, af: new_af}, rest)
   end
 
-  defp rebuild_stack([], stack), do: stack
-  defp rebuild_stack([elem | rest], stack), do: rebuild_stack(rest, [elem | stack])
+  defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 
   # --------------------------------------------------------------------------
   # Stack operations
   # --------------------------------------------------------------------------
+
+  # Nest a list of elements from innermost to outermost.
+  # Returns nil for empty list, or the nested element.
+  defp nest_elements([]), do: nil
+  defp nest_elements([first | rest]) do
+    Enum.reduce(rest, first, fn elem, inner -> %{elem | children: [inner | elem.children]} end)
+  end
 
   defp push_element(%State{stack: stack} = state, tag, attrs) do
     %{state | stack: [new_element(tag, attrs) | stack]}
@@ -1505,13 +1505,12 @@ defmodule PureHtml.TreeBuilder do
         _ -> false
       end)
 
-    closed =
-      Enum.reduce(foreign, nil, fn elem, inner ->
-        children = if inner, do: [inner | elem.children], else: elem.children
-        %{elem | children: children}
-      end)
+    new_stack =
+      case nest_elements(foreign) do
+        nil -> rest
+        closed -> add_child(rest, closed)
+      end
 
-    new_stack = if closed, do: add_child(rest, closed), else: rest
     %{state | stack: new_stack}
   end
 
@@ -1575,14 +1574,7 @@ defmodule PureHtml.TreeBuilder do
   defp tag_matches?(_, _), do: false
 
   defp finalize_pop(elem, acc, rest) do
-    nested_above =
-      acc
-      |> Enum.reverse()
-      |> Enum.reduce(nil, fn e, inner ->
-        children = if inner, do: [inner | e.children], else: e.children
-        %{e | children: children}
-      end)
-
+    nested_above = nest_elements(Enum.reverse(acc))
     children = if nested_above, do: [nested_above | elem.children], else: elem.children
     {:found, %{elem | children: children}, rest}
   end
