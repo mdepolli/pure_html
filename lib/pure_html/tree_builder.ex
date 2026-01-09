@@ -300,39 +300,41 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Text in pre-body modes: whitespace stays, non-whitespace triggers body transition
+  defp process({:character, text}, %State{stack: [], mode: mode} = state)
+       when mode in [:initial, :before_head, :in_head, :after_head] do
+    process_text_to_body(state, text)
+  end
+
   defp process({:character, text}, %State{mode: mode} = state)
        when mode in [:initial, :before_head, :in_head, :after_head] do
     case String.trim_leading(text) do
       "" ->
-        # All whitespace - add to current location if we have a stack
-        case state.stack do
-          [] -> state
-          _ -> add_text_to_stack(state, text)
-        end
+        add_text_to_stack(state, text)
 
       trimmed ->
-        # Has non-whitespace content
         leading_ws = String.slice(text, 0, String.length(text) - String.length(trimmed))
 
-        state =
-          if leading_ws != "" and state.stack != [],
-            do: add_text_to_stack(state, leading_ws),
-            else: state
-
         state
-        |> in_body()
-        |> reconstruct_active_formatting()
-        |> add_text_to_stack(trimmed)
-        |> set_frameset_not_ok()
+        |> maybe_add_leading_whitespace(leading_ws)
+        |> process_text_to_body(trimmed)
     end
+  end
+
+  defp maybe_add_leading_whitespace(state, ""), do: state
+  defp maybe_add_leading_whitespace(state, ws), do: add_text_to_stack(state, ws)
+
+  defp process_text_to_body(state, text) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> add_text_to_stack(text)
+    |> set_frameset_not_ok()
   end
 
   # In frameset/after frameset modes - only whitespace is kept, non-whitespace is ignored
   defp process({:character, text}, %State{mode: mode} = state)
        when mode in [:in_frameset, :after_frameset] do
-    text
-    |> extract_whitespace()
-    |> case do
+    case extract_whitespace(text) do
       "" -> state
       whitespace -> add_text_to_stack(state, whitespace)
     end
@@ -374,6 +376,7 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
+  # Table elements and other tags that don't need foster parenting
   defp process_html_start_tag(tag, attrs, self_closing, state) do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
@@ -409,12 +412,7 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Frameset in body mode - only allowed if frameset_ok is true
-  defp do_process_html_start_tag(
-         "frameset",
-         attrs,
-         _,
-         %State{mode: :in_body, frameset_ok: true} = state
-       ) do
+  defp do_process_html_start_tag("frameset", attrs, _, %State{mode: :in_body, frameset_ok: true} = state) do
     state
     |> close_body_for_frameset()
     |> push_element("frameset", attrs)
@@ -436,13 +434,8 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  # <frame> is valid in frameset context
-  defp do_process_html_start_tag(
-         "frame",
-         attrs,
-         _,
-         %State{stack: [%{tag: "frameset"} | _]} = state
-       ) do
+  # <frame> is valid only in frameset context
+  defp do_process_html_start_tag("frame", attrs, _, %State{stack: [%{tag: "frameset"} | _]} = state) do
     add_child_to_stack(state, {"frame", attrs, []})
   end
 
@@ -749,29 +742,24 @@ defmodule PureHtml.TreeBuilder do
          fe_stack_idx,
          fb_idx
        ) do
-    {above_fb, rest1} = Enum.split(stack, fb_idx)
-    [fb | rest2] = rest1
+    {above_fb, [fb | rest2]} = Enum.split(stack, fb_idx)
     between_count = fe_stack_idx - fb_idx - 1
     {between, [fe | below_fe]} = Enum.split(rest2, between_count)
 
     %{ref: fb_ref, tag: fb_tag, attrs: fb_attrs, children: fb_children} = fb
+    %{children: fe_children} = fe
 
     {formatting_between, block_between} = partition_between_elements(between, af)
-    {formatting_to_clone_list, _formatting_to_close} = Enum.split(formatting_between, 3)
+    {formatting_to_clone_list, _} = Enum.split(formatting_between, 3)
 
-    %{children: fe_children} = fe
-    fe_children = close_elements_into(formatting_between, fe_children)
-    closed_fe = %{ref: fe_ref, tag: fe_tag, attrs: fe_attrs, children: fe_children}
+    # Close formatting elements into the original formatting element
+    closed_fe = %{ref: fe_ref, tag: fe_tag, attrs: fe_attrs, children: close_elements_into(formatting_between, fe_children)}
     below_fe = foster_aware_add_child(below_fe, closed_fe)
 
+    # Create clones for the new stack
     new_fe_clone = %{ref: make_ref(), tag: fe_tag, attrs: fe_attrs, children: fb_children}
-
     fb_empty = %{ref: fb_ref, tag: fb_tag, attrs: fb_attrs, children: []}
-
-    formatting_to_clone = Enum.map(formatting_to_clone_list, &{&1.tag, &1.attrs})
-
-    formatting_stack_elements = create_formatting_stack_elements(formatting_to_clone)
-
+    formatting_stack_elements = Enum.map(formatting_to_clone_list, fn %{tag: t, attrs: a} -> new_element(t, a) end)
     block_with_clones = wrap_children_with_fe_clone(block_between, fe_tag, fe_attrs)
 
     final_stack =
@@ -779,10 +767,12 @@ defmodule PureHtml.TreeBuilder do
         [new_fe_clone, fb_empty | formatting_stack_elements] ++
         Enum.reverse(block_with_clones) ++ below_fe
 
-    af = remove_formatting_from_af(af, af_idx, formatting_between)
-    af = [{new_fe_clone.ref, fe_tag, fe_attrs} | af]
+    new_af =
+      af
+      |> remove_formatting_from_af(af_idx, formatting_between)
+      |> then(&[{new_fe_clone.ref, fe_tag, fe_attrs} | &1])
 
-    %{state | stack: final_stack, af: af}
+    %{state | stack: final_stack, af: new_af}
   end
 
   defp partition_between_elements(between, af) do
@@ -814,12 +804,6 @@ defmodule PureHtml.TreeBuilder do
     Enum.map(elements, fn %{ref: ref, tag: tag, attrs: attrs, children: children} ->
       wrapped_children = [{fe_tag, fe_attrs, children}]
       %{ref: ref, tag: tag, attrs: attrs, children: wrapped_children}
-    end)
-  end
-
-  defp create_formatting_stack_elements(formatting_to_clone) do
-    Enum.map(formatting_to_clone, fn {tag, attrs} ->
-      new_element(tag, attrs)
     end)
   end
 
@@ -960,38 +944,30 @@ defmodule PureHtml.TreeBuilder do
   # Table context
   # --------------------------------------------------------------------------
 
+  @table_body_boundaries @table_sections ++ ["table", "template", "html"]
+  @table_row_boundaries @table_row_context ++ ["table", "template", "html"]
+  @table_boundaries ["table", "template", "html"]
+
   defp clear_to_table_body_context(%State{stack: stack} = state) do
-    %{state | stack: do_clear_to_table_body_context(stack)}
+    %{state | stack: clear_to_context(stack, @table_body_boundaries)}
   end
-
-  defp do_clear_to_table_body_context([%{tag: tag} | _] = stack)
-       when tag in @table_sections or tag in ["table", "template", "html"] do
-    stack
-  end
-
-  defp do_clear_to_table_body_context([elem | rest]) do
-    do_clear_to_table_body_context(foster_aware_add_child(rest, elem))
-  end
-
-  defp do_clear_to_table_body_context([]), do: []
 
   defp clear_to_table_row_context(%State{stack: stack} = state) do
-    %{state | stack: do_clear_to_table_row_context(stack)}
+    %{state | stack: clear_to_context(stack, @table_row_boundaries)}
   end
-
-  defp do_clear_to_table_row_context([%{tag: tag} | _] = stack)
-       when tag in @table_row_context or tag in ["table", "template", "html"] do
-    stack
-  end
-
-  defp do_clear_to_table_row_context([elem | rest]) do
-    do_clear_to_table_row_context(foster_aware_add_child(rest, elem))
-  end
-
-  defp do_clear_to_table_row_context([]), do: []
 
   defp clear_to_table_context(%State{stack: stack} = state) do
     %{state | stack: do_clear_to_table_context(stack)}
+  end
+
+  defp clear_to_context([%{tag: tag} | _] = stack, boundaries) do
+    if tag in boundaries, do: stack, else: clear_to_context_close(stack, boundaries)
+  end
+
+  defp clear_to_context([], _boundaries), do: []
+
+  defp clear_to_context_close([elem | rest], boundaries) do
+    clear_to_context(foster_aware_add_child(rest, elem), boundaries)
   end
 
   # Get refs of all elements that will be closed when table closes
@@ -1012,10 +988,8 @@ defmodule PureHtml.TreeBuilder do
     do_get_refs_to_close_for_table(rest, MapSet.put(acc, ref))
   end
 
-  defp do_clear_to_table_context([%{tag: "table"} | _] = stack), do: stack
-  defp do_clear_to_table_context([%{tag: "template"} | _] = stack), do: stack
-  defp do_clear_to_table_context([%{tag: "html"} | _] = stack), do: stack
-  defp do_clear_to_table_context([_ | []] = stack), do: stack
+  defp do_clear_to_table_context([%{tag: tag} | _] = stack) when tag in @table_boundaries, do: stack
+  defp do_clear_to_table_context([_] = stack), do: stack
   defp do_clear_to_table_context([]), do: []
 
   defp do_clear_to_table_context([elem | rest]) do
@@ -1082,9 +1056,8 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
 
   defp maybe_close_p(%State{stack: stack, af: af} = state, tag) when tag in @closes_p do
-    case close_p_if_open_with_af(stack, af) do
-      {new_stack, new_af} -> %{state | stack: new_stack, af: new_af}
-    end
+    {new_stack, new_af} = close_p_if_open_with_af(stack, af)
+    %{state | stack: new_stack, af: new_af}
   end
 
   defp maybe_close_p(state, _tag), do: state
@@ -1748,44 +1721,37 @@ defmodule PureHtml.TreeBuilder do
   defp reverse_all(children) do
     children
     |> Enum.reverse()
-    |> Enum.map(fn
-      %{children: kids} = elem ->
-        %{elem | children: reverse_all(kids)}
-
-      {:comment, _} = comment ->
-        comment
-
-      text when is_binary(text) ->
-        text
-
-      {tag, attrs, kids} ->
-        {tag, attrs, reverse_all(kids)}
-    end)
+    |> Enum.map(&reverse_node/1)
   end
+
+  defp reverse_node(%{children: kids} = elem), do: %{elem | children: reverse_all(kids)}
+  defp reverse_node({tag, attrs, kids}), do: {tag, attrs, reverse_all(kids)}
+  defp reverse_node(leaf), do: leaf
 
   defp convert_to_tuples(nil), do: nil
 
   defp convert_to_tuples(%{tag: {ns, tag}, attrs: attrs, children: children}) do
-    {{ns, tag}, attrs, Enum.map(children, &convert_to_tuples/1)}
+    {{ns, tag}, attrs, convert_children(children)}
   end
 
   defp convert_to_tuples(%{tag: "template", attrs: attrs, children: children}) do
-    stripped_children = Enum.map(children, &convert_to_tuples/1)
-    {"template", attrs, [{:content, stripped_children}]}
+    {"template", attrs, [{:content, convert_children(children)}]}
   end
 
   defp convert_to_tuples(%{tag: tag, attrs: attrs, children: children}) do
-    {tag, attrs, Enum.map(children, &convert_to_tuples/1)}
+    {tag, attrs, convert_children(children)}
   end
 
   defp convert_to_tuples({{ns, tag}, attrs, children}) do
-    {{ns, tag}, attrs, Enum.map(children, &convert_to_tuples/1)}
+    {{ns, tag}, attrs, convert_children(children)}
   end
 
   defp convert_to_tuples({tag, attrs, children}) when is_binary(tag) do
-    {tag, attrs, Enum.map(children, &convert_to_tuples/1)}
+    {tag, attrs, convert_children(children)}
   end
 
   defp convert_to_tuples({:comment, text}), do: {:comment, text}
   defp convert_to_tuples(text) when is_binary(text), do: text
+
+  defp convert_children(children), do: Enum.map(children, &convert_to_tuples/1)
 end
