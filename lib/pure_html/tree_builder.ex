@@ -17,18 +17,21 @@ defmodule PureHtml.TreeBuilder do
 
   defmodule State do
     @moduledoc false
-    defstruct stack: [], af: [], mode: :initial, mode_stack: []
+    # frameset_ok: true until we see content that disables frameset
+    defstruct stack: [], af: [], mode: :initial, mode_stack: [], frameset_ok: true
   end
 
   # Insertion modes (subset of HTML5 spec)
-  # :initial      - No html yet
-  # :before_head  - html exists, no head
-  # :in_head      - Inside head element
-  # :after_head   - Head closed, no body yet
-  # :in_body      - Inside body element
-  # :in_table     - Inside table
-  # :in_select    - Inside select element
-  # :in_template  - Inside template element
+  # :initial        - No html yet
+  # :before_head    - html exists, no head
+  # :in_head        - Inside head element
+  # :after_head     - Head closed, no body yet
+  # :in_body        - Inside body element
+  # :in_table       - Inside table
+  # :in_select      - Inside select element
+  # :in_template    - Inside template element
+  # :in_frameset    - Inside frameset element
+  # :after_frameset - After frameset closed
 
   # --------------------------------------------------------------------------
   # Element categories
@@ -75,6 +78,11 @@ defmodule PureHtml.TreeBuilder do
   @tag_corrections %{"image" => "img"}
 
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
+
+  # Elements that set the frameset-ok flag to "not ok" (per HTML5 spec)
+  @frameset_disabling_elements ~w(pre listing form textarea xmp iframe noembed noframes select embed
+                                  keygen applet marquee object table button img input hr br wbr area
+                                  dd dt li plaintext rb rtc)
 
   @special_elements ~w(address applet area article aside base basefont bgsound blockquote
                        body br button caption center col colgroup dd details dir div dl dt
@@ -155,9 +163,11 @@ defmodule PureHtml.TreeBuilder do
         s
         |> push_element("body", attrs)
         |> set_mode(:in_body)
+        |> set_frameset_not_ok()
 
       s ->
-        s
+        # Seeing <body> token always sets frameset_ok to false
+        set_frameset_not_ok(s)
     end)
   end
 
@@ -247,6 +257,10 @@ defmodule PureHtml.TreeBuilder do
     %{state | stack: close_tag("template", stack), af: clear_af_to_marker(af)} |> pop_mode()
   end
 
+  defp process({:end_tag, "frameset"}, %State{stack: stack} = state) do
+    %{state | stack: close_tag("frameset", stack), mode: :after_frameset}
+  end
+
   defp process({:end_tag, tag}, %State{stack: stack} = state) do
     %{state | stack: close_tag(tag, stack)}
   end
@@ -309,6 +323,18 @@ defmodule PureHtml.TreeBuilder do
         |> in_body()
         |> reconstruct_active_formatting()
         |> add_text_to_stack(trimmed)
+        |> set_frameset_not_ok()
+    end
+  end
+
+  # In frameset/after frameset modes - only whitespace is kept, non-whitespace is ignored
+  defp process({:character, text}, %State{mode: mode} = state)
+       when mode in [:in_frameset, :after_frameset] do
+    text
+    |> extract_whitespace()
+    |> case do
+      "" -> state
+      whitespace -> add_text_to_stack(state, whitespace)
     end
   end
 
@@ -318,6 +344,7 @@ defmodule PureHtml.TreeBuilder do
     |> in_body()
     |> reconstruct_active_formatting()
     |> add_text_to_stack(text)
+    |> maybe_set_frameset_not_ok(text)
   end
 
   defp process({:comment, _text}, %State{stack: []} = state), do: state
@@ -331,6 +358,11 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
   # HTML start tag processing
   # --------------------------------------------------------------------------
+
+  # Frameset and frame should never be foster parented
+  defp process_html_start_tag(tag, attrs, self_closing, state) when tag in ["frameset", "frame"] do
+    do_process_html_start_tag(tag, attrs, self_closing, state)
+  end
 
   defp process_html_start_tag(tag, attrs, self_closing, %State{stack: stack} = state)
        when tag not in @table_elements do
@@ -376,7 +408,19 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  # Frameset is only valid before body content - ignore if body exists or has content
+  # Frameset in body mode - only allowed if frameset_ok is true
+  defp do_process_html_start_tag(
+         "frameset",
+         attrs,
+         _,
+         %State{mode: :in_body, frameset_ok: true} = state
+       ) do
+    state
+    |> close_body_for_frameset()
+    |> push_element("frameset", attrs)
+    |> set_mode(:in_frameset)
+  end
+
   defp do_process_html_start_tag("frameset", _, _, %State{mode: :in_body} = state), do: state
 
   defp do_process_html_start_tag("frameset", attrs, _, %State{stack: stack} = state) do
@@ -385,12 +429,23 @@ defmodule PureHtml.TreeBuilder do
     else
       state
       |> ensure_html()
+      |> ensure_head()
       |> close_head()
       |> push_element("frameset", attrs)
+      |> set_mode(:in_frameset)
     end
   end
 
-  # <frame> is only valid in frameset, ignore in body
+  # <frame> is valid in frameset context
+  defp do_process_html_start_tag(
+         "frame",
+         attrs,
+         _,
+         %State{stack: [%{tag: "frameset"} | _]} = state
+       ) do
+    add_child_to_stack(state, {"frame", attrs, []})
+  end
+
   defp do_process_html_start_tag("frame", _, _, state), do: state
 
   # <col> needs colgroup wrapper in table context
@@ -418,6 +473,7 @@ defmodule PureHtml.TreeBuilder do
     |> in_body()
     |> maybe_close_p("hr")
     |> add_child_to_stack({"hr", attrs, []})
+    |> set_frameset_not_ok()
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
@@ -425,6 +481,7 @@ defmodule PureHtml.TreeBuilder do
     |> in_body()
     |> maybe_close_p(tag)
     |> add_child_to_stack({tag, attrs, []})
+    |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
   defp do_process_html_start_tag(tag, attrs, true, state) do
@@ -505,6 +562,7 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_close_p("table")
     |> push_element("table", attrs)
     |> push_mode(:in_table)
+    |> set_frameset_not_ok()
   end
 
   defp do_process_html_start_tag("select", attrs, _, state) do
@@ -513,6 +571,7 @@ defmodule PureHtml.TreeBuilder do
     |> reconstruct_active_formatting()
     |> push_element("select", attrs)
     |> push_mode(:in_select)
+    |> set_frameset_not_ok()
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) do
@@ -522,7 +581,15 @@ defmodule PureHtml.TreeBuilder do
     |> maybe_close_same(tag)
     |> push_element(tag, attrs)
     |> reconstruct_active_formatting()
+    |> maybe_set_frameset_not_ok_for_element(tag)
   end
+
+  defp maybe_set_frameset_not_ok_for_element(state, tag)
+       when tag in @frameset_disabling_elements do
+    set_frameset_not_ok(state)
+  end
+
+  defp maybe_set_frameset_not_ok_for_element(state, _tag), do: state
 
   defp process_start_tag(state, tag, attrs, true) do
     add_child_to_stack(state, {tag, attrs, []})
@@ -598,7 +665,11 @@ defmodule PureHtml.TreeBuilder do
 
       {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx} ->
         state
-        |> run_adoption_agency_with_furthest_block({af_idx, fe_ref, fe_tag, fe_attrs}, stack_idx, fb_idx)
+        |> run_adoption_agency_with_furthest_block(
+          {af_idx, fe_ref, fe_tag, fe_attrs},
+          stack_idx,
+          fb_idx
+        )
         |> run_adoption_agency_outer_loop(subject, iteration + 1)
     end
   end
@@ -1092,9 +1163,11 @@ defmodule PureHtml.TreeBuilder do
   defp close_with_elements_above(parent, []), do: parent
 
   defp close_with_elements_above(parent, above) do
-    nested = Enum.reduce(above, fn elem, inner ->
-      %{elem | children: [inner | elem.children]}
-    end)
+    nested =
+      Enum.reduce(above, fn elem, inner ->
+        %{elem | children: [inner | elem.children]}
+      end)
+
     %{parent | children: [nested | parent.children]}
   end
 
@@ -1281,6 +1354,37 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp close_head(state), do: state
+
+  # Close body and all elements above it for frameset insertion
+  defp close_body_for_frameset(%State{stack: stack} = state) do
+    %{state | stack: do_close_body_for_frameset(stack)}
+  end
+
+  defp do_close_body_for_frameset([%{tag: "body"} | rest]), do: rest
+  defp do_close_body_for_frameset([%{tag: "html"} | _] = stack), do: stack
+  defp do_close_body_for_frameset([_ | rest]), do: do_close_body_for_frameset(rest)
+  defp do_close_body_for_frameset([]), do: []
+
+  # Set frameset_ok to false when non-whitespace text is seen
+  defp maybe_set_frameset_not_ok(%State{frameset_ok: false} = state, _text), do: state
+
+  defp maybe_set_frameset_not_ok(state, text) do
+    if String.trim(text) == "" do
+      state
+    else
+      %{state | frameset_ok: false}
+    end
+  end
+
+  defp set_frameset_not_ok(state), do: %{state | frameset_ok: false}
+
+  # Extract only whitespace characters from text
+  defp extract_whitespace(text) do
+    text
+    |> String.graphemes()
+    |> Enum.filter(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
+    |> Enum.join()
+  end
 
   defp ensure_body(%State{stack: [%{tag: "body"} | _]} = state), do: state
   defp ensure_body(%State{stack: [%{tag: "frameset"} | _]} = state), do: state
@@ -1565,6 +1669,10 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp pop_until(target, [%{tag: {:svg, svg_tag}} = elem | rest], acc) when svg_tag == target do
+    finalize_pop(elem, acc, rest)
+  end
+
+  defp pop_until(target, [%{tag: {:math, math_tag}} = elem | rest], acc) when math_tag == target do
     finalize_pop(elem, acc, rest)
   end
 
