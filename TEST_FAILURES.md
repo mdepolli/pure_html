@@ -1,115 +1,98 @@
 # Test Failures Analysis
 
-**Total: 252 failures out of 1476 tests**
+**Total: 231 failures out of 1476 tests**
+
+*Last updated: 2026-01-10 after CDATA fix (was 252 failures)*
+
+## By Test File
+
+| File | Before | After | Change |
+|------|--------|-------|--------|
+| tests1 | 27 | 27 | - |
+| tests21 | 21 | 0 | **-21 (CDATA fix)** |
+| template | 21 | 21 | - |
+| tests10 | 20 | 20 | - |
+| webkit01 | 17 | 17 | - |
+| webkit02 | 14 | 14 | - |
+| tests19 | 14 | 14 | - |
+| tests3 | 12 | 12 | - |
+| tests26 | 12 | 12 | - |
+| tests7 | 11 | 11 | - |
+| tests18 | 10 | 10 | - |
+| tricky01 | 8 | 8 | - |
+| tests2 | 8 | 8 | - |
+| tests6 | 7 | 7 | - |
+| tests17 | 7 | 7 | - |
+| tests15 | 6 | 6 | - |
+| tests20 | 5 | 5 | - |
+| Others | 32 | 32 | - |
 
 ## By Category
 
 | Category | Count | Notes |
 |----------|-------|-------|
-| Math/SVG foreign content | 21 | CDATA, integration points, breakout |
-| Adoption agency / formatting | 16 | `<b>`, `<i>`, `<nobr>`, `<a>` nesting |
-| Table | 16 | Foster parenting, form in table |
-| Template | 13 | Template content handling |
-| Select | 9 | Button in select, nested select |
-| Frameset | 8 | After frameset, noframes |
-| CDATA in SVG | 6 | `<![CDATA[...]]>` parsing |
-| Body attributes | 2 | Second body tag attribute merging |
-| DOCTYPE edge cases | 1 | Internal subset parsing |
-
-## By Test File
-
-| File | Failures |
-|------|----------|
-| tests1 | 10 |
-| template | 9 |
-| webkit02 | 8 |
-| tests21 | 8 |
-| tests7 | 6 |
-| webkit01 | 5 |
-| tests17 | 5 |
-| tests10 | 5 |
-| tests26 | 4 |
-| tests2 | 4 |
-| tests3 | 3 |
-| tests19 | 3 |
-| tests18 | 3 |
-| tests16 | 3 |
-| tests15 | 3 |
-| tricky01 | 2 |
-| tests8 | 2 |
-| tests6 | 2 |
-| tests20 | 2 |
-| adoption01 | 2 |
-| Others | 8 |
+| Adoption agency / formatting | ~30 | `<b>`, `<i>`, `<nobr>`, `<a>` nesting |
+| Template | 21 | Template content handling |
+| Table | ~20 | Foster parenting, form in table |
+| Math/SVG foreign content | ~15 | Integration points, breakout |
+| Frameset | ~10 | After frameset, noframes |
+| Select | ~8 | Button in select, nested select |
+| Body/HTML edge cases | ~5 | Second body attrs, after </html> |
 
 ## Sample Failures by Category
 
-### CDATA/SVG (6)
-```
-<svg><![CDATA[<svg>a
-<svg><![CDATA[<svg>]]>
-<svg><![CDATA[<svg>]]></path>
-<svg><![CDATA[foo]]>
-<!DOCTYPE html><svg><![CDATA[foo]]]>
-```
-
-### Template (13)
-```
-<body><template><col><div>
-<template><template><tbody><select>
-<body><template></div><div>Foo</div><template>
-<html a=b><template><frame></frame><html>
-<html><head></head><template></template>
-```
-
-### Frameset (8)
-```
-<!DOCTYPE html><frameset></frameset><math>
-<!doctype html><frameset></frameset></html>
-<frameset><div>
-<input type="hidden"><frameset>
-<!doctype html><html><frameset></frameset>
-```
-
-### Adoption agency / formatting (16)
+### Adoption agency / formatting
 ```
 <i>A<b>B<p></i>C</b>D
 <b><em><foo><foo><aside></b>
 <!DOCTYPE html><body><b><nobr>1<ins><nobr>
-<!DOCTYPE html><p><b></p><menuitem>
-<!DOCTYPE html><body><b>1<nobr></b><i><nobr>
+<DIV> abc <B> def <I> ghi <P> jkl </B> mno </I> pqr </DIV>
 ```
 
-### Table (16)
+### Template
+```
+<template></template><div></div>
+<body><template><div><tr></tr></div></template>
+<template><template><col>
+<template><a><table><a>
+```
+
+### Table foster parenting
 ```
 <!doctype html><table><form><form>
 <p><table></table>
 <!doctype html><table><input type=hidDEN>
-<!DOCTYPE html><table><tr><td></p></table>
-<a><table><td><a><table></table><a></tr>
+<table><li><li></table>
 ```
 
-### Select (9)
+### Frameset
 ```
-<template><template><tbody><select>
-<select><option>A<select><option>B<select>
+<!doctype html><frameset></frameset></html>
+<input type="hidden"><frameset>
+<!doctype html><frameset></frameset><plaintext>
+```
+
+### Select
+```
 <select><button><selectedcontent></button>
 <select><b><option><select><option></b>
 <!doctype html><select><tfoot>
 ```
 
-### Math/SVG foreign (21)
+### Math/SVG foreign content
 ```
-<svg><![CDATA[<svg>a
-<!DOCTYPE html><p><svg><title><p>
-<svg><![CDATA[<svg>]]>
 <math><mi><div><object><div><span></span>
 <math><annotation-xml><svg><foreignObject>
+<svg><foreignObject></foreignObject><title>
 ```
 
 ## Priority Fixes
 
-1. **SVG/Math foreign content** (21) - CDATA sections, integration points
-2. **Adoption agency** (16) - Complex formatting element reparenting
-3. **Table foster parenting** (16) - Edge cases with forms, inputs
-4. **Template** (13) - Content model handling
+1. **Adoption agency** (~30) - Complex formatting element reparenting algorithm
+2. **Template** (21) - Template content model handling
+3. **Table foster parenting** (~20) - Edge cases with forms, inputs
+4. **Foreign content** (~15) - Integration points, breakout tags
+
+## Recent Fixes
+
+- **CDATA sections** (2026-01-10): Implemented tree builder feedback for proper CDATA handling in SVG/MathML vs HTML content. Fixed all 21 tests21 failures (252 → 231 total).

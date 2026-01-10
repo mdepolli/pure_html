@@ -29,6 +29,18 @@ Tests are defined in `.dat` files under `test/html5lib-tests/tree-construction/`
 - Optional `#document-fragment`: Context element for fragment parsing
 - Optional `#script-off`/`#script-on`: Scripting mode
 
+## Tracking Test Failures
+
+After running the full test suite, update `TEST_FAILURES.md` with current failure counts:
+
+```bash
+# Cache test output to avoid re-running
+mix test test/pure_html/html5lib_tree_construction_test.exs 2>&1 | tee /tmp/test_failures.txt
+
+# Count failures by file
+cat /tmp/test_failures.txt | grep "^\s*[0-9]*) test" | sed 's/.*test \([^ ]*\) #.*/\1/' | sort | uniq -c | sort -rn
+```
+
 ## Current Status
 
 Working on HTML5 tree construction algorithm compliance. Main areas:
