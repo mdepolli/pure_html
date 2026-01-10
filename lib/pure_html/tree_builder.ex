@@ -357,7 +357,8 @@ defmodule PureHtml.TreeBuilder do
   # --------------------------------------------------------------------------
 
   # Frameset and frame should never be foster parented
-  defp process_html_start_tag(tag, attrs, self_closing, state) when tag in ["frameset", "frame"] do
+  defp process_html_start_tag(tag, attrs, self_closing, state)
+       when tag in ["frameset", "frame"] do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
@@ -407,7 +408,12 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Frameset in body mode - only allowed if frameset_ok is true
-  defp do_process_html_start_tag("frameset", attrs, _, %State{mode: :in_body, frameset_ok: true} = state) do
+  defp do_process_html_start_tag(
+         "frameset",
+         attrs,
+         _,
+         %State{mode: :in_body, frameset_ok: true} = state
+       ) do
     state
     |> close_body_for_frameset()
     |> push_element("frameset", attrs)
@@ -430,7 +436,12 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # <frame> is valid only in frameset context
-  defp do_process_html_start_tag("frame", attrs, _, %State{stack: [%{tag: "frameset"} | _]} = state) do
+  defp do_process_html_start_tag(
+         "frame",
+         attrs,
+         _,
+         %State{stack: [%{tag: "frameset"} | _]} = state
+       ) do
     add_child_to_stack(state, {"frame", attrs, []})
   end
 
@@ -615,7 +626,14 @@ defmodule PureHtml.TreeBuilder do
 
   defp in_table_context?(stack) do
     # td/th are scope boundaries - content inside cells shouldn't be foster parented
-    in_scope?(stack, ["table" | @table_context], ["td", "th", "caption", "template", "body", "html"])
+    in_scope?(stack, ["table" | @table_context], [
+      "td",
+      "th",
+      "caption",
+      "template",
+      "body",
+      "html"
+    ])
   end
 
   defp in_select?(stack) do
@@ -762,13 +780,22 @@ defmodule PureHtml.TreeBuilder do
     {formatting_to_clone_list, _} = Enum.split(formatting_between, 3)
 
     # Close formatting elements into the original formatting element
-    closed_fe = %{ref: fe_ref, tag: fe_tag, attrs: fe_attrs, children: close_elements_into(formatting_between, fe_children)}
+    closed_fe = %{
+      ref: fe_ref,
+      tag: fe_tag,
+      attrs: fe_attrs,
+      children: close_elements_into(formatting_between, fe_children)
+    }
+
     below_fe = foster_aware_add_child(below_fe, closed_fe)
 
     # Create clones for the new stack
     new_fe_clone = %{ref: make_ref(), tag: fe_tag, attrs: fe_attrs, children: fb_children}
     fb_empty = %{ref: fb_ref, tag: fb_tag, attrs: fb_attrs, children: []}
-    formatting_stack_elements = Enum.map(formatting_to_clone_list, fn %{tag: t, attrs: a} -> new_element(t, a) end)
+
+    formatting_stack_elements =
+      Enum.map(formatting_to_clone_list, fn %{tag: t, attrs: a} -> new_element(t, a) end)
+
     block_with_clones = wrap_children_with_fe_clone(block_between, fe_tag, fe_attrs)
 
     final_stack =
@@ -940,7 +967,9 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # Clears to table context but preserves single-element stacks (for end_tag table)
-  defp do_clear_to_table_context([%{tag: tag} | _] = stack) when tag in @table_boundaries, do: stack
+  defp do_clear_to_table_context([%{tag: tag} | _] = stack) when tag in @table_boundaries,
+    do: stack
+
   defp do_clear_to_table_context([_] = stack), do: stack
   defp do_clear_to_table_context([]), do: []
 
@@ -951,8 +980,12 @@ defmodule PureHtml.TreeBuilder do
   # Get refs of all elements that will be closed when table closes
   defp get_refs_to_close_for_table(stack), do: do_get_refs_to_close_for_table(stack, MapSet.new())
 
-  defp do_get_refs_to_close_for_table([%{tag: "table", ref: ref} | _], acc), do: MapSet.put(acc, ref)
-  defp do_get_refs_to_close_for_table([%{tag: tag} | _], acc) when tag in ["template", "html"], do: acc
+  defp do_get_refs_to_close_for_table([%{tag: "table", ref: ref} | _], acc),
+    do: MapSet.put(acc, ref)
+
+  defp do_get_refs_to_close_for_table([%{tag: tag} | _], acc) when tag in ["template", "html"],
+    do: acc
+
   defp do_get_refs_to_close_for_table([_], acc), do: acc
   defp do_get_refs_to_close_for_table([], acc), do: acc
 
@@ -1073,7 +1106,9 @@ defmodule PureHtml.TreeBuilder do
   defp close_with_elements_above(parent, []), do: parent
 
   defp close_with_elements_above(parent, [first | rest]) do
-    nested = Enum.reduce(rest, first, fn elem, inner -> %{elem | children: [inner | elem.children]} end)
+    nested =
+      Enum.reduce(rest, first, fn elem, inner -> %{elem | children: [inner | elem.children]} end)
+
     %{parent | children: [nested | parent.children]}
   end
 
@@ -1457,6 +1492,7 @@ defmodule PureHtml.TreeBuilder do
   # Nest a list of elements from innermost to outermost.
   # Returns nil for empty list, or the nested element.
   defp nest_elements([]), do: nil
+
   defp nest_elements([first | rest]) do
     Enum.reduce(rest, first, fn elem, inner -> %{elem | children: [inner | elem.children]} end)
   end
