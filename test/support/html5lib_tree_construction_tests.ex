@@ -128,15 +128,23 @@ defmodule PureHtml.Test.Html5libTreeConstructionTests do
 
     attr_lines =
       attrs
-      |> Enum.sort()
+      |> Enum.sort_by(&attr_sort_key/1)
       |> Enum.map_join("", fn {name, value} ->
-        "#{indent}  #{name}=\"#{value}\"\n"
+        "#{indent}  #{format_attr_name(name)}=\"#{value}\"\n"
       end)
 
     children_lines = Enum.map_join(children, "", &serialize_child(&1, depth + 1))
 
     tag_line <> attr_lines <> children_lines
   end
+
+  # Format namespaced attribute names: {:xml, "lang"} -> "xml lang"
+  defp format_attr_name({ns, local}), do: "#{ns} #{local}"
+  defp format_attr_name(name), do: name
+
+  # Sort key for attributes - namespaced attrs sort by "ns local" format
+  defp attr_sort_key({{ns, local}, _value}), do: "#{ns} #{local}"
+  defp attr_sort_key({name, _value}), do: name
 
   defp serialize_child(text, depth) when is_binary(text) do
     indent = "| " <> String.duplicate("  ", depth)

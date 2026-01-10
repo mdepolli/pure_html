@@ -456,6 +456,14 @@ defmodule PureHtml.TreeBuilder do
     |> add_child_to_stack({"hr", attrs, []})
   end
 
+  # <input>, <keygen>, <textarea> in select context close the select
+  defp do_process_html_start_tag(tag, attrs, self_closing, %State{mode: :in_select} = state)
+       when tag in ["input", "keygen", "textarea"] do
+    state
+    |> close_select()
+    |> then(&do_process_html_start_tag(tag, attrs, self_closing, &1))
+  end
+
   defp do_process_html_start_tag("hr", attrs, _, state) do
     state
     |> in_body()
@@ -606,7 +614,8 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp in_table_context?(stack) do
-    in_scope?(stack, ["table" | @table_context], ["template", "body", "html"])
+    # td/th are scope boundaries - content inside cells shouldn't be foster parented
+    in_scope?(stack, ["table" | @table_context], ["td", "th", "caption", "template", "body", "html"])
   end
 
   defp in_select?(stack) do
@@ -621,6 +630,11 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp close_option_optgroup_in_select(state), do: state
+
+  # Close select element and pop mode
+  defp close_select(%State{stack: stack} = state) do
+    %{state | stack: close_tag("select", stack)} |> pop_mode()
+  end
 
   # --------------------------------------------------------------------------
   # Adoption agency algorithm
@@ -1458,12 +1472,53 @@ defmodule PureHtml.TreeBuilder do
   defp push_foreign_element(state, ns, tag, attrs, self_closing)
 
   defp push_foreign_element(%State{stack: stack} = state, ns, tag, attrs, true) do
-    %{state | stack: add_child(stack, {{ns, tag}, attrs, []})}
+    adjusted_attrs = adjust_foreign_attributes(ns, attrs)
+    %{state | stack: add_child(stack, {{ns, tag}, adjusted_attrs, []})}
   end
 
   defp push_foreign_element(%State{stack: stack} = state, ns, tag, attrs, _) do
-    %{state | stack: [new_foreign_element(ns, tag, attrs) | stack]}
+    adjusted_attrs = adjust_foreign_attributes(ns, attrs)
+    %{state | stack: [new_foreign_element(ns, tag, adjusted_attrs) | stack]}
   end
+
+  # Adjust attributes for foreign (SVG/MathML) content per HTML5 spec
+  @foreign_attr_adjustments %{
+    # xlink namespace
+    "xlink:actuate" => {:xlink, "actuate"},
+    "xlink:arcrole" => {:xlink, "arcrole"},
+    "xlink:href" => {:xlink, "href"},
+    "xlink:role" => {:xlink, "role"},
+    "xlink:show" => {:xlink, "show"},
+    "xlink:title" => {:xlink, "title"},
+    "xlink:type" => {:xlink, "type"},
+    # xml namespace
+    "xml:lang" => {:xml, "lang"},
+    "xml:space" => {:xml, "space"},
+    # xmlns namespace
+    "xmlns" => {:xmlns, ""},
+    "xmlns:xlink" => {:xmlns, "xlink"}
+  }
+
+  # MathML attribute case adjustments (only applies to MathML, not SVG)
+  @mathml_attr_case_adjustments %{
+    "definitionurl" => "definitionURL"
+  }
+
+  defp adjust_foreign_attributes(ns, attrs) do
+    Map.new(attrs, fn {key, value} ->
+      {adjust_attr_key(ns, key), value}
+    end)
+  end
+
+  defp adjust_attr_key(_ns, key) when is_map_key(@foreign_attr_adjustments, key) do
+    @foreign_attr_adjustments[key]
+  end
+
+  defp adjust_attr_key(:math, key) when is_map_key(@mathml_attr_case_adjustments, key) do
+    @mathml_attr_case_adjustments[key]
+  end
+
+  defp adjust_attr_key(_ns, key), do: key
 
   defp foreign_namespace(stack) do
     Enum.find_value(stack, fn
