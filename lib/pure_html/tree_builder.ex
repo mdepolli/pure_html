@@ -144,7 +144,7 @@ defmodule PureHtml.TreeBuilder do
     %{state | stack: [new_element("html", attrs)], mode: :before_head}
   end
 
-  defp process({:start_tag, "html", _attrs, _}, state), do: state
+  defp process({:start_tag, "html", attrs, _}, state), do: merge_html_attrs(state, attrs)
 
   defp process({:start_tag, "head", attrs, _}, state) do
     state
@@ -1278,6 +1278,25 @@ defmodule PureHtml.TreeBuilder do
 
   defp ensure_html(%State{stack: [%{tag: "html"} | _]} = state), do: state
   defp ensure_html(state), do: state
+
+  # Merge attributes onto existing html element (for second <html> tags)
+  defp merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
+
+  defp merge_html_attrs(%State{stack: stack} = state, new_attrs) do
+    %{state | stack: do_merge_html_attrs(stack, new_attrs)}
+  end
+
+  defp do_merge_html_attrs([%{tag: "html", attrs: attrs} = html | rest], new_attrs) do
+    # Only add attributes that don't already exist
+    merged = Map.merge(new_attrs, attrs)
+    [%{html | attrs: merged} | rest]
+  end
+
+  defp do_merge_html_attrs([elem | rest], new_attrs) do
+    [elem | do_merge_html_attrs(rest, new_attrs)]
+  end
+
+  defp do_merge_html_attrs([], _new_attrs), do: []
 
   defp ensure_head(%State{stack: [%{tag: "html", children: children} = html]} = state) do
     if has_tag?(children, "head") do
