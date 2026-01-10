@@ -487,9 +487,7 @@ defmodule PureHTML.TreeBuilder do
 
   # <col> needs colgroup wrapper in table context
   defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_table} = state) do
-    state
-    |> ensure_colgroup()
-    |> add_child_to_stack({"col", attrs, []})
+    state |> ensure_colgroup() |> add_child_to_stack({"col", attrs, []})
   end
 
   defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_template} = state) do
@@ -511,14 +509,6 @@ defmodule PureHTML.TreeBuilder do
     state
     |> close_select()
     |> then(&do_process_html_start_tag(tag, attrs, self_closing, &1))
-  end
-
-  defp do_process_html_start_tag("hr", attrs, _, state) do
-    state
-    |> in_body()
-    |> maybe_close_p("hr")
-    |> add_child_to_stack({"hr", attrs, []})
-    |> set_frameset_not_ok()
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
@@ -546,24 +536,19 @@ defmodule PureHTML.TreeBuilder do
   end
 
   # Table sections, caption, colgroup in template mode are ignored
+  @table_structure_elements @table_sections ++ ["caption", "colgroup"]
+
   defp do_process_html_start_tag(tag, _, _, %State{mode: :in_template} = state)
-       when tag in @table_sections or tag in ["caption", "colgroup"] do
+       when tag in @table_structure_elements do
     state
   end
 
-  # Table sections close any open colgroup
+  # Table sections and caption close open rows/sections back to table level
   defp do_process_html_start_tag(tag, attrs, _, %State{mode: :in_table} = state)
-       when tag in @table_sections do
+       when tag in @table_sections or tag == "caption" do
     state
     |> clear_to_table_context()
     |> push_element(tag, attrs)
-  end
-
-  # Caption closes open rows/sections back to table level
-  defp do_process_html_start_tag("caption", attrs, _, %State{mode: :in_table} = state) do
-    state
-    |> clear_to_table_context()
-    |> push_element("caption", attrs)
   end
 
   defp do_process_html_start_tag("tr", attrs, _, state) do
@@ -574,24 +559,17 @@ defmodule PureHTML.TreeBuilder do
     |> push_element("tr", attrs)
   end
 
-  defp do_process_html_start_tag("a", attrs, _, state) do
-    state
-    |> in_body()
-    |> reconstruct_active_formatting()
-    |> maybe_close_existing_formatting("a")
-    |> reconstruct_active_formatting()
-    |> push_element("a", attrs)
-    |> add_formatting_entry("a", attrs)
-  end
+  # Formatting elements that close existing instances of themselves (adopt-on-duplicate)
+  @adopt_on_duplicate_elements ~w(a nobr)
 
-  defp do_process_html_start_tag("nobr", attrs, _, state) do
+  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @adopt_on_duplicate_elements do
     state
     |> in_body()
     |> reconstruct_active_formatting()
-    |> maybe_close_existing_formatting("nobr")
+    |> maybe_close_existing_formatting(tag)
     |> reconstruct_active_formatting()
-    |> push_element("nobr", attrs)
-    |> add_formatting_entry("nobr", attrs)
+    |> push_element(tag, attrs)
+    |> add_formatting_entry(tag, attrs)
   end
 
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @formatting_elements do
@@ -903,22 +881,25 @@ defmodule PureHTML.TreeBuilder do
   # --------------------------------------------------------------------------
 
   defp reconstruct_active_formatting(%State{stack: stack, af: af} = state) do
+    get_entries_to_reconstruct(af, stack)
+    |> reconstruct_entries(state)
+  end
+
+  # Get AF entries that need reconstruction (not in stack, before marker)
+  defp get_entries_to_reconstruct(af, stack) do
     af
     |> Enum.take_while(&(&1 != :marker))
     |> Enum.reverse()
-    |> Enum.filter(fn {ref, _tag, _attrs} ->
-      find_in_stack_by_ref(stack, ref) == nil
-    end)
-    |> then(&reconstruct_entries(state, &1))
+    |> Enum.filter(fn {ref, _tag, _attrs} -> find_in_stack_by_ref(stack, ref) == nil end)
   end
 
-  defp reconstruct_entries(state, []), do: state
+  defp reconstruct_entries([], state), do: state
 
-  defp reconstruct_entries(%State{stack: stack, af: af} = state, [{old_ref, tag, attrs} | rest]) do
+  defp reconstruct_entries([{old_ref, tag, attrs} | rest], %State{stack: stack, af: af} = state) do
     new_elem = new_element(tag, attrs)
     new_stack = [new_elem | stack]
     new_af = update_af_entry(af, old_ref, {new_elem.ref, tag, attrs})
-    reconstruct_entries(%{state | stack: new_stack, af: new_af}, rest)
+    reconstruct_entries(rest, %{state | stack: new_stack, af: new_af})
   end
 
   defp update_af_entry(af, old_ref, new_entry) do
@@ -985,6 +966,7 @@ defmodule PureHTML.TreeBuilder do
     %{state | stack: clear_to_context(stack, @table_boundaries)}
   end
 
+  # Clear stack to a context boundary, closing elements along the way
   defp clear_to_context([%{tag: tag} | _] = stack, boundaries) do
     if tag in boundaries, do: stack, else: clear_to_context_close(stack, boundaries)
   end
@@ -1160,39 +1142,41 @@ defmodule PureHTML.TreeBuilder do
   # Scope boundaries that prevent implicit closing
   @implicit_close_boundaries ~w(table template body html)
   @li_scope_boundaries ~w(ol ul table template body html)
+  @ruby_elements ~w(rb rt rtc rp)
 
-  # li has special scope boundaries (list item scope)
-  defp maybe_close_same(%State{stack: stack} = state, "li") do
-    case pop_to_implicit_close(stack, ["li"], [], @li_scope_boundaries) do
-      {:ok, new_stack} -> %{state | stack: new_stack}
-      :not_found -> state
+  defp maybe_close_same(%State{stack: stack} = state, tag) do
+    case get_implicit_close_config(tag) do
+      nil ->
+        state
+
+      {closes, boundaries, close_all?} ->
+        result =
+          if close_all? do
+            pop_to_implicit_close_all(stack, closes, boundaries)
+          else
+            pop_to_implicit_close(stack, closes, [], boundaries)
+          end
+
+        case result do
+          {:ok, new_stack} -> %{state | stack: new_stack}
+          :not_found -> state
+        end
     end
   end
 
-  # Ruby elements need to close multiple elements (e.g., rb closes both rt and rtc)
-  @ruby_elements ~w(rb rt rtc rp)
+  # Returns {tags_to_close, scope_boundaries, close_all?} or nil
+  defp get_implicit_close_config("li"), do: {["li"], @li_scope_boundaries, false}
 
   for {tag, also_closes} <- @implicit_closes, tag != "li" do
     closes = [tag | also_closes]
+    close_all? = tag in @ruby_elements
 
-    if tag in @ruby_elements do
-      defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
-        case pop_to_implicit_close_all(stack, unquote(closes), @implicit_close_boundaries) do
-          {:ok, new_stack} -> %{state | stack: new_stack}
-          :not_found -> state
-        end
-      end
-    else
-      defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
-        case pop_to_implicit_close(stack, unquote(closes), [], @implicit_close_boundaries) do
-          {:ok, new_stack} -> %{state | stack: new_stack}
-          :not_found -> state
-        end
-      end
+    defp get_implicit_close_config(unquote(tag)) do
+      {unquote(closes), @implicit_close_boundaries, unquote(close_all?)}
     end
   end
 
-  defp maybe_close_same(state, _tag), do: state
+  defp get_implicit_close_config(_), do: nil
 
   defp pop_to_implicit_close([], _closes, _acc, _boundaries), do: :not_found
 
@@ -1243,48 +1227,37 @@ defmodule PureHTML.TreeBuilder do
   # Mode transitions
   # --------------------------------------------------------------------------
 
-  # Already in body - fast path (O(1) instead of scanning stack)
-  defp transition_to(%State{mode: mode} = state, :in_body)
-       when mode in [:in_body, :in_select, :in_table, :in_template],
-       do: state
+  @body_modes [:in_body, :in_select, :in_table, :in_template]
 
-  # Transition to in_body from earlier modes
-  defp transition_to(%State{mode: :initial} = state, :in_body) do
-    state
-    |> ensure_html()
-    |> ensure_head()
-    |> close_head()
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+  # Transition to in_body mode, ensuring proper document structure exists
+  defp transition_to(%State{mode: mode} = state, :in_body) do
+    case mode do
+      # Already in body modes - fast path
+      m when m in @body_modes ->
+        state
 
-  defp transition_to(%State{mode: :before_head} = state, :in_body) do
-    state
-    |> ensure_head()
-    |> close_head()
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+      # Pre-body modes require progressively more setup
+      :initial ->
+        state
+        |> ensure_html()
+        |> ensure_head()
+        |> close_head()
+        |> ensure_body()
+        |> set_mode(:in_body)
 
-  defp transition_to(%State{mode: :in_head} = state, :in_body) do
-    state
-    |> close_head()
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+      :before_head ->
+        state |> ensure_head() |> close_head() |> ensure_body() |> set_mode(:in_body)
 
-  defp transition_to(%State{mode: :after_head} = state, :in_body) do
-    state
-    |> ensure_body()
-    |> set_mode(:in_body)
-  end
+      :in_head ->
+        state |> close_head() |> ensure_body() |> set_mode(:in_body)
 
-  # Frameset modes - ensure body exists (no-op if frameset already present)
-  defp transition_to(%State{mode: mode} = state, :in_body)
-       when mode in [:in_frameset, :after_frameset] do
-    state
-    |> ensure_body()
-    |> set_mode(:in_body)
+      :after_head ->
+        state |> ensure_body() |> set_mode(:in_body)
+
+      # Frameset modes - ensure body exists (no-op if frameset already present)
+      m when m in [:in_frameset, :after_frameset] ->
+        state |> ensure_body() |> set_mode(:in_body)
+    end
   end
 
   defp set_mode(state, mode), do: %{state | mode: mode}
@@ -1305,14 +1278,12 @@ defmodule PureHTML.TreeBuilder do
   # Document structure
   # --------------------------------------------------------------------------
 
-  defp in_body(%State{mode: mode, stack: []} = state)
-       when mode in [:in_body, :in_select, :in_table, :in_template] do
+  defp in_body(%State{mode: mode, stack: []} = state) when mode in @body_modes do
     # Mode says in_body but stack is empty - need to create structure
     transition_to(%{state | mode: :initial}, :in_body)
   end
 
-  defp in_body(%State{mode: mode} = state)
-       when mode in [:in_body, :in_select, :in_table, :in_template] do
+  defp in_body(%State{mode: mode} = state) when mode in @body_modes do
     state
   end
 
@@ -1464,28 +1435,23 @@ defmodule PureHTML.TreeBuilder do
   # Foster parenting
   # --------------------------------------------------------------------------
 
-  # Void/self-closing - foster as complete element
-  defp process_foster_start_tag(tag, attrs, true, %State{stack: stack} = state) do
-    %{state | stack: foster_element(stack, {tag, attrs, []})}
-  end
+  defp process_foster_start_tag(tag, attrs, self_closing, %State{stack: stack, af: af} = state) do
+    cond do
+      # Void/self-closing - foster as complete element
+      self_closing or tag in @void_elements ->
+        %{state | stack: foster_element(stack, {tag, attrs, []})}
 
-  defp process_foster_start_tag(tag, attrs, _, %State{stack: stack} = state)
-       when tag in @void_elements do
-    %{state | stack: foster_element(stack, {tag, attrs, []})}
-  end
+      # Formatting element - push and update AF with noah's ark
+      tag in @formatting_elements ->
+        {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
+        new_af = apply_noahs_ark([{new_ref, tag, attrs} | af], tag, attrs)
+        %{state | stack: new_stack, af: new_af}
 
-  # Formatting element - push and update AF with noah's ark
-  defp process_foster_start_tag(tag, attrs, _, %State{stack: stack, af: af} = state)
-       when tag in @formatting_elements do
-    {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
-    new_af = apply_noahs_ark([{new_ref, tag, attrs} | af], tag, attrs)
-    %{state | stack: new_stack, af: new_af}
-  end
-
-  # Other element - just push
-  defp process_foster_start_tag(tag, attrs, _, %State{stack: stack} = state) do
-    {new_stack, _new_ref} = foster_push_element(stack, tag, attrs)
-    %{state | stack: new_stack}
+      # Other element - just push
+      true ->
+        {new_stack, _new_ref} = foster_push_element(stack, tag, attrs)
+        %{state | stack: new_stack}
+    end
   end
 
   defp foster_push_element(stack, tag, attrs) do
@@ -1539,26 +1505,21 @@ defmodule PureHTML.TreeBuilder do
   defp add_foster_text([], _text), do: []
 
   defp foster_reconstruct_active_formatting(%State{stack: stack, af: af} = state) do
-    af
-    |> Enum.take_while(&(&1 != :marker))
-    |> Enum.reverse()
-    |> Enum.filter(fn {ref, _tag, _attrs} ->
-      find_in_stack_by_ref(stack, ref) == nil
-    end)
-    |> case do
+    case get_entries_to_reconstruct(af, stack) do
       [] -> {state, false}
-      entries -> {foster_reconstruct_entries(state, entries), true}
+      entries -> {foster_reconstruct_entries(entries, state), true}
     end
   end
 
-  defp foster_reconstruct_entries(state, []), do: state
+  defp foster_reconstruct_entries([], state), do: state
 
-  defp foster_reconstruct_entries(%State{stack: stack, af: af} = state, [
-         {old_ref, tag, attrs} | rest
-       ]) do
+  defp foster_reconstruct_entries(
+         [{old_ref, tag, attrs} | rest],
+         %State{stack: stack, af: af} = state
+       ) do
     {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
     new_af = update_af_entry(af, old_ref, {new_ref, tag, attrs})
-    foster_reconstruct_entries(%{state | stack: new_stack, af: new_af}, rest)
+    foster_reconstruct_entries(rest, %{state | stack: new_stack, af: new_af})
   end
 
   defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
@@ -1907,29 +1868,23 @@ defmodule PureHTML.TreeBuilder do
   defp reverse_node(leaf), do: leaf
 
   defp convert_to_tuples(nil), do: nil
+  defp convert_to_tuples({:comment, text}), do: {:comment, text}
+  defp convert_to_tuples(text) when is_binary(text), do: text
 
-  defp convert_to_tuples(%{tag: {ns, tag}, attrs: attrs, children: children}) do
-    {{ns, tag}, attrs, convert_children(children)}
-  end
-
+  # Template elements wrap children in :content tuple
   defp convert_to_tuples(%{tag: "template", attrs: attrs, children: children}) do
     {"template", attrs, [{:content, convert_children(children)}]}
   end
 
+  # Map elements convert to tuples, preserving namespace if present
   defp convert_to_tuples(%{tag: tag, attrs: attrs, children: children}) do
     {tag, attrs, convert_children(children)}
   end
 
-  defp convert_to_tuples({{ns, tag}, attrs, children}) do
-    {{ns, tag}, attrs, convert_children(children)}
-  end
-
-  defp convert_to_tuples({tag, attrs, children}) when is_binary(tag) do
+  # Already-converted tuples just need children converted
+  defp convert_to_tuples({tag, attrs, children}) do
     {tag, attrs, convert_children(children)}
   end
-
-  defp convert_to_tuples({:comment, text}), do: {:comment, text}
-  defp convert_to_tuples(text) when is_binary(text), do: text
 
   defp convert_children(children), do: Enum.map(children, &convert_to_tuples/1)
 end
