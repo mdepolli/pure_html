@@ -1472,13 +1472,15 @@ defmodule PureHtml.TreeBuilder do
   defp push_foreign_element(state, ns, tag, attrs, self_closing)
 
   defp push_foreign_element(%State{stack: stack} = state, ns, tag, attrs, true) do
+    adjusted_tag = adjust_svg_tag(ns, tag)
     adjusted_attrs = adjust_foreign_attributes(ns, attrs)
-    %{state | stack: add_child(stack, {{ns, tag}, adjusted_attrs, []})}
+    %{state | stack: add_child(stack, {{ns, adjusted_tag}, adjusted_attrs, []})}
   end
 
   defp push_foreign_element(%State{stack: stack} = state, ns, tag, attrs, _) do
+    adjusted_tag = adjust_svg_tag(ns, tag)
     adjusted_attrs = adjust_foreign_attributes(ns, attrs)
-    %{state | stack: [new_foreign_element(ns, tag, adjusted_attrs) | stack]}
+    %{state | stack: [new_foreign_element(ns, adjusted_tag, adjusted_attrs) | stack]}
   end
 
   # Adjust attributes for foreign (SVG/MathML) content per HTML5 spec
@@ -1519,6 +1521,53 @@ defmodule PureHtml.TreeBuilder do
   end
 
   defp adjust_attr_key(_ns, key), do: key
+
+  # SVG element tag name adjustments (case-sensitive per spec)
+  @svg_tag_adjustments %{
+    "altglyph" => "altGlyph",
+    "altglyphdef" => "altGlyphDef",
+    "altglyphitem" => "altGlyphItem",
+    "animatecolor" => "animateColor",
+    "animatemotion" => "animateMotion",
+    "animatetransform" => "animateTransform",
+    "clippath" => "clipPath",
+    "feblend" => "feBlend",
+    "fecolormatrix" => "feColorMatrix",
+    "fecomponenttransfer" => "feComponentTransfer",
+    "fecomposite" => "feComposite",
+    "feconvolvematrix" => "feConvolveMatrix",
+    "fediffuselighting" => "feDiffuseLighting",
+    "fedisplacementmap" => "feDisplacementMap",
+    "fedistantlight" => "feDistantLight",
+    "fedropshadow" => "feDropShadow",
+    "feflood" => "feFlood",
+    "fefunca" => "feFuncA",
+    "fefuncb" => "feFuncB",
+    "fefuncg" => "feFuncG",
+    "fefuncr" => "feFuncR",
+    "fegaussianblur" => "feGaussianBlur",
+    "feimage" => "feImage",
+    "femerge" => "feMerge",
+    "femergenode" => "feMergeNode",
+    "femorphology" => "feMorphology",
+    "feoffset" => "feOffset",
+    "fepointlight" => "fePointLight",
+    "fespecularlighting" => "feSpecularLighting",
+    "fespotlight" => "feSpotLight",
+    "fetile" => "feTile",
+    "feturbulence" => "feTurbulence",
+    "foreignobject" => "foreignObject",
+    "glyphref" => "glyphRef",
+    "lineargradient" => "linearGradient",
+    "radialgradient" => "radialGradient",
+    "textpath" => "textPath"
+  }
+
+  defp adjust_svg_tag(:svg, tag) when is_map_key(@svg_tag_adjustments, tag) do
+    @svg_tag_adjustments[tag]
+  end
+
+  defp adjust_svg_tag(_ns, tag), do: tag
 
   defp foreign_namespace(stack) do
     Enum.find_value(stack, fn
