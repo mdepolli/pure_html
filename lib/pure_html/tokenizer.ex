@@ -213,7 +213,7 @@ defmodule PureHtml.Tokenizer do
 
   defp step(%{state: :data, input: input} = state) when input != "" do
     # Read ahead until we hit <, &, null, or end - emit coalesced characters
-    {chars, rest} = chars_until(input, [?<, ?&, 0])
+    {chars, rest} = chars_until_data(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -234,7 +234,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :rawtext, input: ""} = _state), do: nil
 
   defp step(%{state: :rawtext, input: input} = state) do
-    {chars, rest} = chars_until(input, [?<, 0])
+    {chars, rest} = chars_until_rawtext(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -246,7 +246,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :plaintext, input: ""} = _state), do: nil
 
   defp step(%{state: :plaintext, input: input} = state) do
-    {chars, rest} = chars_until(input, [0])
+    {chars, rest} = chars_until_null(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -331,7 +331,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :rcdata, input: ""} = _state), do: nil
 
   defp step(%{state: :rcdata, input: input} = state) do
-    {chars, rest} = chars_until(input, [?<, ?&, 0])
+    {chars, rest} = chars_until_data(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -412,7 +412,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :script_data, input: ""} = _state), do: nil
 
   defp step(%{state: :script_data, input: input} = state) do
-    {chars, rest} = chars_until(input, [?<, 0])
+    {chars, rest} = chars_until_rawtext(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -518,7 +518,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :script_data_escaped, input: ""} = _state), do: nil
 
   defp step(%{state: :script_data_escaped, input: input} = state) do
-    {chars, rest} = chars_until(input, [?-, ?<, 0])
+    {chars, rest} = chars_until_comment(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -678,7 +678,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :script_data_double_escaped, input: ""} = _state), do: nil
 
   defp step(%{state: :script_data_double_escaped, input: input} = state) do
-    {chars, rest} = chars_until(input, [?-, ?<, 0])
+    {chars, rest} = chars_until_comment(input)
     emit_char(state, chars, input: rest)
   end
 
@@ -2146,29 +2146,81 @@ defmodule PureHtml.Tokenizer do
 
   # Read characters until we hit one of the stop characters
   # Returns {collected_chars, remaining_input}
-  defp chars_until(input, stop_chars) do
-    chars_until(input, stop_chars, [])
+  # Specialized functions with guards for each stop set (faster than Enum.member?)
+
+  # Data state: stop on <, &, or null
+  defp chars_until_data(input), do: chars_until_data(input, [])
+
+  defp chars_until_data(<<c, _::binary>> = input, acc) when c == ?< or c == ?& or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until(<<c, rest::binary>>, stop_chars, acc) when c < 128 do
-    if c in stop_chars do
-      {acc |> Enum.reverse() |> IO.iodata_to_binary(), <<c, rest::binary>>}
-    else
-      chars_until(rest, stop_chars, [c | acc])
-    end
+  defp chars_until_data(<<c, rest::binary>>, acc) when c < 128 do
+    chars_until_data(rest, [c | acc])
   end
 
-  defp chars_until(<<c::utf8, rest::binary>>, stop_chars, acc) do
-    # Multi-byte UTF-8 characters are never stop chars
-    chars_until(rest, stop_chars, [<<c::utf8>> | acc])
+  defp chars_until_data(<<c::utf8, rest::binary>>, acc) do
+    chars_until_data(rest, [<<c::utf8>> | acc])
   end
 
-  defp chars_until(<<byte, rest::binary>>, stop_chars, acc) do
-    # Invalid UTF-8 byte
-    chars_until(rest, stop_chars, [byte | acc])
+  defp chars_until_data("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
-  defp chars_until("", _stop_chars, acc) do
-    {acc |> Enum.reverse() |> IO.iodata_to_binary(), ""}
+  # Rawtext/script: stop on < or null
+  defp chars_until_rawtext(input), do: chars_until_rawtext(input, [])
+
+  defp chars_until_rawtext(<<c, _::binary>> = input, acc) when c == ?< or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
+  end
+
+  defp chars_until_rawtext(<<c, rest::binary>>, acc) when c < 128 do
+    chars_until_rawtext(rest, [c | acc])
+  end
+
+  defp chars_until_rawtext(<<c::utf8, rest::binary>>, acc) do
+    chars_until_rawtext(rest, [<<c::utf8>> | acc])
+  end
+
+  defp chars_until_rawtext("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
+  end
+
+  # Plaintext/CDATA: stop on null only
+  defp chars_until_null(input), do: chars_until_null(input, [])
+
+  defp chars_until_null(<<0, _::binary>> = input, acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
+  end
+
+  defp chars_until_null(<<c, rest::binary>>, acc) when c < 128 do
+    chars_until_null(rest, [c | acc])
+  end
+
+  defp chars_until_null(<<c::utf8, rest::binary>>, acc) do
+    chars_until_null(rest, [<<c::utf8>> | acc])
+  end
+
+  defp chars_until_null("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
+  end
+
+  # Comment: stop on -, <, or null
+  defp chars_until_comment(input), do: chars_until_comment(input, [])
+
+  defp chars_until_comment(<<c, _::binary>> = input, acc) when c == ?- or c == ?< or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
+  end
+
+  defp chars_until_comment(<<c, rest::binary>>, acc) when c < 128 do
+    chars_until_comment(rest, [c | acc])
+  end
+
+  defp chars_until_comment(<<c::utf8, rest::binary>>, acc) do
+    chars_until_comment(rest, [<<c::utf8>> | acc])
+  end
+
+  defp chars_until_comment("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 end

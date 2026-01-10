@@ -18,9 +18,12 @@ defmodule PureHtml.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger] ++ extra_applications(Mix.env())
     ]
   end
+
+  defp extra_applications(env) when env in [:dev, :test], do: [:tools, :runtime_tools]
+  defp extra_applications(_), do: []
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
