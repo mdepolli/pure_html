@@ -1,4 +1,4 @@
-defmodule PureHtml.Test.Html5libTokenizerTests do
+defmodule PureHTML.Test.Html5libTokenizerTests do
   @moduledoc """
   Parses html5lib tokenizer test files (.test JSON format).
 

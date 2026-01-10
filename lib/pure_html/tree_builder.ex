@@ -1,4 +1,4 @@
-defmodule PureHtml.TreeBuilder do
+defmodule PureHTML.TreeBuilder do
   @moduledoc """
   Builds an HTML document tree from a stream of tokens.
 

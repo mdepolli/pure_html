@@ -1,7 +1,7 @@
-defmodule PureHtml.TokenizerTest do
+defmodule PureHTML.TokenizerTest do
   use ExUnit.Case, async: true
 
-  alias PureHtml.Tokenizer
+  alias PureHTML.Tokenizer
 
   describe "basic tokenization" do
     test "simple tag" do

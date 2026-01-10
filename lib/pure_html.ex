@@ -1,4 +1,4 @@
-defmodule PureHtml do
+defmodule PureHTML do
   @moduledoc """
   HTML parsing library.
   """

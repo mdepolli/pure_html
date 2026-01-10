@@ -1,8 +1,8 @@
-defmodule PureHtml.Html5libTokenizerTest do
+defmodule PureHTML.Html5libTokenizerTest do
   use ExUnit.Case, async: true
 
-  alias PureHtml.Test.Html5libTokenizerTests, as: H5
-  alias PureHtml.Tokenizer
+  alias PureHTML.Test.Html5libTokenizerTests, as: H5
+  alias PureHTML.Tokenizer
 
   # Map html5lib state names to our atom names
   @state_map %{

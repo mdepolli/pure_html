@@ -1,4 +1,4 @@
-defmodule PureHtml.Entities do
+defmodule PureHTML.Entities do
   @moduledoc """
   HTML5 named character references.
   Generated from https://html.spec.whatwg.org/entities.json

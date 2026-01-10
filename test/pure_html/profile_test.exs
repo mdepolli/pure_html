@@ -1,4 +1,4 @@
-defmodule PureHtml.ProfileTest do
+defmodule PureHTML.ProfileTest do
   use ExUnit.Case, async: true
 
   @moduletag :profile
@@ -12,7 +12,7 @@ defmodule PureHtml.ProfileTest do
     IO.puts("\nProfiling tokenizer on #{byte_size(html)} bytes...")
 
     :fprof.trace([:start, {:procs, self()}])
-    html |> PureHtml.Tokenizer.tokenize() |> Enum.to_list()
+    html |> PureHTML.Tokenizer.tokenize() |> Enum.to_list()
     :fprof.trace(:stop)
 
     :fprof.profile()
@@ -20,12 +20,12 @@ defmodule PureHtml.ProfileTest do
   end
 
   test "profile tree builder with fprof", %{html: html} do
-    tokens = html |> PureHtml.Tokenizer.tokenize() |> Enum.to_list()
+    tokens = html |> PureHTML.Tokenizer.tokenize() |> Enum.to_list()
 
     IO.puts("\nProfiling tree builder on #{length(tokens)} tokens...")
 
     :fprof.trace([:start, {:procs, self()}])
-    PureHtml.TreeBuilder.build(tokens)
+    PureHTML.TreeBuilder.build(tokens)
     :fprof.trace(:stop)
 
     :fprof.profile()

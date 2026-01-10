@@ -1,11 +1,11 @@
-defmodule PureHtml.BenchmarkTest do
+defmodule PureHTML.BenchmarkTest do
   use ExUnit.Case, async: true
 
   @moduletag :benchmark
 
   setup_all do
     html = File.read!("test/fixtures/wikipedia_homepage.html")
-    tokens = html |> PureHtml.Tokenizer.tokenize() |> Enum.to_list()
+    tokens = html |> PureHTML.Tokenizer.tokenize() |> Enum.to_list()
     %{html: html, tokens: tokens}
   end
 
@@ -14,7 +14,7 @@ defmodule PureHtml.BenchmarkTest do
 
     {time_us, tokens} =
       :timer.tc(fn ->
-        html |> PureHtml.Tokenizer.tokenize() |> Enum.to_list()
+        html |> PureHTML.Tokenizer.tokenize() |> Enum.to_list()
       end)
 
     time_ms = time_us / 1000
@@ -33,7 +33,7 @@ defmodule PureHtml.BenchmarkTest do
   end
 
   test "TreeBuilder: Wikipedia homepage", %{tokens: tokens} do
-    {time_us, {_doctype, tree}} = :timer.tc(fn -> PureHtml.TreeBuilder.build(tokens) end)
+    {time_us, {_doctype, tree}} = :timer.tc(fn -> PureHTML.TreeBuilder.build(tokens) end)
     time_ms = time_us / 1000
     nodes = count_nodes(tree)
 

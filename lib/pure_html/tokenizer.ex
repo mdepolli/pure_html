@@ -1,4 +1,4 @@
-defmodule PureHtml.Tokenizer do
+defmodule PureHTML.Tokenizer do
   @moduledoc """
   HTML5 tokenizer that produces a stream of tokens.
 
@@ -8,7 +8,7 @@ defmodule PureHtml.Tokenizer do
 
   ## Usage
 
-      iex> PureHtml.Tokenizer.tokenize("<p>Hello</p>") |> Enum.to_list()
+      iex> PureHTML.Tokenizer.tokenize("<p>Hello</p>") |> Enum.to_list()
       [{:start_tag, "p", %{}, false}, {:character, "Hello"}, {:end_tag, "p"}]
 
   ## Token Types
@@ -22,7 +22,7 @@ defmodule PureHtml.Tokenizer do
 
   """
 
-  alias PureHtml.Entities
+  alias PureHTML.Entities
 
   # The tokenizer state struct
   defstruct [

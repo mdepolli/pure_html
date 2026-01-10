@@ -1,4 +1,4 @@
-defmodule PureHtml.MixProject do
+defmodule PureHTML.MixProject do
   use Mix.Project
 
   def project do

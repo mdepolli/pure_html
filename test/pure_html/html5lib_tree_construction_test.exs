@@ -1,8 +1,8 @@
-defmodule PureHtml.Html5libTreeConstructionTest do
+defmodule PureHTML.Html5libTreeConstructionTest do
   use ExUnit.Case, async: true
 
-  alias PureHtml.Test.Html5libTreeConstructionTests, as: H5
-  alias PureHtml.{Tokenizer, TreeBuilder}
+  alias PureHTML.Test.Html5libTreeConstructionTests, as: H5
+  alias PureHTML.{Tokenizer, TreeBuilder}
 
   for path <- H5.list_test_files() do
     filename = Path.basename(path, ".dat")

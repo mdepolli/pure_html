@@ -1,4 +1,4 @@
-defmodule PureHtml.Test.Html5libTreeConstructionTests do
+defmodule PureHTML.Test.Html5libTreeConstructionTests do
   @moduledoc """
   Parses html5lib tree-construction test files (.dat format).
 
