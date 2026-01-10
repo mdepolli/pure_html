@@ -1990,6 +1990,32 @@ defmodule PureHtml.Tokenizer do
   # Helper functions
   # --------------------------------------------------------------------------
 
+  # Specialized continue/2 clauses for common patterns (avoids struct! overhead)
+  defp continue(state, state: new_state, input: new_input) do
+    {:continue, %{state | state: new_state, input: new_input}}
+  end
+
+  defp continue(state, state: new_state) do
+    {:continue, %{state | state: new_state}}
+  end
+
+  defp continue(state, input: new_input) do
+    {:continue, %{state | input: new_input}}
+  end
+
+  defp continue(state, input: new_input, attr_value: new_attr_value) do
+    {:continue, %{state | input: new_input, attr_value: new_attr_value}}
+  end
+
+  defp continue(state, state: new_state, return_state: new_return_state) do
+    {:continue, %{state | state: new_state, return_state: new_return_state}}
+  end
+
+  defp continue(state, input: new_input, buffer: new_buffer) do
+    {:continue, %{state | input: new_input, buffer: new_buffer}}
+  end
+
+  # Fallback for remaining patterns
   defp continue(state, updates) do
     {:continue, struct!(state, updates)}
   end
@@ -1999,12 +2025,32 @@ defmodule PureHtml.Tokenizer do
 
   defp emit(state), do: emit(state, [])
 
+  # Specialized emit/2 for common pattern: input: rest (88% of calls)
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, input: new_input) do
+    {:emit, state.token, %{state | state: next_state_for_tag(tag), token: nil, input: new_input}}
+  end
+
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, []) do
+    {:emit, state.token, %{state | state: next_state_for_tag(tag), token: nil}}
+  end
+
+  # Fallback for start tags with other updates
   defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) do
     next_state = next_state_for_tag(tag)
     all_updates = Keyword.merge([state: next_state, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
   end
 
+  # Non-start-tag: common pattern
+  defp emit(state, input: new_input) do
+    {:emit, state.token, %{state | state: :data, token: nil, input: new_input}}
+  end
+
+  defp emit(state, []) do
+    {:emit, state.token, %{state | state: :data, token: nil}}
+  end
+
+  # Fallback for non-start-tag with other updates
   defp emit(state, updates) do
     all_updates = Keyword.merge([state: :data, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
@@ -2016,6 +2062,20 @@ defmodule PureHtml.Tokenizer do
   defp next_state_for_tag(tag) when tag in @rcdata_elements, do: :rcdata
   defp next_state_for_tag(_tag), do: :data
 
+  # Specialized emit_char/3 clauses for common patterns
+  defp emit_char(state, char, state: new_state, input: new_input) do
+    {:emit_char, char, %{state | state: new_state, input: new_input}}
+  end
+
+  defp emit_char(state, char, input: new_input) do
+    {:emit_char, char, %{state | input: new_input}}
+  end
+
+  defp emit_char(state, char, state: new_state) do
+    {:emit_char, char, %{state | state: new_state}}
+  end
+
+  # Fallback for remaining patterns
   defp emit_char(state, char, updates) do
     {:emit_char, char, struct!(state, updates)}
   end
