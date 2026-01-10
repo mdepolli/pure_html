@@ -19,13 +19,13 @@ defmodule PureHTML.ProfileTest do
     :fprof.analyse(totals: true, sort: :own)
   end
 
-  test "profile tree builder with fprof", %{html: html} do
-    tokens = html |> PureHTML.Tokenizer.tokenize() |> Enum.to_list()
+  test "profile full parse with fprof", %{html: html} do
+    tokenizer = PureHTML.Tokenizer.new(html)
 
-    IO.puts("\nProfiling tree builder on #{length(tokens)} tokens...")
+    IO.puts("\nProfiling full parse (tokenizer + tree builder) on #{byte_size(html)} bytes...")
 
     :fprof.trace([:start, {:procs, self()}])
-    PureHTML.TreeBuilder.build(tokens)
+    PureHTML.TreeBuilder.build(tokenizer)
     :fprof.trace(:stop)
 
     :fprof.profile()
