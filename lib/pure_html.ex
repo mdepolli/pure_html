@@ -20,8 +20,7 @@ defmodule PureHTML do
   """
   def parse(html) when is_binary(html) do
     html
-    |> Tokenizer.tokenize()
-    |> Enum.to_list()
+    |> Tokenizer.new()
     |> TreeBuilder.build()
   end
 end

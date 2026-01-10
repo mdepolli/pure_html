@@ -47,7 +47,11 @@ defmodule PureHTML.Tokenizer do
     # pending character data (for coalescing)
     :pending_chars,
     # deferred token (to emit after flushing pending chars)
-    :deferred_token
+    :deferred_token,
+    # Tree builder feedback: is adjusted current node NOT in HTML namespace?
+    # When true, <![CDATA[ is parsed as CDATA section
+    # When false (default), <![CDATA[ is treated as bogus comment
+    adjusted_current_node_not_in_html_namespace: false
   ]
 
   @type t :: %__MODULE__{}
@@ -93,19 +97,22 @@ defmodule PureHTML.Tokenizer do
   # --------------------------------------------------------------------------
 
   @doc """
-  Tokenizes an HTML string, returning a Stream of tokens.
+  Creates a new tokenizer state from input.
 
-  The stream is lazy - tokens are produced on demand as the stream is consumed.
+  ## Options
+
+  - `:initial_state` - Starting tokenizer state (default: `:data`)
+  - `:last_start_tag` - Last start tag name for appropriate end tag checks
   """
-  @spec tokenize(String.t(), keyword()) :: Enumerable.t()
-  def tokenize(input, opts \\ []) when is_binary(input) do
+  @spec new(String.t(), keyword()) :: t()
+  def new(input, opts \\ []) when is_binary(input) do
     initial_state = Keyword.get(opts, :initial_state, :data)
     last_start_tag = Keyword.get(opts, :last_start_tag, nil)
 
     # Normalize newlines per HTML5 spec: CRLF → LF, CR → LF
     normalized_input = input |> String.replace("\r\n", "\n") |> String.replace("\r", "\n")
 
-    tokenizer = %__MODULE__{
+    %__MODULE__{
       input: normalized_input,
       state: initial_state,
       return_state: nil,
@@ -118,17 +125,42 @@ defmodule PureHTML.Tokenizer do
       pending_chars: [],
       deferred_token: nil
     }
+  end
 
-    Stream.unfold(tokenizer, &next_token/1)
+  @doc """
+  Tokenizes an HTML string, returning a Stream of tokens.
+
+  The stream is lazy - tokens are produced on demand as the stream is consumed.
+  """
+  @spec tokenize(String.t(), keyword()) :: Enumerable.t()
+  def tokenize(input, opts \\ []) when is_binary(input) do
+    input |> new(opts) |> Stream.unfold(&next_token/1)
+  end
+
+  @doc """
+  Updates the foreign content context flag.
+
+  When `in_foreign_content` is true, `<![CDATA[` will be parsed as a CDATA section.
+  When false (default), it's treated as a bogus comment per HTML5 spec.
+  """
+  @spec set_foreign_content(t(), boolean()) :: t()
+  def set_foreign_content(%__MODULE__{} = tokenizer, in_foreign_content) do
+    %{tokenizer | adjusted_current_node_not_in_html_namespace: in_foreign_content}
   end
 
   # --------------------------------------------------------------------------
   # Token emission
   # --------------------------------------------------------------------------
 
-  # Returns {token, updated_tokenizer} or nil when done
+  @doc """
+  Gets the next token from the tokenizer.
+
+  Returns `{token, updated_tokenizer}` or `nil` when done.
+  """
+  @spec next_token(t()) :: {token(), t()} | nil
+
   # First, check for a deferred token from previous flush
-  defp next_token(%__MODULE__{deferred_token: token} = state) when token != nil do
+  def next_token(%__MODULE__{deferred_token: token} = state) when token != nil do
     {token, %{state | deferred_token: nil}}
   end
 
@@ -150,18 +182,18 @@ defmodule PureHTML.Tokenizer do
     :script_data_double_escaped_dash_dash
   ]
 
-  defp next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
-       when s in @eof_flush_states do
+  def next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
+      when s in @eof_flush_states do
     nil
   end
 
-  defp next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
-       when s in @eof_flush_states do
+  def next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
+      when s in @eof_flush_states do
     # Flush pending chars at EOF
     {flush_pending(pending), %{state | pending_chars: []}}
   end
 
-  defp next_token(%__MODULE__{} = state) do
+  def next_token(%__MODULE__{} = state) do
     case step(state) do
       {:emit_char, chars, new_state} ->
         # Accumulate characters instead of emitting immediately
@@ -1104,6 +1136,29 @@ defmodule PureHTML.Tokenizer do
     continue(state, state: :doctype, input: rest)
   end
 
+  # CDATA section - only recognized in foreign content (SVG/MathML)
+  defp step(
+         %{
+           state: :markup_declaration_open,
+           input: <<"[CDATA[", rest::binary>>,
+           adjusted_current_node_not_in_html_namespace: true
+         } = state
+       ) do
+    continue(state, state: :cdata_section, input: rest, buffer: "")
+  end
+
+  # CDATA in HTML content - treat as bogus comment
+  defp step(
+         %{
+           state: :markup_declaration_open,
+           input: <<"[CDATA[", rest::binary>>,
+           adjusted_current_node_not_in_html_namespace: false
+         } = state
+       ) do
+    # Parse error: cdata-in-html-content
+    continue(state, state: :bogus_comment, input: rest, token: {:comment, "[CDATA["})
+  end
+
   defp step(%{state: :markup_declaration_open, input: _} = state) do
     continue(state, state: :bogus_comment, token: {:comment, ""})
   end
@@ -1834,6 +1889,66 @@ defmodule PureHTML.Tokenizer do
     continue(state, input: rest)
   end
 
+  # CDATA section state - consume content until ]]>
+  defp step(%{state: :cdata_section, input: <<"]]>", rest::binary>>, buffer: ""} = state) do
+    # Empty CDATA - don't emit anything, just continue
+    continue(state, state: :data, input: rest)
+  end
+
+  defp step(%{state: :cdata_section, input: <<"]]>", rest::binary>>} = state) do
+    # End of CDATA - emit accumulated content as character token
+    emit_char(state, state.buffer, state: :data, input: rest, buffer: "")
+  end
+
+  defp step(%{state: :cdata_section, input: <<"]", rest::binary>>} = state) do
+    continue(state, state: :cdata_section_bracket, input: rest)
+  end
+
+  defp step(%{state: :cdata_section, input: "", buffer: ""} = state) do
+    # EOF in empty CDATA - don't emit anything
+    continue(state, state: :data)
+  end
+
+  defp step(%{state: :cdata_section, input: ""} = state) do
+    # EOF in CDATA - emit what we have
+    emit_char(state, state.buffer, state: :data, buffer: "")
+  end
+
+  defp step(%{state: :cdata_section, input: input} = state) do
+    # Consume characters until ] or end
+    {chars, rest} = chars_until_cdata(input)
+    continue(state, input: rest, buffer: state.buffer <> chars)
+  end
+
+  defp step(%{state: :cdata_section_bracket, input: <<"]", rest::binary>>} = state) do
+    continue(state, state: :cdata_section_end, input: rest)
+  end
+
+  defp step(%{state: :cdata_section_bracket, input: _} = state) do
+    # Not ]], add the ] to buffer and continue
+    continue(state, state: :cdata_section, buffer: state.buffer <> "]")
+  end
+
+  defp step(%{state: :cdata_section_end, input: <<"]", rest::binary>>} = state) do
+    # Additional ] - keep accumulating
+    continue(state, input: rest, buffer: state.buffer <> "]")
+  end
+
+  defp step(%{state: :cdata_section_end, input: <<?>, rest::binary>>, buffer: ""} = state) do
+    # ]]> found with empty content - don't emit anything
+    continue(state, state: :data, input: rest)
+  end
+
+  defp step(%{state: :cdata_section_end, input: <<?>, rest::binary>>} = state) do
+    # ]]> found - emit content
+    emit_char(state, state.buffer, state: :data, input: rest, buffer: "")
+  end
+
+  defp step(%{state: :cdata_section_end, input: _} = state) do
+    # Not ]]>, add ]] to buffer and continue
+    continue(state, state: :cdata_section, buffer: state.buffer <> "]]")
+  end
+
   # Character reference state - handles &entities;
   defp step(%{state: :character_reference, input: <<"&#", rest::binary>>} = state) do
     continue(state, input: rest, buffer: "", state: :numeric_character_reference)
@@ -1960,16 +2075,7 @@ defmodule PureHTML.Tokenizer do
 
   defp finish_numeric_char_ref(state, rest, base) do
     codepoint = String.to_integer(state.buffer, base)
-
-    # Handle special cases per spec
-    char =
-      cond do
-        codepoint == 0 -> <<0xFFFD::utf8>>
-        codepoint > 0x10FFFF -> <<0xFFFD::utf8>>
-        codepoint >= 0xD800 and codepoint <= 0xDFFF -> <<0xFFFD::utf8>>
-        Map.has_key?(@windows_1252, codepoint) -> <<@windows_1252[codepoint]::utf8>>
-        true -> <<codepoint::utf8>>
-      end
+    char = codepoint_to_char(codepoint)
 
     case state.return_state do
       return_state when is_attribute_value_state(return_state) ->
@@ -1989,6 +2095,13 @@ defmodule PureHTML.Tokenizer do
   # --------------------------------------------------------------------------
   # Helper functions
   # --------------------------------------------------------------------------
+
+  # Convert numeric character reference codepoint to UTF-8 char (per HTML5 spec)
+  defp codepoint_to_char(0), do: <<0xFFFD::utf8>>
+  defp codepoint_to_char(cp) when cp > 0x10FFFF, do: <<0xFFFD::utf8>>
+  defp codepoint_to_char(cp) when cp >= 0xD800 and cp <= 0xDFFF, do: <<0xFFFD::utf8>>
+  defp codepoint_to_char(cp) when is_map_key(@windows_1252, cp), do: <<@windows_1252[cp]::utf8>>
+  defp codepoint_to_char(cp), do: <<cp::utf8>>
 
   # Specialized continue/2 clauses for common patterns (avoids struct! overhead)
   defp continue(state, state: new_state, input: new_input) do
@@ -2223,6 +2336,11 @@ defmodule PureHTML.Tokenizer do
     chars_until_data(rest, [<<c::utf8>> | acc])
   end
 
+  # Fallback for invalid UTF-8 bytes - treat as replacement character
+  defp chars_until_data(<<c, rest::binary>>, acc) do
+    chars_until_data(rest, [c | acc])
+  end
+
   defp chars_until_data("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
@@ -2240,6 +2358,10 @@ defmodule PureHTML.Tokenizer do
 
   defp chars_until_rawtext(<<c::utf8, rest::binary>>, acc) do
     chars_until_rawtext(rest, [<<c::utf8>> | acc])
+  end
+
+  defp chars_until_rawtext(<<c, rest::binary>>, acc) do
+    chars_until_rawtext(rest, [c | acc])
   end
 
   defp chars_until_rawtext("", acc) do
@@ -2261,6 +2383,10 @@ defmodule PureHTML.Tokenizer do
     chars_until_null(rest, [<<c::utf8>> | acc])
   end
 
+  defp chars_until_null(<<c, rest::binary>>, acc) do
+    chars_until_null(rest, [c | acc])
+  end
+
   defp chars_until_null("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
@@ -2280,7 +2406,30 @@ defmodule PureHTML.Tokenizer do
     chars_until_comment(rest, [<<c::utf8>> | acc])
   end
 
+  defp chars_until_comment(<<c, rest::binary>>, acc) do
+    chars_until_comment(rest, [c | acc])
+  end
+
   defp chars_until_comment("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
+  end
+
+  # CDATA: stop on ] or null
+  defp chars_until_cdata(input), do: chars_until_cdata(input, [])
+
+  defp chars_until_cdata(<<c, _::binary>> = input, acc) when c == ?] or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
+  end
+
+  defp chars_until_cdata(<<c, rest::binary>>, acc) when c < 128 do
+    chars_until_cdata(rest, [c | acc])
+  end
+
+  defp chars_until_cdata(<<c::utf8, rest::binary>>, acc) do
+    chars_until_cdata(rest, [<<c::utf8>> | acc])
+  end
+
+  defp chars_until_cdata("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 end

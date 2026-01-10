@@ -21,7 +21,7 @@ defmodule PureHTML.Html5libTreeConstructionTest do
 
             document =
               test.data
-              |> Tokenizer.tokenize()
+              |> Tokenizer.new()
               |> TreeBuilder.build()
 
             actual = H5.serialize_document(document) |> String.trim_trailing("\n")

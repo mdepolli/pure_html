@@ -1,6 +1,6 @@
 defmodule PureHTML.TreeBuilder do
   @moduledoc """
-  Builds an HTML document tree from a stream of tokens.
+  Builds an HTML document tree from a tokenizer.
 
   Uses:
   - State struct with stack, active formatting list, and insertion mode
@@ -10,6 +10,8 @@ defmodule PureHTML.TreeBuilder do
   Elements during parsing: %{ref: ref, tag: tag, attrs: map, children: list}
   Final output: {tag, attrs, children} tuples (attrs are maps, not lists like Floki)
   """
+
+  alias PureHTML.Tokenizer
 
   # --------------------------------------------------------------------------
   # State and Element structures
@@ -107,31 +109,57 @@ defmodule PureHTML.TreeBuilder do
   # --------------------------------------------------------------------------
 
   @doc """
-  Builds a document from a stream of tokens.
+  Builds a document from a tokenizer.
 
   Returns `{doctype, nodes}` where nodes is a list of top-level nodes.
   """
-  def build(tokens) do
+  def build(%Tokenizer{} = tokenizer) do
     {doctype, %State{stack: stack}, pre_html_comments} =
-      Enum.reduce(tokens, {nil, %State{}, []}, fn
-        # Doctype only matters in initial mode
-        {:doctype, name, public_id, system_id, _}, {_, %State{mode: :initial} = state, comments} ->
-          {{name, public_id, system_id}, state, comments}
-
-        # Doctype after initial mode is ignored
-        {:doctype, _, _, _, _}, acc ->
-          acc
-
-        {:comment, text}, {doctype, %State{stack: []} = state, comments} ->
-          {doctype, state, [{:comment, text} | comments]}
-
-        token, {doctype, state, comments} ->
-          {doctype, process(token, state), comments}
-      end)
+      build_loop(tokenizer, {nil, %State{}, []})
 
     html_node = finalize(stack)
     nodes = Enum.reverse(pre_html_comments) ++ [html_node]
     {doctype, nodes}
+  end
+
+  defp build_loop(tokenizer, acc) do
+    # Update tokenizer with current foreign content context
+    tokenizer = update_tokenizer_context(tokenizer, acc)
+
+    case Tokenizer.next_token(tokenizer) do
+      nil ->
+        acc
+
+      {token, tokenizer} ->
+        acc = process_token(token, acc)
+        build_loop(tokenizer, acc)
+    end
+  end
+
+  defp update_tokenizer_context(tokenizer, {_, %State{stack: stack}, _}) do
+    # We're in foreign content when the current element (top of stack) is foreign
+    in_foreign = current_element_is_foreign?(stack)
+    Tokenizer.set_foreign_content(tokenizer, in_foreign)
+  end
+
+  defp current_element_is_foreign?([%{tag: {ns, _}} | _]) when ns in [:svg, :math], do: true
+  defp current_element_is_foreign?(_), do: false
+
+  defp process_token(
+         {:doctype, name, public_id, system_id, _},
+         {_, %State{mode: :initial} = state, comments}
+       ) do
+    {{name, public_id, system_id}, state, comments}
+  end
+
+  defp process_token({:doctype, _, _, _, _}, acc), do: acc
+
+  defp process_token({:comment, text}, {doctype, %State{stack: []} = state, comments}) do
+    {doctype, state, [{:comment, text} | comments]}
+  end
+
+  defp process_token(token, {doctype, state, comments}) do
+    {doctype, process(token, state), comments}
   end
 
   # --------------------------------------------------------------------------
