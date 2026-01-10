@@ -1997,37 +1997,22 @@ defmodule PureHtml.Tokenizer do
   @rawtext_elements ~w(style xmp iframe noembed noframes noscript)
   @rcdata_elements ~w(textarea title)
 
-  defp emit(%{token: {:start_tag, "plaintext", _, false}} = state, updates) do
-    base_updates = [state: :plaintext, token: nil]
-    all_updates = Keyword.merge(base_updates, updates)
-    {:emit, state.token, struct!(state, all_updates)}
-  end
-
-  defp emit(%{token: {:start_tag, "script", _, false}} = state, updates) do
-    base_updates = [state: :script_data, token: nil]
-    all_updates = Keyword.merge(base_updates, updates)
-    {:emit, state.token, struct!(state, all_updates)}
-  end
-
-  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates)
-       when tag in @rawtext_elements do
-    base_updates = [state: :rawtext, token: nil]
-    all_updates = Keyword.merge(base_updates, updates)
-    {:emit, state.token, struct!(state, all_updates)}
-  end
-
-  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates)
-       when tag in @rcdata_elements do
-    base_updates = [state: :rcdata, token: nil]
-    all_updates = Keyword.merge(base_updates, updates)
+  defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) do
+    next_state = next_state_for_tag(tag)
+    all_updates = Keyword.merge([state: next_state, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
   end
 
   defp emit(state, updates) do
-    base_updates = [state: :data, token: nil]
-    all_updates = Keyword.merge(base_updates, updates)
+    all_updates = Keyword.merge([state: :data, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
   end
+
+  defp next_state_for_tag("plaintext"), do: :plaintext
+  defp next_state_for_tag("script"), do: :script_data
+  defp next_state_for_tag(tag) when tag in @rawtext_elements, do: :rawtext
+  defp next_state_for_tag(tag) when tag in @rcdata_elements, do: :rcdata
+  defp next_state_for_tag(_tag), do: :data
 
   defp emit_char(state, char, updates) do
     {:emit_char, char, struct!(state, updates)}

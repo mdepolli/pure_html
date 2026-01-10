@@ -1143,13 +1143,25 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
+  # Ruby elements need to close multiple elements (e.g., rb closes both rt and rtc)
+  @ruby_elements ~w(rb rt rtc rp)
+
   for {tag, also_closes} <- @implicit_closes, tag != "li" do
     closes = [tag | also_closes]
 
-    defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
-      case pop_to_implicit_close(stack, unquote(closes), [], @implicit_close_boundaries) do
-        {:ok, new_stack} -> %{state | stack: new_stack}
-        :not_found -> state
+    if tag in @ruby_elements do
+      defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
+        case pop_to_implicit_close_all(stack, unquote(closes), @implicit_close_boundaries) do
+          {:ok, new_stack} -> %{state | stack: new_stack}
+          :not_found -> state
+        end
+      end
+    else
+      defp maybe_close_same(%State{stack: stack} = state, unquote(tag)) do
+        case pop_to_implicit_close(stack, unquote(closes), [], @implicit_close_boundaries) do
+          {:ok, new_stack} -> %{state | stack: new_stack}
+          :not_found -> state
+        end
       end
     end
   end
@@ -1170,6 +1182,24 @@ defmodule PureHtml.TreeBuilder do
 
       true ->
         pop_to_implicit_close(rest, closes, [elem | acc], boundaries)
+    end
+  end
+
+  # Close ALL matching elements (for ruby elements that need to close multiple)
+  defp pop_to_implicit_close_all(stack, closes, boundaries) do
+    do_pop_to_implicit_close_all(stack, closes, boundaries, false)
+  end
+
+  defp do_pop_to_implicit_close_all(stack, closes, boundaries, found_any) do
+    case pop_to_implicit_close(stack, closes, [], boundaries) do
+      {:ok, new_stack} ->
+        do_pop_to_implicit_close_all(new_stack, closes, boundaries, true)
+
+      :not_found when found_any ->
+        {:ok, stack}
+
+      :not_found ->
+        :not_found
     end
   end
 
