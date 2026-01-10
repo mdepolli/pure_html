@@ -48,14 +48,11 @@ defmodule PureHtml.BenchmarkTest do
     assert tree != nil
   end
 
-  defp count_nodes({_tag, _attrs, children}), do: 1 + count_children(children)
-  defp count_nodes(_), do: 1
-
-  defp count_children(children) when is_list(children) do
-    Enum.reduce(children, 0, fn
-      {_, _, _} = node, acc -> acc + count_nodes(node)
-      {:comment, _}, acc -> acc + 1
-      _, acc -> acc + 1
-    end)
+  defp count_nodes(nodes) when is_list(nodes) do
+    Enum.reduce(nodes, 0, fn node, acc -> acc + count_nodes(node) end)
   end
+
+  defp count_nodes({_tag, _attrs, children}), do: 1 + count_nodes(children)
+  defp count_nodes({:comment, _}), do: 1
+  defp count_nodes(_text), do: 1
 end
