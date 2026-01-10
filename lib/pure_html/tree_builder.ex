@@ -8,7 +8,7 @@ defmodule PureHTML.TreeBuilder do
   - Insertion modes for O(1) context checks
 
   Elements during parsing: %{ref: ref, tag: tag, attrs: map, children: list}
-  Final output: {tag, attrs, children} tuples (Floki-compatible)
+  Final output: {tag, attrs, children} tuples (attrs are maps, not lists like Floki)
   """
 
   # --------------------------------------------------------------------------
