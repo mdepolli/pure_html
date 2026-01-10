@@ -45,8 +45,18 @@ defmodule PureHtml.TreeBuilder do
   @table_context ~w(table tbody thead tfoot tr)
   @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
 
-  # Scope boundaries for "have an element in scope" - adoption agency check
-  @scope_boundaries ~w(applet caption html marquee object table td th template)
+  # Guard macros for O(1) scope boundary checks (replaces Enum.member?)
+  defguardp is_scope_boundary(tag)
+            when tag in ~w(applet caption html marquee object table td th template)
+
+  defguardp is_button_scope_boundary(tag)
+            when tag in ~w(applet caption html table td th marquee object template button)
+
+  defguardp is_table_scope_boundary(tag)
+            when tag in ~w(td th caption template body html)
+
+  defguardp is_select_scope_boundary(tag)
+            when tag in ~w(template body html)
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
@@ -607,38 +617,27 @@ defmodule PureHtml.TreeBuilder do
   end
 
   # --------------------------------------------------------------------------
-  # Scope helpers
+  # Scope helpers (optimized with guards for O(1) boundary checks)
   # --------------------------------------------------------------------------
 
-  defp in_scope?(nodes, target_tags, boundary_tags) do
-    Enum.reduce_while(nodes, false, fn
-      %{tag: tag}, _acc ->
-        cond do
-          tag in target_tags -> {:halt, true}
-          tag in boundary_tags -> {:halt, false}
-          true -> {:cont, false}
-        end
+  # Check if in table context - stop at table/tbody/etc or td/th/caption boundaries
+  defp in_table_context?(stack), do: do_in_table_context?(stack)
 
-      _, acc ->
-        {:cont, acc}
-    end)
-  end
+  defp do_in_table_context?([%{tag: tag} | _])
+       when tag in ~w(table tbody thead tfoot tr),
+       do: true
 
-  defp in_table_context?(stack) do
-    # td/th are scope boundaries - content inside cells shouldn't be foster parented
-    in_scope?(stack, ["table" | @table_context], [
-      "td",
-      "th",
-      "caption",
-      "template",
-      "body",
-      "html"
-    ])
-  end
+  defp do_in_table_context?([%{tag: tag} | _]) when is_table_scope_boundary(tag), do: false
+  defp do_in_table_context?([_ | rest]), do: do_in_table_context?(rest)
+  defp do_in_table_context?([]), do: false
 
-  defp in_select?(stack) do
-    in_scope?(stack, ["select"], ["template", "body", "html"])
-  end
+  # Check if select is in scope
+  defp in_select?(stack), do: do_in_select?(stack)
+
+  defp do_in_select?([%{tag: "select"} | _]), do: true
+  defp do_in_select?([%{tag: tag} | _]) when is_select_scope_boundary(tag), do: false
+  defp do_in_select?([_ | rest]), do: do_in_select?(rest)
+  defp do_in_select?([]), do: false
 
   # Close option/optgroup if we're in select context
   defp close_option_optgroup_in_select(%State{stack: [%{tag: tag} = elem | rest]} = state)
@@ -725,12 +724,12 @@ defmodule PureHtml.TreeBuilder do
     if element_in_scope?(stack, stack_idx), do: :ok, else: :not_in_scope
   end
 
-  # Check if the element at stack_idx is in scope
-  defp element_in_scope?(stack, target_idx) do
-    stack
-    |> Enum.take(target_idx)
-    |> Enum.all?(fn %{tag: tag} -> tag not in @scope_boundaries end)
-  end
+  # Check if the element at stack_idx is in scope (uses guard for O(1) boundary check)
+  defp element_in_scope?(stack, target_idx), do: do_element_in_scope?(stack, target_idx)
+
+  defp do_element_in_scope?(_stack, 0), do: true
+  defp do_element_in_scope?([%{tag: tag} | _], _idx) when is_scope_boundary(tag), do: false
+  defp do_element_in_scope?([_ | rest], idx), do: do_element_in_scope?(rest, idx - 1)
 
   # First iteration with no formatting entry - close the tag
   defp handle_no_formatting_entry(%State{stack: stack} = state, subject, 0) do
@@ -1087,9 +1086,6 @@ defmodule PureHtml.TreeBuilder do
     end)
   end
 
-  # Button scope boundaries for closing <p>
-  @button_scope_boundaries ~w(applet caption html table td th marquee object template button)
-
   # Close <p> respecting button scope (for </p> end tag)
   defp close_p_in_scope(stack) do
     case find_p_in_stack(stack, []) do
@@ -1118,7 +1114,7 @@ defmodule PureHtml.TreeBuilder do
     {Enum.reverse(acc), p_elem, rest}
   end
 
-  defp find_p_in_stack([%{tag: tag} | _rest], _acc) when tag in @button_scope_boundaries do
+  defp find_p_in_stack([%{tag: tag} | _rest], _acc) when is_button_scope_boundary(tag) do
     nil
   end
 
@@ -1298,9 +1294,12 @@ defmodule PureHtml.TreeBuilder do
     end
   end
 
-  defp in_template?(stack) do
-    in_scope?(stack, ["template"], ["html", "body", "head"])
-  end
+  defp in_template?(stack), do: do_in_template?(stack)
+
+  defp do_in_template?([%{tag: "template"} | _]), do: true
+  defp do_in_template?([%{tag: tag} | _]) when tag in ~w(html body head), do: false
+  defp do_in_template?([_ | rest]), do: do_in_template?(rest)
+  defp do_in_template?([]), do: false
 
   defp ensure_html(%State{stack: []} = state) do
     %{state | stack: [new_element("html")], mode: :before_head}
