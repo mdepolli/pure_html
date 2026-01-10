@@ -1833,18 +1833,17 @@ defmodule PureHtml.TreeBuilder do
     do_finalize(foster_aware_add_child(rest, elem))
   end
 
+  defp foster_aware_add_child([%{tag: next_tag} | _] = rest, %{tag: child_tag} = child)
+       when next_tag in @table_context and child_tag in @table_elements do
+    add_child(rest, child)
+  end
+
   defp foster_aware_add_child([%{tag: next_tag} | _] = rest, child)
        when next_tag in @table_context do
-    case child do
-      %{tag: child_tag} when child_tag in @table_elements ->
-        add_child(rest, child)
-
-      _ ->
-        if has_tag?(rest, "body") do
-          foster_add_to_body(rest, child, [])
-        else
-          add_child(rest, child)
-        end
+    if has_tag?(rest, "body") do
+      foster_add_to_body(rest, child, [])
+    else
+      add_child(rest, child)
     end
   end
 
