@@ -577,6 +577,7 @@ defmodule PureHTML.TreeBuilder do
   defp do_process_html_start_tag("a", attrs, _, state) do
     state
     |> in_body()
+    |> reconstruct_active_formatting()
     |> maybe_close_existing_formatting("a")
     |> reconstruct_active_formatting()
     |> push_element("a", attrs)
@@ -588,6 +589,7 @@ defmodule PureHTML.TreeBuilder do
     |> in_body()
     |> reconstruct_active_formatting()
     |> maybe_close_existing_formatting("nobr")
+    |> reconstruct_active_formatting()
     |> push_element("nobr", attrs)
     |> add_formatting_entry("nobr", attrs)
   end
@@ -883,9 +885,9 @@ defmodule PureHTML.TreeBuilder do
 
     final_stack = add_child(rest, closed_fe)
 
-    # Remove the formatting element and any formatting elements that were above it
-    above_refs = MapSet.new(above_fe, & &1.ref)
-    af = List.delete_at(af, af_idx) |> reject_refs_from_af(above_refs)
+    # Per HTML5 spec step 9: only remove the formatting element from AF
+    # Other formatting elements above it stay in AF for later reconstruction
+    af = List.delete_at(af, af_idx)
 
     {final_stack, af}
   end
@@ -1770,24 +1772,28 @@ defmodule PureHTML.TreeBuilder do
 
   defp pop_until(_target, [], _acc), do: :not_found
 
-  defp pop_until(target, [%{tag: tag} = elem | rest], acc) do
-    cond do
-      tag_matches?(tag, target) ->
-        finalize_pop(elem, acc, rest)
-
-      # Template is a boundary - can't close elements across it (unless closing template itself)
-      tag == "template" ->
-        :not_found
-
-      true ->
-        pop_until(target, rest, [elem | acc])
-    end
+  # Direct tag match
+  defp pop_until(target, [%{tag: target} = elem | rest], acc) do
+    finalize_pop(elem, acc, rest)
   end
 
-  defp tag_matches?(tag, target) when tag == target, do: true
-  defp tag_matches?({:svg, tag}, target) when tag == target, do: true
-  defp tag_matches?({:math, tag}, target) when tag == target, do: true
-  defp tag_matches?(_, _), do: false
+  # SVG namespaced tag match
+  defp pop_until(target, [%{tag: {:svg, target}} = elem | rest], acc) do
+    finalize_pop(elem, acc, rest)
+  end
+
+  # MathML namespaced tag match
+  defp pop_until(target, [%{tag: {:math, target}} = elem | rest], acc) do
+    finalize_pop(elem, acc, rest)
+  end
+
+  # Template is a boundary - can't close elements across it
+  defp pop_until(_target, [%{tag: "template"} | _], _acc), do: :not_found
+
+  # Continue searching
+  defp pop_until(target, [elem | rest], acc) do
+    pop_until(target, rest, [elem | acc])
+  end
 
   defp finalize_pop(elem, acc, rest) do
     nested_above = nest_elements(Enum.reverse(acc))
