@@ -2150,7 +2150,7 @@ defmodule PureHtml.Tokenizer do
   defp consumable_entity?(return_state, input, rest)
        when is_attribute_value_state(return_state) do
     matched_len = byte_size(input) - byte_size(rest)
-    <<matched::binary-size(matched_len), _::binary>> = input
+    <<matched::binary-size(^matched_len), _::binary>> = input
     has_semicolon? = String.ends_with?(matched, ";")
 
     legacy_follows_problematic_char? =
