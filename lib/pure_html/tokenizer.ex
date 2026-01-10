@@ -276,7 +276,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_rawtext_buffer(state, rest)
+      emit_end_tag_buffer(state, :rawtext, rest)
     end
   end
 
@@ -284,7 +284,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_rawtext_buffer(state, rest)
+      emit_end_tag_buffer(state, :rawtext, rest)
     end
   end
 
@@ -312,7 +312,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :rawtext_end_tag_name, input: _} = state) do
-    emit_rawtext_buffer(state, state.input)
+    emit_end_tag_buffer(state, :rawtext, state.input)
   end
 
   # RCDATA state - for <textarea>, <title>. Processes entities.
@@ -361,7 +361,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_rcdata_buffer(state, rest)
+      emit_end_tag_buffer(state, :rcdata, rest)
     end
   end
 
@@ -369,7 +369,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_rcdata_buffer(state, rest)
+      emit_end_tag_buffer(state, :rcdata, rest)
     end
   end
 
@@ -397,7 +397,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :rcdata_end_tag_name, input: _} = state) do
-    emit_rcdata_buffer(state, state.input)
+    emit_end_tag_buffer(state, :rcdata, state.input)
   end
 
   # Script data state - for <script>. Similar to RAWTEXT but handles escaped states.
@@ -446,7 +446,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_script_buffer(state, rest)
+      emit_end_tag_buffer(state, :script_data, rest)
     end
   end
 
@@ -454,7 +454,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_script_buffer(state, rest)
+      emit_end_tag_buffer(state, :script_data, rest)
     end
   end
 
@@ -482,7 +482,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :script_data_end_tag_name, input: _} = state) do
-    emit_script_buffer(state, state.input)
+    emit_end_tag_buffer(state, :script_data, state.input)
   end
 
   # Script data escape start
@@ -599,7 +599,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil, input: rest)
+      emit_end_tag_buffer(state, :script_data_escaped, rest)
     end
   end
 
@@ -607,7 +607,7 @@ defmodule PureHtml.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil, input: rest)
+      emit_end_tag_buffer(state, :script_data_escaped, rest)
     end
   end
 
@@ -639,7 +639,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :script_data_escaped_end_tag_name, input: _} = state) do
-    emit_char(state, "</" <> state.buffer, state: :script_data_escaped, token: nil)
+    emit_end_tag_buffer(state, :script_data_escaped, state.input)
   end
 
   # Script data double escape start
@@ -1132,7 +1132,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :comment_start_dash, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :comment_start_dash, input: _} = state) do
@@ -1159,7 +1159,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :comment, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :comment, input: <<c::utf8, rest::binary>>} = state) do
@@ -1223,7 +1223,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :comment_end_dash, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :comment_end_dash, input: _} = state) do
@@ -1248,7 +1248,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :comment_end, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :comment_end, input: _} = state) do
@@ -1270,7 +1270,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :comment_end_bang, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :comment_end_bang, input: _} = state) do
@@ -1362,7 +1362,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :doctype_name, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :doctype_name, input: <<c::utf8, rest::binary>>} = state) do
@@ -1384,7 +1384,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :after_doctype_name, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :after_doctype_name, input: <<prefix::48, rest::binary>>} = state)
@@ -1430,7 +1430,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :after_doctype_public_keyword, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :after_doctype_public_keyword, input: _} = state) do
@@ -1466,7 +1466,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :before_doctype_public_identifier, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :before_doctype_public_identifier, input: _} = state) do
@@ -1501,7 +1501,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :doctype_public_identifier_double_quoted, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(
@@ -1539,7 +1539,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :doctype_public_identifier_single_quoted, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(
@@ -1576,7 +1576,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :after_doctype_public_identifier, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :after_doctype_public_identifier, input: _} = state) do
@@ -1623,7 +1623,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :between_doctype_public_and_system_identifiers, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :between_doctype_public_and_system_identifiers, input: _} = state) do
@@ -1659,7 +1659,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :after_doctype_system_keyword, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :after_doctype_system_keyword, input: _} = state) do
@@ -1695,7 +1695,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :before_doctype_system_identifier, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :before_doctype_system_identifier, input: _} = state) do
@@ -1730,7 +1730,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :doctype_system_identifier_double_quoted, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(
@@ -1768,7 +1768,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :doctype_system_identifier_single_quoted, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(
@@ -1793,7 +1793,7 @@ defmodule PureHtml.Tokenizer do
   defp step(%{state: :after_doctype_system_identifier, input: ""} = state) do
     state
     |> set_force_quirks()
-    |> emit([])
+    |> emit()
   end
 
   defp step(%{state: :after_doctype_system_identifier, input: _} = state) do
@@ -1806,7 +1806,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :bogus_comment, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :bogus_comment, input: <<0, rest::binary>>} = state) do
@@ -1827,7 +1827,7 @@ defmodule PureHtml.Tokenizer do
   end
 
   defp step(%{state: :bogus_doctype, input: ""} = state) do
-    emit(state, [])
+    emit(state)
   end
 
   defp step(%{state: :bogus_doctype, input: <<_, rest::binary>>} = state) do
@@ -1997,6 +1997,8 @@ defmodule PureHtml.Tokenizer do
   @rawtext_elements ~w(style xmp iframe noembed noframes noscript)
   @rcdata_elements ~w(textarea title)
 
+  defp emit(state), do: emit(state, [])
+
   defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) do
     next_state = next_state_for_tag(tag)
     all_updates = Keyword.merge([state: next_state, token: nil], updates)
@@ -2104,16 +2106,8 @@ defmodule PureHtml.Tokenizer do
 
   defp appropriate_end_tag?(_state), do: false
 
-  defp emit_rawtext_buffer(state, rest) do
-    emit_char(state, "</" <> state.buffer, state: :rawtext, token: nil, input: rest)
-  end
-
-  defp emit_rcdata_buffer(state, rest) do
-    emit_char(state, "</" <> state.buffer, state: :rcdata, token: nil, input: rest)
-  end
-
-  defp emit_script_buffer(state, rest) do
-    emit_char(state, "</" <> state.buffer, state: :script_data, token: nil, input: rest)
+  defp emit_end_tag_buffer(state, next_state, rest) do
+    emit_char(state, "</" <> state.buffer, state: next_state, token: nil, input: rest)
   end
 
   defp flush_char_ref(%{return_state: return_state} = state, chars, rest)
