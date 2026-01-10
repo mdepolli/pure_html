@@ -14,6 +14,8 @@ defmodule PureHtml.Html5libTreeConstructionTest do
           @tag :html5lib
           @tag :tree_construction
           @tag test_file: filename
+          @tag test_num: index
+          @tag test_id: "#{filename}:#{index}"
           test "##{index}: #{String.slice(test.data, 0, 40)}" do
             test = unquote(Macro.escape(test))
 
