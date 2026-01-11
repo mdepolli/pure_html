@@ -83,6 +83,7 @@ defmodule PureHTML.TreeBuilder do
     in_body: Modes.InBody,
     text: Modes.Text,
     after_body: Modes.AfterBody,
+    in_frameset: Modes.InFrameset,
     after_frameset: Modes.AfterFrameset
     # ... add more as migrated
   }
@@ -1437,6 +1438,12 @@ defmodule PureHTML.TreeBuilder do
 
       # Frameset modes - ensure body exists (no-op if frameset already present)
       m when m in [:in_frameset, :after_frameset] ->
+        state
+        |> ensure_body()
+        |> set_mode(:in_body)
+
+      # Table sub-modes and other modes - just ensure body
+      _ ->
         state
         |> ensure_body()
         |> set_mode(:in_body)

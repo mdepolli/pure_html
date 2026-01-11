@@ -1,27 +1,27 @@
 # Test Failures Analysis
 
-**Total: 194 failures out of 1476 tests**
+**Total: 187 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_body mode extraction (was 196 failures)*
+*Last updated: 2026-01-11 after in_frameset mode extraction (was 194 failures)*
 
 ## By Test File
 
 | File | Before | After |
 |------|--------|-------|
-| tests1 | 24 | 24 |
-| tests10 | 19 | 19 |
-| webkit01 | 20 | 17 |
-| template | 19 | 16 |
+| tests1 | 24 | 23 |
+| tests10 | 19 | 18 |
+| webkit01 | 17 | 17 |
+| template | 16 | 15 |
 | webkit02 | 14 | 14 |
-| tests7 | 13 | 12 |
-| tests19 | 13 | 12 |
+| tests7 | 12 | 12 |
+| tests19 | 12 | 11 |
 | tests3 | 10 | 10 |
 | tests17 | 7 | 7 |
-| tests20 | 6 | 5 |
-| tests2 | 6 | 5 |
-| tests26 | 5 | 3 |
-| tests18 | 5 | 5 |
-| **Total** | **196** | **194** |
+| tests20 | 5 | 5 |
+| tests2 | 5 | 5 |
+| tests26 | 3 | 3 |
+| tests18 | 5 | 4 |
+| **Total** | **194** | **187** |
 
 ## By Category
 
@@ -89,6 +89,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **In frameset mode extraction** (2026-01-11): Extracted `in_frameset` insertion mode to `lib/pure_html/tree_builder/modes/in_frameset.ex`. Fixed end tag handling to properly pop frameset element and switch to after_frameset mode when current node is no longer a frameset (was incorrectly staying in in_frameset mode). Fixed 7 tests (194 → 187 total).
 
 - **In body mode extraction** (2026-01-11): Extracted `in_body` insertion mode to `lib/pure_html/tree_builder/modes/in_body.ex` (~1700 LOC). Moved all start tag handling, end tag handling, character processing, foreign content, adoption agency algorithm, active formatting elements, foster parenting, and implicit closing logic. Fixed end tag handling in foreign content to properly break out of SVG/MathML before processing `</p>` and `</br>`. Fixed 2 tests (196 → 194 total).
 
