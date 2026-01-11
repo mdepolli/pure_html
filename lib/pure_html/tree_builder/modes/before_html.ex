@@ -18,6 +18,8 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers, only: [push_element: 3, set_mode: 2]
+
   @impl true
   def process({:character, text}, state) do
     # Whitespace is ignored
@@ -63,8 +65,9 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
   end
 
   # Insert html element and switch to before_head mode
-  defp insert_html(%{stack: stack} = state, attrs) do
-    html = %{ref: make_ref(), tag: "html", attrs: attrs, children: []}
-    %{state | stack: [html | stack], mode: :before_head}
+  defp insert_html(state, attrs) do
+    state
+    |> push_element("html", attrs)
+    |> set_mode(:before_head)
   end
 end

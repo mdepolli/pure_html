@@ -19,6 +19,8 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, push_element: 3, set_mode: 2]
+
   @impl true
   def process({:character, text}, state) do
     case String.trim(text) do
@@ -68,14 +70,9 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
   end
 
   # Insert head element and switch to in_head mode
-  defp insert_head(%{stack: stack} = state, attrs) do
-    head = %{ref: make_ref(), tag: "head", attrs: attrs, children: []}
-    %{state | stack: [head | stack], mode: :in_head}
+  defp insert_head(state, attrs) do
+    state
+    |> push_element("head", attrs)
+    |> set_mode(:in_head)
   end
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 end

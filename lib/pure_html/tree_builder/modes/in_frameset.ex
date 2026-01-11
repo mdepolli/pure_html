@@ -22,6 +22,9 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_text_to_stack: 2, add_child_to_stack: 2, add_child: 2, push_element: 3]
+
   @impl true
   # Whitespace: insert
   def process({:character, text}, state) do
@@ -112,35 +115,5 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     |> String.graphemes()
     |> Enum.filter(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
     |> Enum.join()
-  end
-
-  defp add_text_to_stack(%{stack: stack} = state, text) do
-    %{state | stack: add_text_child(stack, text)}
-  end
-
-  defp add_text_child([%{children: [prev_text | rest_children]} = parent | rest], text)
-       when is_binary(prev_text) do
-    [%{parent | children: [prev_text <> text | rest_children]} | rest]
-  end
-
-  defp add_text_child([%{children: children} = parent | rest], text) do
-    [%{parent | children: [text | children]} | rest]
-  end
-
-  defp add_text_child([], _text), do: []
-
-  defp add_child_to_stack(%{stack: stack} = state, child) do
-    %{state | stack: add_child(stack, child)}
-  end
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
-
-  defp push_element(%{stack: stack} = state, tag, attrs) do
-    element = %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-    %{state | stack: [element | stack]}
   end
 end

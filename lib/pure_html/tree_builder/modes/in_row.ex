@@ -24,6 +24,9 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [push_element: 3, set_mode: 2, push_af_marker: 1, add_child: 2, in_table_scope?: 2]
+
   # Start tags that close the row
   @row_closing_start_tags ~w(caption col colgroup tbody tfoot thead tr)
 
@@ -102,7 +105,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # Table body end tags: close row if in scope, reprocess
   def process({:end_tag, tag}, %{stack: stack} = state) when tag in @table_body_end_tags do
-    if has_in_table_scope?(stack, tag) do
+    if in_table_scope?(stack, tag) do
       case close_row(state) do
         {:ok, new_state} ->
           {:reprocess, new_state}
@@ -132,18 +135,6 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp new_element(tag, attrs) do
-    %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-  end
-
-  defp push_element(%{stack: stack} = state, tag, attrs) do
-    %{state | stack: [new_element(tag, attrs) | stack]}
-  end
-
-  defp set_mode(state, mode), do: %{state | mode: mode}
-
-  defp push_af_marker(%{af: af} = state), do: %{state | af: [:marker | af]}
-
   # Clear stack to table row context (tr, template, html)
   defp clear_to_table_row_context(%{stack: stack} = state) do
     %{state | stack: do_clear_to_table_row_context(stack)}
@@ -162,7 +153,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # Close the current row (tr) if in table scope
   defp close_row(%{stack: stack} = state) do
-    if has_in_table_scope?(stack, "tr") do
+    if in_table_scope?(stack, "tr") do
       new_stack = pop_to_tr(stack)
       {:ok, %{state | stack: new_stack, mode: :in_table_body}}
     else
@@ -179,22 +170,4 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   end
 
   defp pop_to_tr([]), do: []
-
-  # Check if tag is in table scope
-  defp has_in_table_scope?(stack, target), do: do_has_in_table_scope?(stack, target)
-
-  defp do_has_in_table_scope?([%{tag: tag} | _], target) when tag == target, do: true
-
-  defp do_has_in_table_scope?([%{tag: tag} | _], _)
-       when tag in ["table", "template", "html"],
-       do: false
-
-  defp do_has_in_table_scope?([_ | rest], target), do: do_has_in_table_scope?(rest, target)
-  defp do_has_in_table_scope?([], _), do: false
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 end

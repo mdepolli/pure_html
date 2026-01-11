@@ -19,6 +19,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_text: 2, foster_text: 2]
+
   @impl true
   # Character tokens: collect into pending list
   def process({:character, text}, %{pending_table_text: pending} = state) do
@@ -37,50 +39,19 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   # --------------------------------------------------------------------------
 
   defp flush_pending_text(%{pending_table_text: ""} = state) do
-    %{state | pending_table_text: ""}
+    state
   end
 
-  defp flush_pending_text(%{pending_table_text: text, stack: stack} = state) do
-    new_stack =
+  defp flush_pending_text(%{pending_table_text: text} = state) do
+    state =
       if String.trim(text) == "" do
         # Whitespace only: insert normally
-        add_text_to_stack(stack, text)
+        %{state | stack: add_text(state.stack, text)}
       else
         # Contains non-whitespace: foster parent
-        foster_text(stack, text)
+        foster_text(state, text)
       end
 
-    %{state | stack: new_stack, pending_table_text: ""}
+    %{state | pending_table_text: ""}
   end
-
-  defp add_text_to_stack([%{children: [prev_text | rest_children]} = parent | rest], text)
-       when is_binary(prev_text) do
-    [%{parent | children: [prev_text <> text | rest_children]} | rest]
-  end
-
-  defp add_text_to_stack([%{children: children} = parent | rest], text) do
-    [%{parent | children: [text | children]} | rest]
-  end
-
-  defp add_text_to_stack([], _text), do: []
-
-  # Foster parent text before the table
-  defp foster_text(stack, text) do
-    do_foster_text(stack, text, [])
-  end
-
-  defp do_foster_text([%{tag: "table"} = table | rest], text, acc) do
-    rest = add_text_to_stack(rest, text)
-    rebuild_stack(acc, [table | rest])
-  end
-
-  defp do_foster_text([current | rest], text, acc) do
-    do_foster_text(rest, text, [current | acc])
-  end
-
-  defp do_foster_text([], _text, acc) do
-    Enum.reverse(acc)
-  end
-
-  defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 end

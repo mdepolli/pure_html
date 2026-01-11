@@ -27,6 +27,8 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   alias PureHTML.TreeBuilder.Modes.InHead
   alias PureHTML.TreeBuilder.Modes.InBody
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2]
+
   # Start tags processed using "in head" rules
   @in_head_start_tags ~w(basefont bgsound link meta noframes style)
 
@@ -112,10 +114,4 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   end
 
   defp close_noscript(stack), do: stack
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 end

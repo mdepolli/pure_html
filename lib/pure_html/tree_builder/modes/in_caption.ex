@@ -24,6 +24,8 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, in_table_scope?: 2]
+
   # Table-related start tags that close the caption
   @table_tags ~w(caption col colgroup tbody td tfoot th thead tr)
 
@@ -104,25 +106,14 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # Close caption if in table scope
   defp close_caption(%{stack: stack, af: af} = state) do
-    if has_caption_in_table_scope?(stack) do
+    if in_table_scope?(stack, "caption") do
       {new_stack, closed_refs} = pop_to_caption(stack, MapSet.new())
-      new_af = clear_af_to_marker(af, closed_refs)
+      new_af = reject_closed_refs(af, closed_refs)
       {:ok, %{state | stack: new_stack, af: new_af, mode: :in_table}}
     else
       :not_found
     end
   end
-
-  defp has_caption_in_table_scope?(stack), do: do_has_caption_in_table_scope?(stack)
-
-  defp do_has_caption_in_table_scope?([%{tag: "caption"} | _]), do: true
-
-  defp do_has_caption_in_table_scope?([%{tag: tag} | _])
-       when tag in ["table", "template", "html"],
-       do: false
-
-  defp do_has_caption_in_table_scope?([_ | rest]), do: do_has_caption_in_table_scope?(rest)
-  defp do_has_caption_in_table_scope?([]), do: false
 
   defp pop_to_caption([%{tag: "caption"} = caption | rest], refs) do
     {add_child(rest, caption), MapSet.put(refs, caption.ref)}
@@ -134,28 +125,11 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   defp pop_to_caption([], refs), do: {[], refs}
 
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
-
-  # Clear active formatting elements up to marker or for closed refs
-  defp clear_af_to_marker(af, closed_refs) do
-    Enum.reduce_while(af, [], fn
-      :marker, acc ->
-        {:halt, Enum.reverse(acc)}
-
-      {ref, _, _} = entry, acc ->
-        if MapSet.member?(closed_refs, ref) do
-          {:cont, acc}
-        else
-          {:cont, [entry | acc]}
-        end
+  # Remove closed refs from active formatting list
+  defp reject_closed_refs(af, closed_refs) do
+    Enum.reject(af, fn
+      :marker -> false
+      {ref, _, _} -> MapSet.member?(closed_refs, ref)
     end)
-    |> case do
-      result when is_list(result) -> result
-      _ -> []
-    end
   end
 end

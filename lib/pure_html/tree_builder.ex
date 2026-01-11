@@ -2,12 +2,24 @@ defmodule PureHTML.TreeBuilder do
   @moduledoc """
   Builds an HTML document tree from a tokenizer.
 
-  Uses:
-  - State struct with stack, active formatting list, and insertion mode
+  ## Architecture
+
+  The tree builder separates parsing context from DOM construction:
+
+  - **Parsing context**: Stack tracks "open elements" for scope checks and mode decisions.
+    Active formatting list tracks formatting elements for the adoption agency algorithm.
+  - **DOM structure**: Elements stored in a map with explicit parent_ref relationships.
+    Foster parenting resolved at insertion time via appropriate_insertion_location.
+
+  ## Data Structures
+
+  - State struct: parsing context + DOM storage
+  - Elements: %{ref, tag, attrs, parent_ref, children}
   - make_ref() for element IDs (no counter to pass around)
   - Insertion modes for O(1) context checks
 
-  Elements during parsing: %{ref: ref, tag: tag, attrs: map, children: list}
+  ## Output
+
   Final output: {tag, attrs, children} tuples (attrs are maps, not lists like Floki)
   """
 
@@ -21,10 +33,14 @@ defmodule PureHTML.TreeBuilder do
   defmodule State do
     @moduledoc """
     Parser state for the HTML5 tree construction algorithm.
+
+    Architecture: Stack tracks "open elements" for parsing context, while DOM
+    structure is built via explicit parent_ref relationships in the elements map.
     """
 
     defstruct [
-      # Stack of open elements
+      # === Parsing Context ===
+      # Stack of open elements (currently stores full elements, will migrate to refs only)
       stack: [],
       # Active formatting elements list
       af: [],
@@ -43,7 +59,13 @@ defmodule PureHTML.TreeBuilder do
       # Form element pointer (for form association)
       form_element: nil,
       # Scripting flag (we assume scripting enabled)
-      scripting: true
+      scripting: true,
+
+      # === DOM Structure ===
+      # Element storage: ref => %{ref, tag, attrs, parent_ref, children}
+      elements: %{},
+      # Top-level document children (comments before <html>)
+      document_children: []
     ]
   end
 

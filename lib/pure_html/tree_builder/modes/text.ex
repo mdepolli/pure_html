@@ -16,10 +16,12 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, add_text: 2]
+
   @impl true
   def process({:character, text}, %{stack: stack} = state) do
     # Insert text as child of current element
-    {:ok, %{state | stack: add_text_child(stack, text)}}
+    {:ok, %{state | stack: add_text(stack, text)}}
   end
 
   def process({:end_tag, tag}, %{stack: [%{tag: tag} | _]} = state) do
@@ -50,14 +52,4 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   defp close_current_element(state) do
     %{state | mode: state.original_mode, original_mode: nil}
   end
-
-  # Add a child to the current element
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
-
-  # Add text as child of the current element
-  defp add_text_child(stack, text), do: add_child(stack, text)
 end

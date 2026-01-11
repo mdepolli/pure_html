@@ -18,6 +18,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, add_text: 2]
+
   @impl true
   def process({:character, text}, %{stack: stack} = state) do
     # Only whitespace is inserted, non-whitespace is ignored
@@ -26,7 +28,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
         {:ok, state}
 
       whitespace ->
-        {:ok, %{state | stack: add_text_child(stack, whitespace)}}
+        {:ok, %{state | stack: add_text(stack, whitespace)}}
     end
   end
 
@@ -67,14 +69,4 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
     |> Enum.filter(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
     |> Enum.join()
   end
-
-  # Add a child to the current element
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
-
-  # Add text as child of the current element
-  defp add_text_child(stack, text), do: add_child(stack, text)
 end

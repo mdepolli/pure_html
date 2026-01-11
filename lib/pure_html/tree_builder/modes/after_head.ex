@@ -24,6 +24,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_child: 2, add_text: 2, push_element: 3, set_mode: 2, set_frameset_ok: 2]
+
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
 
   @impl true
@@ -31,7 +34,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     case String.trim(text) do
       "" ->
         # Whitespace: insert directly as child of current element (html)
-        {:ok, %{state | stack: add_text_child(stack, text)}}
+        {:ok, %{state | stack: add_text(stack, text)}}
 
       _ ->
         # Non-whitespace: insert implied body, switch to in_body, reprocess
@@ -57,16 +60,23 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:start_tag, "body", attrs, _self_closing}, state) do
     # Insert body element, switch to "in body", set frameset-ok to false
-    body = %{ref: make_ref(), tag: "body", attrs: attrs, children: []}
+    state =
+      state
+      |> push_element("body", attrs)
+      |> set_mode(:in_body)
+      |> set_frameset_ok(false)
 
-    {:ok, %{state | stack: [body | state.stack], mode: :in_body, frameset_ok: false}}
+    {:ok, state}
   end
 
   def process({:start_tag, "frameset", attrs, _self_closing}, state) do
     # Insert frameset element, switch to "in frameset"
-    frameset = %{ref: make_ref(), tag: "frameset", attrs: attrs, children: []}
+    state =
+      state
+      |> push_element("frameset", attrs)
+      |> set_mode(:in_frameset)
 
-    {:ok, %{state | stack: [frameset | state.stack], mode: :in_frameset}}
+    {:ok, state}
   end
 
   def process({:start_tag, tag, _attrs, _self_closing}, state) when tag in @head_elements do
@@ -102,17 +112,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   # Insert an implied body element and switch to :in_body mode
   defp insert_implied_body(state) do
-    body = %{ref: make_ref(), tag: "body", attrs: %{}, children: []}
-    %{state | stack: [body | state.stack], mode: :in_body}
+    state
+    |> push_element("body", %{})
+    |> set_mode(:in_body)
   end
-
-  # Add a child (text or comment) to the current element
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
-
-  # Add text as child of the current element
-  defp add_text_child(stack, text), do: add_child(stack, text)
 end
