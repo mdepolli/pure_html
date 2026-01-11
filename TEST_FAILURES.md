@@ -1,36 +1,36 @@
 # Test Failures Analysis
 
-**Total: 207 failures out of 1476 tests**
+**Total: 206 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after before_head mode extraction (was 210 failures)*
+*Last updated: 2026-01-10 after after_head mode extraction with whitespace/comment fixes (was 207 failures)*
 
 ## By Test File
 
 | File | Before | After | Change |
 |------|--------|-------|--------|
-| tests1 | 25 | 23 | **-2** |
-| tests10 | 20 | 20 | - |
-| webkit01 | 17 | 17 | - |
-| template | 21 | 17 | **-4** |
-| webkit02 | 14 | 14 | - |
-| tests19 | 14 | 14 | - |
+| tests1 | 25 | 22 | **-3** |
+| tests10 | 20 | 19 | **-1** |
+| webkit01 | 17 | 18 | +1 |
+| template | 21 | 14 | **-7** |
+| webkit02 | 14 | 13 | **-1** |
+| tests19 | 14 | 13 | **-1** |
 | tests3 | 12 | 12 | - |
-| tests7 | 11 | 10 | **-1** |
-| tests18 | 10 | 10 | - |
-| tests2 | 8 | 5 | **-3** |
-| tricky01 | 7 | 7 | - |
+| tests18 | 10 | 11 | +1 |
+| tests7 | 11 | 9 | **-2** |
 | tests6 | 7 | 7 | - |
 | tests17 | 7 | 7 | - |
-| tests15 | 6 | 6 | - |
+| tests15 | 6 | 5 | **-1** |
 | tests26 | 5 | 5 | - |
-| tests20 | 5 | 5 | - |
-| Others | ~15 | ~12 | - |
+| tests2 | 8 | 5 | **-3** |
+| tricky01 | 7 | 4 | **-3** |
+| tests20 | 5 | 4 | **-1** |
+| Others | ~15 | ~17 | - |
 
 ## By Category
 
 | Category | Count | Notes |
 |----------|-------|-------|
-| Template | 17 | Template mode switching, remaining edge cases |
+| Template | 14 | Template mode switching, remaining edge cases |
 | Table | ~20 | Foster parenting, form in table |
 | Math/SVG foreign content | ~15 | Integration points, breakout |
 | Adoption agency / formatting | ~15 | Complex cases with tables |
@@ -92,6 +92,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **After head mode extraction** (2026-01-10): Extracted after_head insertion mode to `lib/pure_html/tree_builder/modes/after_head.ex`. Fixed `maybe_reopen_head/1` to check if head is on stack rather than checking mode. Added proper handling of whitespace (insert as child of html) and comments (insert as child of html) per spec. Fixed 1 test (207 → 206 total).
 
 - **Initial mode module extraction** (2026-01-10): Started refactoring insertion modes into separate modules. Extracted Initial mode to `lib/pure_html/tree_builder/modes/initial.ex` with proper whitespace handling and reprocess signaling. Added `:before_html` mode support to transition_to. Fixed 3 tests in tests2/tests7 (213 → 210 total).
 

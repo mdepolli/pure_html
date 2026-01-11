@@ -32,10 +32,9 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
     end
   end
 
-  def process({:comment, _text}, state) do
-    # Comments are inserted as children of the Document
-    # This is handled at document level in TreeBuilder.process_token
-    {:ok, state}
+  def process({:comment, text}, %{stack: stack} = state) do
+    # Insert comment as child of current element
+    {:ok, %{state | stack: add_child(stack, {:comment, text})}}
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
@@ -69,4 +68,10 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
     # Anything else: insert implied <head>, switch to "in head", reprocess
     {:reprocess, %{state | mode: :in_head}}
   end
+
+  defp add_child([%{children: children} = parent | rest], child) do
+    [%{parent | children: [child | children]} | rest]
+  end
+
+  defp add_child([], _child), do: []
 end

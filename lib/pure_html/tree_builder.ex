@@ -77,7 +77,8 @@ defmodule PureHTML.TreeBuilder do
   @mode_modules %{
     initial: Modes.Initial,
     before_html: Modes.BeforeHtml,
-    before_head: Modes.BeforeHead
+    before_head: Modes.BeforeHead,
+    after_head: Modes.AfterHead
     # ... add more as migrated
   }
 
@@ -1606,7 +1607,8 @@ defmodule PureHTML.TreeBuilder do
 
   defp reopen_head_for_element([]), do: []
 
-  defp maybe_reopen_head(%State{mode: :in_head} = state), do: state
+  # Only reopen if head is not already on the stack
+  defp maybe_reopen_head(%State{stack: [%{tag: "head"} | _]} = state), do: state
 
   defp maybe_reopen_head(%State{stack: stack} = state) do
     %{state | stack: reopen_head_for_element(stack)}
