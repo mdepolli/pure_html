@@ -73,12 +73,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defguardp is_button_scope_boundary(tag)
             when tag in @scope_boundaries or tag in @button_scope_extras
 
-  defguardp is_table_scope_boundary(tag)
-            when tag in ~w(td th caption template body html)
-
-  defguardp is_select_scope_boundary(tag)
-            when tag in ~w(template body html)
-
   # --------------------------------------------------------------------------
   # Token processing
   # --------------------------------------------------------------------------
@@ -299,13 +293,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp process_html_start_tag(tag, attrs, self_closing, %{stack: stack} = state)
+  defp process_html_start_tag(tag, attrs, self_closing, state)
        when tag not in @table_elements do
-    if in_table_context?(stack) and not in_select?(stack) do
-      process_foster_start_tag(tag, attrs, self_closing, state)
-    else
-      do_process_html_start_tag(tag, attrs, self_closing, state)
-    end
+    do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
   defp process_html_start_tag(tag, attrs, self_closing, state) do
@@ -1017,22 +1007,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Scope helpers
   # --------------------------------------------------------------------------
 
-  defp in_table_context?(stack), do: do_in_table_context?(stack)
-
-  defp do_in_table_context?([%{tag: tag} | _]) when tag in ~w(table tbody thead tfoot tr),
-    do: true
-
-  defp do_in_table_context?([%{tag: tag} | _]) when is_table_scope_boundary(tag), do: false
-  defp do_in_table_context?([_ | rest]), do: do_in_table_context?(rest)
-  defp do_in_table_context?([]), do: false
-
-  defp in_select?(stack), do: do_in_select?(stack)
-
-  defp do_in_select?([%{tag: "select"} | _]), do: true
-  defp do_in_select?([%{tag: tag} | _]) when is_select_scope_boundary(tag), do: false
-  defp do_in_select?([_ | rest]), do: do_in_select?(rest)
-  defp do_in_select?([]), do: false
-
   defp close_option_optgroup_in_select(%{stack: [%{tag: tag} = elem | rest]} = state)
        when tag in ["option", "optgroup"] do
     %{state | stack: add_child(rest, elem)}
@@ -1188,44 +1162,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp add_foster_text([], _text), do: []
 
-  defp process_foster_start_tag(tag, attrs, self_closing, %{stack: stack, af: af} = state) do
-    cond do
-      self_closing or tag in @void_elements ->
-        %{state | stack: foster_element(stack, {tag, attrs, []})}
-
-      tag in @formatting_elements ->
-        {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
-        new_af = apply_noahs_ark([{new_ref, tag, attrs} | af], tag, attrs)
-        %{state | stack: new_stack, af: new_af}
-
-      true ->
-        {new_stack, _new_ref} = foster_push_element(stack, tag, attrs)
-        %{state | stack: new_stack}
-    end
-  end
-
-  defp foster_push_element(stack, tag, attrs) do
-    new_elem = new_element(tag, attrs)
-    {do_foster_push(stack, new_elem, []), new_elem.ref}
-  end
-
-  defp do_foster_push([%{tag: "table"} = table | rest], new_elem, acc) do
-    table_and_below = [table | rest]
-    [new_elem | rebuild_stack(acc, table_and_below)]
-  end
-
-  defp do_foster_push([current | rest], new_elem, acc) do
-    do_foster_push(rest, new_elem, [current | acc])
-  end
-
-  defp do_foster_push([], new_elem, acc) do
-    Enum.reverse([new_elem | acc])
-  end
-
-  defp foster_element(stack, element) do
-    foster_content(stack, element, [], &add_child/2)
-  end
-
   defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 
   # --------------------------------------------------------------------------
@@ -1375,9 +1311,40 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp close_tag(tag, stack) do
     case pop_until(tag, stack, []) do
-      {:found, element, rest} -> add_child(rest, element)
-      :not_found -> stack
+      {:found, %{foster_parent_ref: ref} = element, rest} ->
+        # Foster-parented element - add to foster parent, not normal parent
+        add_to_foster_parent(rest, Map.delete(element, :foster_parent_ref), ref)
+
+      {:found, element, rest} ->
+        add_child(rest, element)
+
+      :not_found ->
+        stack
     end
+  end
+
+  defp add_to_foster_parent(stack, child, foster_ref) do
+    do_add_to_foster_parent(stack, child, foster_ref, [])
+  end
+
+  defp do_add_to_foster_parent(
+         [%{ref: ref, children: children} = parent | rest],
+         child,
+         foster_ref,
+         acc
+       )
+       when ref == foster_ref do
+    updated_parent = %{parent | children: [child | children]}
+    rebuild_stack(acc, [updated_parent | rest])
+  end
+
+  defp do_add_to_foster_parent([elem | rest], child, foster_ref, acc) do
+    do_add_to_foster_parent(rest, child, foster_ref, [elem | acc])
+  end
+
+  defp do_add_to_foster_parent([], child, _foster_ref, acc) do
+    # Foster parent not found, fall back to normal behavior
+    Enum.reverse([child | acc])
   end
 
   defp pop_until(_target, [], _acc), do: :not_found

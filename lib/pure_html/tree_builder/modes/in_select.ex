@@ -268,6 +268,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     pop_mode(%{state | stack: new_stack})
   end
 
+  defp close_to_select([%{tag: "select", foster_parent_ref: ref} = select | rest]) do
+    # Foster-parented select - add to foster parent, not normal parent
+    add_to_foster_parent(rest, Map.delete(select, :foster_parent_ref), ref)
+  end
+
   defp close_to_select([%{tag: "select"} = select | rest]) do
     add_child(rest, select)
   end
@@ -286,4 +291,31 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   defp pop_mode(%{template_mode_stack: []} = state) do
     %{state | mode: :in_body}
   end
+
+  # Foster parent helpers for select elements that were foster-parented in table context
+  defp add_to_foster_parent(stack, child, foster_ref) do
+    do_add_to_foster_parent(stack, child, foster_ref, [])
+  end
+
+  defp do_add_to_foster_parent(
+         [%{ref: ref, children: children} = parent | rest],
+         child,
+         foster_ref,
+         acc
+       )
+       when ref == foster_ref do
+    updated_parent = %{parent | children: [child | children]}
+    rebuild_stack(acc, [updated_parent | rest])
+  end
+
+  defp do_add_to_foster_parent([elem | rest], child, foster_ref, acc) do
+    do_add_to_foster_parent(rest, child, foster_ref, [elem | acc])
+  end
+
+  defp do_add_to_foster_parent([], child, _foster_ref, acc) do
+    # Foster parent not found, fall back to normal behavior
+    Enum.reverse([child | acc])
+  end
+
+  defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 end

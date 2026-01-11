@@ -91,7 +91,8 @@ defmodule PureHTML.TreeBuilder do
     in_cell: Modes.InCell,
     in_row: Modes.InRow,
     in_table_body: Modes.InTableBody,
-    in_template: Modes.InTemplate
+    in_template: Modes.InTemplate,
+    in_table: Modes.InTable
   }
 
   # --------------------------------------------------------------------------
@@ -112,12 +113,6 @@ defmodule PureHTML.TreeBuilder do
 
   defguardp is_button_scope_boundary(tag)
             when tag in ~w(applet caption html table td th marquee object template button)
-
-  defguardp is_table_scope_boundary(tag)
-            when tag in ~w(td th caption template body html)
-
-  defguardp is_select_scope_boundary(tag)
-            when tag in ~w(template body html)
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
@@ -486,14 +481,9 @@ defmodule PureHTML.TreeBuilder do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp process_html_start_tag(tag, attrs, self_closing, %State{stack: stack} = state)
+  defp process_html_start_tag(tag, attrs, self_closing, state)
        when tag not in @table_elements do
-    # Foster parent in table context, unless inside select (which creates a boundary)
-    if in_table_context?(stack) and not in_select?(stack) do
-      process_foster_start_tag(tag, attrs, self_closing, state)
-    else
-      do_process_html_start_tag(tag, attrs, self_closing, state)
-    end
+    do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
   # Table elements and other tags that don't need foster parenting
@@ -808,25 +798,6 @@ defmodule PureHTML.TreeBuilder do
   # --------------------------------------------------------------------------
   # Scope helpers (optimized with guards for O(1) boundary checks)
   # --------------------------------------------------------------------------
-
-  # Check if in table context - stop at table/tbody/etc or td/th/caption boundaries
-  defp in_table_context?(stack), do: do_in_table_context?(stack)
-
-  defp do_in_table_context?([%{tag: tag} | _])
-       when tag in ~w(table tbody thead tfoot tr),
-       do: true
-
-  defp do_in_table_context?([%{tag: tag} | _]) when is_table_scope_boundary(tag), do: false
-  defp do_in_table_context?([_ | rest]), do: do_in_table_context?(rest)
-  defp do_in_table_context?([]), do: false
-
-  # Check if select is in scope
-  defp in_select?(stack), do: do_in_select?(stack)
-
-  defp do_in_select?([%{tag: "select"} | _]), do: true
-  defp do_in_select?([%{tag: tag} | _]) when is_select_scope_boundary(tag), do: false
-  defp do_in_select?([_ | rest]), do: do_in_select?(rest)
-  defp do_in_select?([]), do: false
 
   # Close option/optgroup if we're in select context
   defp close_option_optgroup_in_select(%State{stack: [%{tag: tag} = elem | rest]} = state)
@@ -1677,25 +1648,6 @@ defmodule PureHTML.TreeBuilder do
   # Foster parenting
   # --------------------------------------------------------------------------
 
-  defp process_foster_start_tag(tag, attrs, self_closing, %State{stack: stack, af: af} = state) do
-    cond do
-      # Void/self-closing - foster as complete element
-      self_closing or tag in @void_elements ->
-        %{state | stack: foster_element(stack, {tag, attrs, []})}
-
-      # Formatting element - push and update AF with noah's ark
-      tag in @formatting_elements ->
-        {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
-        new_af = apply_noahs_ark([{new_ref, tag, attrs} | af], tag, attrs)
-        %{state | stack: new_stack, af: new_af}
-
-      # Other element - just push
-      true ->
-        {new_stack, _new_ref} = foster_push_element(stack, tag, attrs)
-        %{state | stack: new_stack}
-    end
-  end
-
   defp foster_push_element(stack, tag, attrs) do
     new_elem = new_element(tag, attrs)
     {do_foster_push(stack, new_elem, []), new_elem.ref}
@@ -1712,10 +1664,6 @@ defmodule PureHTML.TreeBuilder do
 
   defp do_foster_push([], new_elem, acc) do
     Enum.reverse([new_elem | acc])
-  end
-
-  defp foster_element(stack, element) do
-    foster_content(stack, element, [], &add_child/2)
   end
 
   defp foster_text(stack, text) do

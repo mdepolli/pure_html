@@ -164,7 +164,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   defp close_row(%{stack: stack} = state) do
     if has_in_table_scope?(stack, "tr") do
       new_stack = pop_to_tr(stack)
-      {:ok, %{state | stack: new_stack}}
+      {:ok, %{state | stack: new_stack, mode: :in_table_body}}
     else
       :not_found
     end

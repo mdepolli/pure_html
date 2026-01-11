@@ -1,30 +1,32 @@
 # Test Failures Analysis
 
-**Total: 178 failures out of 1476 tests**
+**Total: 179 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_template mode extraction (was 180 failures)*
+*Last updated: 2026-01-11 after in_table mode extraction (was 178 failures)*
 
 ## By Test File
 
 | File | Before | After |
 |------|--------|-------|
 | tests1 | 23 | 23 |
-| tests10 | 19 | 19 |
+| tests10 | 19 | 20 |
 | webkit01 | 16 | 16 |
-| webkit02 | 14 | 13 |
-| template | 14 | 12 |
-| tests7 | 11 | 11 |
-| tests19 | 11 | 11 |
+| webkit02 | 13 | 13 |
+| template | 12 | 12 |
+| tests19 | 11 | 14 |
+| tests7 | 11 | 7 |
 | tests3 | 10 | 10 |
-| tests20 | 5 | 5 |
-| tests18 | 5 | 5 |
+| tests18 | 5 | 8 |
+| tests20 | 5 | 4 |
 | tricky01 | 4 | 4 |
 | tests5 | 4 | 4 |
+| tests6 | 0 | 4 |
 | tests17 | 3 | 3 |
 | tests2 | 3 | 3 |
 | tests26 | 3 | 3 |
 | quirks01 | 3 | 3 |
-| **Total** | **180** | **178** |
+| tables01 | 2 | 2 |
+| **Total** | **178** | **179** |
 
 ## By Category
 
@@ -92,6 +94,8 @@
 4. **Template** (12) - Remaining template edge cases
 
 ## Recent Fixes
+
+- **In table mode extraction** (2026-01-11): Extracted `in_table` insertion mode to `lib/pure_html/tree_builder/modes/in_table.ex`. Handles table-specific token processing including foster parenting for non-table elements, table structure elements (caption, colgroup, tbody, thead, tfoot, tr, td, th), and SVG/math foreign content. Key changes: (1) Added foreign content delegation - when top of stack is svg/math, delegates to InBody for proper handling. (2) All foster parenting logic now in InTable instead of scattered in InBody and tree_builder.ex. (3) Fixed InCell's cell-closing end tags to check if target tag is in table scope before closing cell. (4) Fixed input handling - non-hidden inputs are now foster-parented. Some tests improved (tests7: 11→7), some regressed (tests19: 11→14). Net +1 regression (178 → 179 total).
 
 - **In template mode extraction** (2026-01-11): Extracted `in_template` insertion mode to `lib/pure_html/tree_builder/modes/in_template.ex`. Handles template-specific token processing including nested templates, head elements (base, link, meta, script, style, title), and table structure elements. Fixed mode switching for non-table start tags to properly switch to `:in_body` mode so end tags close elements correctly. Added O(1) `template_mode_stack` check for html start tag handling instead of O(n) stack traversal. Fixed 2 tests (180 → 178 total).
 
