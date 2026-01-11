@@ -1,32 +1,49 @@
 # Test Failures Analysis
 
-**Total: 179 failures out of 1476 tests**
+**Total: 178 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_table mode extraction (was 178 failures)*
+*Last updated: 2026-01-11 after in_table_text mode implementation*
 
 ## By Test File
 
 | File | Before | After |
 |------|--------|-------|
 | tests1 | 23 | 23 |
-| tests10 | 19 | 20 |
+| tests10 | 20 | 20 |
 | webkit01 | 16 | 16 |
 | webkit02 | 13 | 13 |
+| tests19 | 14 | 13 |
 | template | 12 | 12 |
-| tests19 | 11 | 14 |
-| tests7 | 11 | 7 |
 | tests3 | 10 | 10 |
-| tests18 | 5 | 8 |
-| tests20 | 5 | 4 |
+| tests18 | 8 | 8 |
+| tests7 | 7 | 7 |
 | tricky01 | 4 | 4 |
 | tests5 | 4 | 4 |
-| tests6 | 0 | 4 |
-| tests17 | 3 | 3 |
-| tests2 | 3 | 3 |
+| tests20 | 4 | 4 |
+| tests6 | 4 | 3 |
+| tests9 | 3 | 3 |
 | tests26 | 3 | 3 |
+| tests17 | 3 | 3 |
+| tests16 | 3 | 3 |
+| tests15 | 3 | 3 |
+| tests11 | 3 | 3 |
 | quirks01 | 3 | 3 |
+| tests8 | 2 | 2 |
+| tests2 | 2 | 2 |
 | tables01 | 2 | 2 |
-| **Total** | **178** | **179** |
+| menuitem-element | 2 | 2 |
+| adoption01 | 2 | 2 |
+| tests24 | 1 | 1 |
+| tests23 | 1 | 1 |
+| tests22 | 1 | 1 |
+| tests14 | 1 | 1 |
+| search-element | 1 | 1 |
+| ruby | 1 | 1 |
+| pending-spec-changes | 1 | 1 |
+| namespace-sensitivity | 1 | 1 |
+| html5test-com | 1 | 1 |
+| doctype01 | 1 | 1 |
+| **Total** | **179** | **178** |
 
 ## By Category
 
@@ -94,6 +111,8 @@
 4. **Template** (12) - Remaining template edge cases
 
 ## Recent Fixes
+
+- **In table text and in head noscript modes** (2026-01-11): Added two new insertion modes. `in_table_text` properly collects and batches character tokens in table context before deciding whether to insert normally (whitespace only) or foster parent (non-whitespace). `in_head_noscript` handles content inside `<noscript>` within `<head>` when scripting is disabled. Also fixed `in_caption` to set mode to `:in_table` when closing caption for reprocessing. Note: `in_select_in_table` mode deferred - requires architectural refactoring to properly intercept InSelect's mode transitions. Fixed 1 test (179 → 178 total). 20 of 21 HTML5 insertion modes now implemented.
 
 - **In table mode extraction** (2026-01-11): Extracted `in_table` insertion mode to `lib/pure_html/tree_builder/modes/in_table.ex`. Handles table-specific token processing including foster parenting for non-table elements, table structure elements (caption, colgroup, tbody, thead, tfoot, tr, td, th), and SVG/math foreign content. Key changes: (1) Added foreign content delegation - when top of stack is svg/math, delegates to InBody for proper handling. (2) All foster parenting logic now in InTable instead of scattered in InBody and tree_builder.ex. (3) Fixed InCell's cell-closing end tags to check if target tag is in table scope before closing cell. (4) Fixed input handling - non-hidden inputs are now foster-parented. Some tests improved (tests7: 11→7), some regressed (tests19: 11→14). Net +1 regression (178 → 179 total).
 
