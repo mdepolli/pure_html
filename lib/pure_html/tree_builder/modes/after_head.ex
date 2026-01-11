@@ -71,7 +71,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:start_tag, tag, _attrs, _self_closing}, state) when tag in @head_elements do
     # Parse error, but process using "in head" rules
-    {:reprocess, %{state | mode: :in_head}}
+    # Delegate to main process/2 which will reopen head properly
+    {:reprocess, %{state | mode: :in_body}}
   end
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do

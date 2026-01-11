@@ -1,30 +1,27 @@
 # Test Failures Analysis
 
-**Total: 198 failures out of 1476 tests**
+**Total: 196 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after after_frameset mode extraction (was 206 failures)*
+*Last updated: 2026-01-11 after in_head and text mode extraction (was 198 failures)*
 
 ## By Test File
 
-| File | Before | After | Change |
-|------|--------|-------|--------|
-| tests1 | 25 | 22 | **-3** |
-| tests10 | 20 | 19 | **-1** |
-| webkit01 | 17 | 18 | +1 |
-| template | 21 | 14 | **-7** |
-| webkit02 | 14 | 13 | **-1** |
-| tests19 | 14 | 13 | **-1** |
-| tests3 | 12 | 12 | - |
-| tests18 | 10 | 11 | +1 |
-| tests7 | 11 | 9 | **-2** |
-| tests6 | 7 | 7 | - |
-| tests17 | 7 | 7 | - |
-| tests15 | 6 | 5 | **-1** |
-| tests26 | 5 | 5 | - |
-| tests2 | 8 | 5 | **-3** |
-| tricky01 | 7 | 4 | **-3** |
-| tests20 | 5 | 4 | **-1** |
-| Others | ~15 | ~17 | - |
+| File | Count | Notes |
+|------|-------|-------|
+| tests1 | 24 | Adoption agency, foster parenting |
+| webkit01 | 20 | Various edge cases |
+| tests10 | 19 | Table foster parenting |
+| template | 19 | Template mode edge cases |
+| webkit02 | 14 | Various edge cases |
+| tests7 | 13 | Formatting elements |
+| tests19 | 13 | Various edge cases |
+| tests3 | 10 | Various edge cases |
+| tests17 | 7 | Various edge cases |
+| tests20 | 6 | Various edge cases |
+| tests2 | 6 | Various edge cases |
+| tests26 | 5 | Various edge cases |
+| tests18 | 5 | Various edge cases |
+| Others | ~35 | Various edge cases |
 
 ## By Category
 
@@ -92,6 +89,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **In head and text mode extraction** (2026-01-11): Extracted `in_head` insertion mode to `lib/pure_html/tree_builder/modes/in_head.ex` and created `text` mode for RAWTEXT/RCDATA content (script, style, title). Fixed head element handling in after_head mode to properly reopen head for head elements. Fixed template handling to check if body is in stack before using body-mode rules. Fixed 2 tests (198 → 196 total).
 
 - **After frameset mode extraction** (2026-01-10): Extracted after_frameset insertion mode to `lib/pure_html/tree_builder/modes/after_frameset.ex`. Handles whitespace, comments, and ignores other tokens per spec. Fixed 8 tests (206 → 198 total).
 

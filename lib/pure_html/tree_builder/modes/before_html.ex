@@ -27,7 +27,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
         {:ok, state}
 
       _ ->
-        {:reprocess, %{state | mode: :before_head}}
+        {:reprocess, insert_html(state, %{})}
     end
   end
 
@@ -42,15 +42,14 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
     {:ok, state}
   end
 
-  def process({:start_tag, "html", _attrs, _self_closing}, state) do
-    # Create html element and switch to before_head
-    # The actual element creation is handled by process/2 in tree_builder
-    {:reprocess, %{state | mode: :before_head}}
+  def process({:start_tag, "html", attrs, _self_closing}, state) do
+    # Create html element with attrs and switch to before_head
+    {:ok, insert_html(state, attrs)}
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - create implied <html> and reprocess
-    {:reprocess, %{state | mode: :before_head}}
+    {:reprocess, insert_html(state, %{})}
   end
 
   def process({:end_tag, _tag}, state) do
@@ -60,6 +59,12 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   def process(_token, state) do
     # Anything else: create implied <html>, switch to before_head, reprocess
-    {:reprocess, %{state | mode: :before_head}}
+    {:reprocess, insert_html(state, %{})}
+  end
+
+  # Insert html element and switch to before_head mode
+  defp insert_html(%{stack: stack} = state, attrs) do
+    html = %{ref: make_ref(), tag: "html", attrs: attrs, children: []}
+    %{state | stack: [html | stack], mode: :before_head}
   end
 end

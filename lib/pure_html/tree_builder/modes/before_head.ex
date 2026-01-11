@@ -28,7 +28,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
       _ ->
         # Non-whitespace: insert implied head, reprocess
-        {:reprocess, %{state | mode: :in_head}}
+        {:reprocess, insert_head(state, %{})}
     end
   end
 
@@ -43,20 +43,18 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
-    # Process using "in body" rules - let process/2 handle merging attrs
-    # Switch mode so we exit this module's scope
-    {:reprocess, %{state | mode: :in_head}}
+    # Process using "in body" rules - insert implied head first, then reprocess
+    {:reprocess, insert_head(state, %{})}
   end
 
-  def process({:start_tag, "head", _attrs, _self_closing}, state) do
-    # Insert head element and switch to "in head"
-    # Switch mode so process/2 handles the actual insertion
-    {:reprocess, %{state | mode: :in_head}}
+  def process({:start_tag, "head", attrs, _self_closing}, state) do
+    # Insert head element with the given attrs and switch to "in head"
+    {:ok, insert_head(state, attrs)}
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - insert implied head and reprocess
-    {:reprocess, %{state | mode: :in_head}}
+    {:reprocess, insert_head(state, %{})}
   end
 
   def process({:end_tag, _tag}, state) do
@@ -66,7 +64,13 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process(_token, state) do
     # Anything else: insert implied <head>, switch to "in head", reprocess
-    {:reprocess, %{state | mode: :in_head}}
+    {:reprocess, insert_head(state, %{})}
+  end
+
+  # Insert head element and switch to in_head mode
+  defp insert_head(%{stack: stack} = state, attrs) do
+    head = %{ref: make_ref(), tag: "head", attrs: attrs, children: []}
+    %{state | stack: [head | stack], mode: :in_head}
   end
 
   defp add_child([%{children: children} = parent | rest], child) do

@@ -78,7 +78,9 @@ defmodule PureHTML.TreeBuilder do
     initial: Modes.Initial,
     before_html: Modes.BeforeHtml,
     before_head: Modes.BeforeHead,
+    in_head: Modes.InHead,
     after_head: Modes.AfterHead,
+    text: Modes.Text,
     after_body: Modes.AfterBody,
     after_frameset: Modes.AfterFrameset
     # ... add more as migrated
@@ -405,13 +407,9 @@ defmodule PureHTML.TreeBuilder do
   end
 
   # Text in pre-body modes: whitespace stays, non-whitespace triggers body transition
-  defp process({:character, text}, %State{stack: [], mode: mode} = state)
-       when mode in [:initial, :before_head, :in_head, :after_head] do
-    process_text_to_body(state, text)
-  end
-
+  # Note: in_head is handled by its module, initial/before_head/after_head are also handled by modules
   defp process({:character, text}, %State{mode: mode} = state)
-       when mode in [:initial, :before_head, :in_head, :after_head] do
+       when mode in [:initial, :before_head, :after_head] do
     case String.trim_leading(text) do
       "" ->
         add_text_to_stack(state, text)
@@ -488,8 +486,8 @@ defmodule PureHTML.TreeBuilder do
   end
 
   # Template in body/table/select/template modes needs special handling (push mode)
-  defp do_process_html_start_tag("template", attrs, _, %State{mode: mode} = state)
-       when mode in [:in_body, :in_table, :in_select, :in_template] do
+  # When already in template mode, always use body rules (nested templates)
+  defp do_process_html_start_tag("template", attrs, _, %State{mode: :in_template} = state) do
     state
     |> reconstruct_active_formatting()
     |> push_element("template", attrs)
@@ -497,10 +495,39 @@ defmodule PureHTML.TreeBuilder do
     |> push_af_marker()
   end
 
-  # Head elements in body modes - just process
-  defp do_process_html_start_tag(tag, attrs, self_closing, %State{mode: mode} = state)
+  # Template in body/table/select modes - only use body rules if body is in stack
+  defp do_process_html_start_tag("template", attrs, _, %State{mode: mode, stack: stack} = state)
+       when mode in [:in_body, :in_table, :in_select] do
+    if has_tag?(stack, "body") do
+      state
+      |> reconstruct_active_formatting()
+      |> push_element("template", attrs)
+      |> push_mode(:in_template)
+      |> push_af_marker()
+    else
+      # No body yet - handle as head context (will reopen head)
+      do_process_html_start_tag_head_context("template", attrs, state)
+    end
+  end
+
+  # Head elements in body modes - only when body is actually in stack
+  defp do_process_html_start_tag(
+         tag,
+         attrs,
+         self_closing,
+         %State{mode: mode, stack: stack} = state
+       )
        when tag in @head_elements and mode in [:in_template, :in_body, :in_table, :in_select] do
-    process_start_tag(state, tag, attrs, self_closing)
+    if has_tag?(stack, "body") or mode == :in_template do
+      process_start_tag(state, tag, attrs, self_closing)
+    else
+      # No body yet - handle with head reopening
+      state
+      |> ensure_html()
+      |> ensure_head()
+      |> maybe_reopen_head()
+      |> process_start_tag(tag, attrs, self_closing)
+    end
   end
 
   # Template in head context needs mode stack handling (like body modes)
@@ -509,14 +536,7 @@ defmodule PureHTML.TreeBuilder do
       # Body exists but we're in some other context - just add template
       process_start_tag(state, "template", attrs, false)
     else
-      # In head context - push mode and set up template properly
-      state
-      |> ensure_html()
-      |> ensure_head()
-      |> maybe_reopen_head()
-      |> push_element("template", attrs)
-      |> push_mode(:in_template)
-      |> push_af_marker()
+      do_process_html_start_tag_head_context("template", attrs, state)
     end
   end
 
@@ -741,6 +761,17 @@ defmodule PureHTML.TreeBuilder do
     |> push_element(tag, attrs)
     |> reconstruct_active_formatting()
     |> maybe_set_frameset_not_ok_for_element(tag)
+  end
+
+  # Helper for processing template in head context (reopens head)
+  defp do_process_html_start_tag_head_context("template", attrs, state) do
+    state
+    |> ensure_html()
+    |> ensure_head()
+    |> maybe_reopen_head()
+    |> push_element("template", attrs)
+    |> push_mode(:in_template)
+    |> push_af_marker()
   end
 
   defp maybe_set_frameset_not_ok_for_element(state, tag)
@@ -1966,6 +1997,11 @@ defmodule PureHTML.TreeBuilder do
 
   defp close_through_head([%{tag: "html"}] = stack), do: stack
   defp close_through_head([%{tag: "body"} | _] = stack), do: stack
+
+  defp close_through_head([%{tag: "head"} = head | rest]) do
+    # Close head into its parent (should be html)
+    close_through_head(foster_aware_add_child(rest, head))
+  end
 
   defp close_through_head([elem | rest]) do
     close_through_head(foster_aware_add_child(rest, elem))
