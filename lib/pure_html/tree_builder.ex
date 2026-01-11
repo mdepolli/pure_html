@@ -12,6 +12,7 @@ defmodule PureHTML.TreeBuilder do
   """
 
   alias PureHTML.Tokenizer
+  alias PureHTML.TreeBuilder.Modes
 
   # --------------------------------------------------------------------------
   # State and Element structures
@@ -74,8 +75,9 @@ defmodule PureHTML.TreeBuilder do
   # Modes that have been migrated to separate modules
   # Add mode => module mapping here as modes are migrated
   @mode_modules %{
-    initial: PureHTML.TreeBuilder.Modes.Initial,
-    before_html: PureHTML.TreeBuilder.Modes.BeforeHtml
+    initial: Modes.Initial,
+    before_html: Modes.BeforeHtml,
+    before_head: Modes.BeforeHead
     # ... add more as migrated
   }
 
@@ -1380,12 +1382,17 @@ defmodule PureHTML.TreeBuilder do
 
       :in_head ->
         state
+        |> ensure_html()
+        |> ensure_head()
         |> close_head()
         |> ensure_body()
         |> set_mode(:in_body)
 
       :after_head ->
         state
+        |> ensure_html()
+        |> ensure_head()
+        |> close_head()
         |> ensure_body()
         |> set_mode(:in_body)
 

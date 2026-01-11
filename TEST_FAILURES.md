@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 210 failures out of 1476 tests**
+**Total: 207 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after initial mode extraction (was 213 failures)*
+*Last updated: 2026-01-10 after before_head mode extraction (was 210 failures)*
 
 ## By Test File
 
