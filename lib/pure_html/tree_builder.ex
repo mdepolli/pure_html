@@ -88,7 +88,8 @@ defmodule PureHTML.TreeBuilder do
     in_select: Modes.InSelect,
     in_caption: Modes.InCaption,
     in_column_group: Modes.InColumnGroup,
-    in_cell: Modes.InCell
+    in_cell: Modes.InCell,
+    in_row: Modes.InRow
     # ... add more as migrated
   }
 
