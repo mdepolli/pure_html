@@ -286,7 +286,8 @@ defmodule PureHTML.TreeBuilder do
   end
 
   defp process({:end_tag, "template"}, %State{stack: stack, af: af} = state) do
-    %{state | stack: close_tag("template", stack), af: clear_af_to_marker(af)} |> pop_mode()
+    new_stack = close_tag("template", stack)
+    %{state | stack: new_stack, af: clear_af_to_marker(af)} |> reset_insertion_mode()
   end
 
   defp process({:end_tag, "frameset"}, %State{stack: stack} = state) do
@@ -415,9 +416,9 @@ defmodule PureHTML.TreeBuilder do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  # Template in body mode needs special handling (push mode)
+  # Template in body/table/select/template modes needs special handling (push mode)
   defp do_process_html_start_tag("template", attrs, _, %State{mode: mode} = state)
-       when mode in [:in_body, :in_table, :in_select] do
+       when mode in [:in_body, :in_table, :in_select, :in_template] do
     state
     |> reconstruct_active_formatting()
     |> push_element("template", attrs)
@@ -431,7 +432,24 @@ defmodule PureHTML.TreeBuilder do
     process_start_tag(state, tag, attrs, self_closing)
   end
 
-  # Head elements with body in stack but different mode (e.g., foster parenting)
+  # Template in head context needs mode stack handling (like body modes)
+  defp do_process_html_start_tag("template", attrs, _, %State{stack: stack} = state) do
+    if has_tag?(stack, "body") do
+      # Body exists but we're in some other context - just add template
+      process_start_tag(state, "template", attrs, false)
+    else
+      # In head context - push mode and set up template properly
+      state
+      |> ensure_html()
+      |> ensure_head()
+      |> maybe_reopen_head()
+      |> push_element("template", attrs)
+      |> push_mode(:in_template)
+      |> push_af_marker()
+    end
+  end
+
+  # Other head elements with body in stack but different mode (e.g., foster parenting)
   defp do_process_html_start_tag(tag, attrs, self_closing, %State{stack: stack} = state)
        when tag in @head_elements do
     if has_tag?(stack, "body") do
@@ -485,16 +503,15 @@ defmodule PureHTML.TreeBuilder do
 
   defp do_process_html_start_tag("frame", _, _, state), do: state
 
-  # <col> needs colgroup wrapper in table context
-  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_table} = state) do
-    state |> ensure_colgroup() |> add_child_to_stack({"col", attrs, []})
+  # <col> needs colgroup wrapper in table context (only if there's a real table)
+  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_table, stack: stack} = state) do
+    if has_tag?(stack, "table") do
+      state |> ensure_colgroup() |> add_child_to_stack({"col", attrs, []})
+    else
+      # In template content without table, just add col directly
+      add_child_to_stack(state, {"col", attrs, []})
+    end
   end
-
-  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_template} = state) do
-    add_child_to_stack(state, {"col", attrs, []})
-  end
-
-  defp do_process_html_start_tag("col", _, _, state), do: state
 
   # <hr> in select context should close option/optgroup first
   defp do_process_html_start_tag("hr", attrs, _, %State{mode: :in_select} = state) do
@@ -526,6 +543,53 @@ defmodule PureHTML.TreeBuilder do
     |> add_child_to_stack({tag, attrs, []})
   end
 
+  # Per HTML5 spec: in "in template" mode, certain start tags switch the template mode
+  # and reprocess the token. These handlers MUST come before the generic table handlers
+  # below to ensure proper mode switching.
+  @table_structure_elements @table_sections ++ ["caption", "colgroup"]
+
+  # Table structure elements in template: add directly (no reprocess needed)
+  # This handles tbody/thead/tfoot/caption/colgroup as first element in template content
+  defp do_process_html_start_tag(tag, attrs, _, %State{mode: :in_template} = state)
+       when tag in @table_structure_elements do
+    state
+    |> switch_template_mode(:in_table)
+    |> push_element(tag, attrs)
+  end
+
+  # col in template: add directly
+  defp do_process_html_start_tag("col", attrs, _, %State{mode: :in_template} = state) do
+    state
+    |> switch_template_mode(:in_table)
+    |> add_child_to_stack({"col", attrs, []})
+  end
+
+  # col in other contexts is ignored
+  defp do_process_html_start_tag("col", _, _, state), do: state
+
+  # tr in template: add directly
+  defp do_process_html_start_tag("tr", attrs, _, %State{mode: :in_template} = state) do
+    state
+    |> switch_template_mode(:in_table)
+    |> push_element("tr", attrs)
+  end
+
+  # td, th -> switch to in_body (simplified from "in row")
+  defp do_process_html_start_tag(tag, attrs, self_closing, %State{mode: :in_template} = state)
+       when tag in ["td", "th"] do
+    state = switch_template_mode(state, :in_body)
+    do_process_html_start_tag(tag, attrs, self_closing, state)
+  end
+
+  # Table structure elements in body mode (outside table context) are ignored per spec
+  # This includes tbody, thead, tfoot, caption, colgroup
+  defp do_process_html_start_tag(tag, _, _, %State{mode: :in_body} = state)
+       when tag in @table_structure_elements do
+    # Ignore - these are parse errors in body mode outside of table context
+    state
+  end
+
+  # Generic table cells handler (td, th) - must come AFTER :in_template handlers
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @table_cells do
     state
     |> in_body()
@@ -535,20 +599,19 @@ defmodule PureHTML.TreeBuilder do
     |> push_af_marker()
   end
 
-  # Table sections, caption, colgroup in template mode are ignored
-  @table_structure_elements @table_sections ++ ["caption", "colgroup"]
-
-  defp do_process_html_start_tag(tag, _, _, %State{mode: :in_template} = state)
+  # Table structure elements (tbody/thead/tfoot/caption/colgroup) in :in_table mode:
+  # Only add if there's an actual table on the stack.
+  # In template content without a table, these should be ignored.
+  defp do_process_html_start_tag(tag, attrs, _, %State{mode: :in_table, stack: stack} = state)
        when tag in @table_structure_elements do
-    state
-  end
-
-  # Table sections and caption close open rows/sections back to table level
-  defp do_process_html_start_tag(tag, attrs, _, %State{mode: :in_table} = state)
-       when tag in @table_sections or tag == "caption" do
-    state
-    |> clear_to_table_context()
-    |> push_element(tag, attrs)
+    if has_tag?(stack, "table") do
+      state
+      |> clear_to_table_context()
+      |> push_element(tag, attrs)
+    else
+      # No table on stack (e.g., in template content), ignore the element
+      state
+    end
   end
 
   defp do_process_html_start_tag("tr", attrs, _, state) do
@@ -1273,6 +1336,41 @@ defmodule PureHTML.TreeBuilder do
   defp pop_mode(%State{mode_stack: []} = state) do
     %{state | mode: :in_body}
   end
+
+  # Per HTML5 spec for "in template" mode: pop current, push new, switch mode
+  defp switch_template_mode(%State{mode_stack: mode_stack} = state, new_mode) do
+    # Pop current template insertion mode, push new one
+    new_stack =
+      case mode_stack do
+        [_ | rest] -> [new_mode | rest]
+        [] -> [new_mode]
+      end
+
+    %{state | mode: new_mode, mode_stack: new_stack}
+  end
+
+  # Per HTML5 spec: "reset the insertion mode appropriately"
+  # Examines the stack to determine the correct insertion mode
+  defp reset_insertion_mode(%State{stack: stack, mode_stack: mode_stack} = state) do
+    mode = determine_mode_from_stack(stack)
+    %{state | mode: mode, mode_stack: Enum.drop(mode_stack, 1)}
+  end
+
+  defp determine_mode_from_stack([]), do: :in_body
+  defp determine_mode_from_stack([%{tag: "template"} | _]), do: :in_template
+
+  defp determine_mode_from_stack([%{tag: tag} | _]) when tag in ~w(tbody thead tfoot),
+    do: :in_table
+
+  defp determine_mode_from_stack([%{tag: "tr"} | _]), do: :in_table
+  defp determine_mode_from_stack([%{tag: tag} | _]) when tag in ~w(td th caption), do: :in_body
+  defp determine_mode_from_stack([%{tag: "table"} | _]), do: :in_table
+  defp determine_mode_from_stack([%{tag: "body"} | _]), do: :in_body
+  defp determine_mode_from_stack([%{tag: "frameset"} | _]), do: :in_frameset
+  defp determine_mode_from_stack([%{tag: "head"} | _]), do: :in_head
+  defp determine_mode_from_stack([%{tag: "html"} | _]), do: :before_head
+  defp determine_mode_from_stack([%{tag: "select"} | _]), do: :in_select
+  defp determine_mode_from_stack([_ | rest]), do: determine_mode_from_stack(rest)
 
   # --------------------------------------------------------------------------
   # Document structure

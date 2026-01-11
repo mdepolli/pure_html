@@ -1,40 +1,39 @@
 # Test Failures Analysis
 
-**Total: 219 failures out of 1476 tests**
+**Total: 213 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after adoption agency fixes (was 231 failures)*
+*Last updated: 2026-01-10 after template fixes (was 219 failures)*
 
 ## By Test File
 
 | File | Before | After | Change |
 |------|--------|-------|--------|
-| tests1 | 27 | 25 | **-2** |
-| template | 21 | 21 | - |
+| tests1 | 25 | 23 | **-2** |
 | tests10 | 20 | 20 | - |
 | webkit01 | 17 | 17 | - |
+| template | 21 | 17 | **-4** |
 | webkit02 | 14 | 14 | - |
 | tests19 | 14 | 14 | - |
 | tests3 | 12 | 12 | - |
-| tests26 | 12 | 5 | **-7** |
 | tests7 | 11 | 11 | - |
 | tests18 | 10 | 10 | - |
 | tests2 | 8 | 8 | - |
-| tricky01 | 8 | 7 | **-1** |
+| tricky01 | 7 | 7 | - |
 | tests6 | 7 | 7 | - |
 | tests17 | 7 | 7 | - |
 | tests15 | 6 | 6 | - |
+| tests26 | 5 | 5 | - |
 | tests20 | 5 | 5 | - |
-| adoption01 | 17 | 0 | **-17** |
 | Others | ~15 | ~15 | - |
 
 ## By Category
 
 | Category | Count | Notes |
 |----------|-------|-------|
-| Adoption agency / formatting | ~15 | Reduced from ~30, still complex cases |
-| Template | 21 | Template content handling |
+| Template | 17 | Template mode switching, remaining edge cases |
 | Table | ~20 | Foster parenting, form in table |
 | Math/SVG foreign content | ~15 | Integration points, breakout |
+| Adoption agency / formatting | ~15 | Complex cases with tables |
 | Frameset | ~10 | After frameset, noframes |
 | Select | ~8 | Button in select, nested select |
 | Body/HTML edge cases | ~5 | Second body attrs, after </html> |
@@ -48,11 +47,11 @@
 <DIV> abc <B> def <I> ghi <P> jkl </B> mno </I> pqr </DIV>
 ```
 
-### Template
+### Template (remaining)
 ```
-<template></template><div></div>
+<body><template><col><div>  (div after col not added)
 <body><template><div><tr></tr></div></template>
-<template><template><col>
+<frameset><template><frame></frame>  (frameset+template interaction)
 <template><a><table><a>
 ```
 
@@ -87,12 +86,14 @@
 
 ## Priority Fixes
 
-1. **Template** (21) - Template content model handling
-2. **Table foster parenting** (~20) - Edge cases with forms, inputs
+1. **Table foster parenting** (~20) - Edge cases with forms, inputs
+2. **Template** (17) - Remaining template edge cases
 3. **Foreign content** (~15) - Integration points, breakout tags
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **Template insertion modes** (2026-01-10): Implemented mode switching for table elements in template content. Table structure elements (tbody, thead, etc.) are now added directly when first in template, and ignored when following other table elements without proper table context. Fixed tests 2, 27, 29, 89 and 2 tests1 failures (219 → 213 total).
 
 - **Adoption agency algorithm** (2026-01-10): Fixed basic "no furthest block" case to only remove target element from AF, not all formatting elements above it. Fixed reconstruction order after adoption agency for `<nobr>` and `<a>` tags. Fixed all 17 adoption01 tests plus 10 additional tests (231 → 219 total).
 
