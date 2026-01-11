@@ -90,8 +90,8 @@ defmodule PureHTML.TreeBuilder do
     in_column_group: Modes.InColumnGroup,
     in_cell: Modes.InCell,
     in_row: Modes.InRow,
-    in_table_body: Modes.InTableBody
-    # ... add more as migrated
+    in_table_body: Modes.InTableBody,
+    in_template: Modes.InTemplate
   }
 
   # --------------------------------------------------------------------------
@@ -259,7 +259,15 @@ defmodule PureHTML.TreeBuilder do
     %{state | stack: [new_element("html", attrs)], mode: :before_head}
   end
 
-  defp process({:start_tag, "html", attrs, _}, state), do: merge_html_attrs(state, attrs)
+  # Per spec: "If there is a template element on the stack of open elements, then ignore the token"
+  # Check template_mode_stack for O(1) template context detection
+  defp process({:start_tag, "html", _attrs, _}, %State{template_mode_stack: [_ | _]} = state) do
+    state
+  end
+
+  defp process({:start_tag, "html", attrs, _}, state) do
+    merge_html_attrs(state, attrs)
+  end
 
   defp process({:start_tag, "head", attrs, _}, state) do
     state

@@ -196,6 +196,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, %{state | stack: [new_element("html", attrs)], mode: :before_head}}
   end
 
+  # Per spec: "If there is a template element on the stack of open elements, then ignore the token"
+  # Check template_mode_stack for O(1) template context detection
+  def process({:start_tag, "html", _attrs, _}, %{template_mode_stack: [_ | _]} = state) do
+    {:ok, state}
+  end
+
   def process({:start_tag, "html", attrs, _}, state) do
     {:ok, merge_html_attrs(state, attrs)}
   end

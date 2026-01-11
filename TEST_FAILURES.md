@@ -1,33 +1,36 @@
 # Test Failures Analysis
 
-**Total: 180 failures out of 1476 tests**
+**Total: 178 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_select mode extraction (was 187 failures)*
+*Last updated: 2026-01-11 after in_template mode extraction (was 180 failures)*
 
 ## By Test File
 
 | File | Before | After |
 |------|--------|-------|
 | tests1 | 23 | 23 |
-| tests10 | 18 | 19 |
-| webkit01 | 17 | 16 |
-| template | 15 | 14 |
-| webkit02 | 14 | 14 |
-| tests7 | 12 | 11 |
+| tests10 | 19 | 19 |
+| webkit01 | 16 | 16 |
+| webkit02 | 14 | 13 |
+| template | 14 | 12 |
+| tests7 | 11 | 11 |
 | tests19 | 11 | 11 |
 | tests3 | 10 | 10 |
-| tests17 | 7 | 3 |
 | tests20 | 5 | 5 |
-| tests2 | 5 | 3 |
+| tests18 | 5 | 5 |
+| tricky01 | 4 | 4 |
+| tests5 | 4 | 4 |
+| tests17 | 3 | 3 |
+| tests2 | 3 | 3 |
 | tests26 | 3 | 3 |
-| tests18 | 4 | 5 |
-| **Total** | **187** | **180** |
+| quirks01 | 3 | 3 |
+| **Total** | **180** | **178** |
 
 ## By Category
 
 | Category | Count | Notes |
 |----------|-------|-------|
-| Template | 14 | Template mode switching, remaining edge cases |
+| Template | 12 | Template mode switching, remaining edge cases |
 | Table | ~20 | Foster parenting, form in table |
 | Math/SVG foreign content | ~15 | Integration points, breakout |
 | Adoption agency / formatting | ~15 | Complex cases with tables |
@@ -84,11 +87,13 @@
 ## Priority Fixes
 
 1. **Table foster parenting** (~20) - Edge cases with forms, inputs
-2. **Template** (17) - Remaining template edge cases
-3. **Foreign content** (~15) - Integration points, breakout tags
-4. **Remaining adoption agency** (~15) - Complex cases with tables
+2. **Foreign content** (~15) - Integration points, breakout tags
+3. **Remaining adoption agency** (~15) - Complex cases with tables
+4. **Template** (12) - Remaining template edge cases
 
 ## Recent Fixes
+
+- **In template mode extraction** (2026-01-11): Extracted `in_template` insertion mode to `lib/pure_html/tree_builder/modes/in_template.ex`. Handles template-specific token processing including nested templates, head elements (base, link, meta, script, style, title), and table structure elements. Fixed mode switching for non-table start tags to properly switch to `:in_body` mode so end tags close elements correctly. Added O(1) `template_mode_stack` check for html start tag handling instead of O(n) stack traversal. Fixed 2 tests (180 → 178 total).
 
 - **In select mode extraction** (2026-01-11): Extracted `in_select` insertion mode to `lib/pure_html/tree_builder/modes/in_select.ex`. Properly handles option/optgroup opening and closing, table structure elements (close select and reprocess), svg/math elements with namespaces, and ignores table elements per spec. Fixed 7 tests (187 → 180 total).
 
