@@ -1,5 +1,10 @@
 # Claude Code Instructions
 
+## Code Style
+
+- Always fix compile warnings as soon as they appear
+- Favor vertical pipelines over horizontal ones
+
 ## Before Committing
 
 Always run `mix format` before committing changes.
