@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 213 failures out of 1476 tests**
+**Total: 210 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after template fixes (was 219 failures)*
+*Last updated: 2026-01-10 after initial mode extraction (was 213 failures)*
 
 ## By Test File
 
@@ -15,16 +15,16 @@
 | webkit02 | 14 | 14 | - |
 | tests19 | 14 | 14 | - |
 | tests3 | 12 | 12 | - |
-| tests7 | 11 | 11 | - |
+| tests7 | 11 | 10 | **-1** |
 | tests18 | 10 | 10 | - |
-| tests2 | 8 | 8 | - |
+| tests2 | 8 | 5 | **-3** |
 | tricky01 | 7 | 7 | - |
 | tests6 | 7 | 7 | - |
 | tests17 | 7 | 7 | - |
 | tests15 | 6 | 6 | - |
 | tests26 | 5 | 5 | - |
 | tests20 | 5 | 5 | - |
-| Others | ~15 | ~15 | - |
+| Others | ~15 | ~12 | - |
 
 ## By Category
 
@@ -92,6 +92,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **Initial mode module extraction** (2026-01-10): Started refactoring insertion modes into separate modules. Extracted Initial mode to `lib/pure_html/tree_builder/modes/initial.ex` with proper whitespace handling and reprocess signaling. Added `:before_html` mode support to transition_to. Fixed 3 tests in tests2/tests7 (213 → 210 total).
 
 - **Template insertion modes** (2026-01-10): Implemented mode switching for table elements in template content. Table structure elements (tbody, thead, etc.) are now added directly when first in template, and ignored when following other table elements without proper table context. Fixed tests 2, 27, 29, 89 and 2 tests1 failures (219 → 213 total).
 

@@ -19,10 +19,18 @@ defmodule PureHTML.TreeBuilder.InsertionMode do
           | {:error, atom()}
           | :eof
 
+  @type result ::
+          {:ok, State.t()}
+          | {:reprocess, State.t()}
+
   @doc """
   Process a token in this insertion mode.
 
-  Returns the updated state, which may include a mode transition.
+  Returns either:
+  - `{:ok, state}` - Token fully processed, continue with next token
+  - `{:reprocess, state}` - Token should be reprocessed in the new mode
+
+  The state may include a mode transition.
   """
-  @callback process(token(), State.t()) :: State.t()
+  @callback process(token(), State.t()) :: result()
 end

@@ -68,6 +68,18 @@ defmodule PureHTML.TreeBuilder do
   # :after_frameset     - After </frameset>
 
   # --------------------------------------------------------------------------
+  # Mode modules (for incremental migration)
+  # --------------------------------------------------------------------------
+
+  # Modes that have been migrated to separate modules
+  # Add mode => module mapping here as modes are migrated
+  @mode_modules %{
+    initial: PureHTML.TreeBuilder.Modes.Initial
+    # :before_html => PureHTML.TreeBuilder.Modes.BeforeHtml,
+    # ... add more as migrated
+  }
+
+  # --------------------------------------------------------------------------
   # Element categories
   # --------------------------------------------------------------------------
 
@@ -191,7 +203,27 @@ defmodule PureHTML.TreeBuilder do
   end
 
   defp process_token(token, {doctype, state, comments}) do
-    {doctype, process(token, state), comments}
+    {doctype, dispatch(token, state), comments}
+  end
+
+  # Dispatch token to the appropriate mode module or fall back to existing process/2
+  defp dispatch(token, %State{mode: mode} = state) do
+    case Map.get(@mode_modules, mode) do
+      nil ->
+        # Mode not migrated yet - use existing process/2
+        process(token, state)
+
+      module ->
+        # Mode has been migrated - delegate to module
+        case module.process(token, state) do
+          {:ok, new_state} ->
+            new_state
+
+          {:reprocess, new_state} ->
+            # Token needs to be reprocessed in the new mode
+            dispatch(token, new_state)
+        end
+    end
   end
 
   # --------------------------------------------------------------------------
@@ -1332,7 +1364,7 @@ defmodule PureHTML.TreeBuilder do
         state
 
       # Pre-body modes require progressively more setup
-      :initial ->
+      m when m in [:initial, :before_html] ->
         state
         |> ensure_html()
         |> ensure_head()
