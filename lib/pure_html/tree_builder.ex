@@ -18,22 +18,54 @@ defmodule PureHTML.TreeBuilder do
   # --------------------------------------------------------------------------
 
   defmodule State do
-    @moduledoc false
-    # frameset_ok: true until we see content that disables frameset
-    defstruct stack: [], af: [], mode: :initial, mode_stack: [], frameset_ok: true
+    @moduledoc """
+    Parser state for the HTML5 tree construction algorithm.
+    """
+
+    defstruct [
+      # Stack of open elements
+      stack: [],
+      # Active formatting elements list
+      af: [],
+      # Current insertion mode
+      mode: :initial,
+      # Stack of template insertion modes (per HTML5 spec, separate from mode)
+      template_mode_stack: [],
+      # Original insertion mode (saved when switching to text/in_table_text)
+      original_mode: nil,
+      # Frameset-ok flag
+      frameset_ok: true,
+      # Head element pointer (for "in head" processing)
+      head_element: nil,
+      # Form element pointer (for form association)
+      form_element: nil,
+      # Scripting flag (we assume scripting enabled)
+      scripting: true
+    ]
   end
 
-  # Insertion modes (subset of HTML5 spec)
-  # :initial        - No html yet
-  # :before_head    - html exists, no head
-  # :in_head        - Inside head element
-  # :after_head     - Head closed, no body yet
-  # :in_body        - Inside body element
-  # :in_table       - Inside table
-  # :in_select      - Inside select element
-  # :in_template    - Inside template element
-  # :in_frameset    - Inside frameset element
-  # :after_frameset - After frameset closed
+  # HTML5 Insertion Modes (full spec)
+  # :initial            - Starting state, before DOCTYPE
+  # :before_html        - Before <html> element
+  # :before_head        - Before <head> element
+  # :in_head            - Inside <head>
+  # :in_head_noscript   - Inside <noscript> in <head>
+  # :after_head         - After </head>, before <body>
+  # :in_body            - Inside <body> (main parsing mode)
+  # :text               - Raw text mode (for script/style content)
+  # :in_table           - Inside <table>
+  # :in_table_text      - Collecting text in table context
+  # :in_caption         - Inside <caption>
+  # :in_column_group    - Inside <colgroup>
+  # :in_table_body      - Inside <tbody>, <thead>, or <tfoot>
+  # :in_row             - Inside <tr>
+  # :in_cell            - Inside <td> or <th>
+  # :in_select          - Inside <select>
+  # :in_select_in_table - Inside <select> that's in a table
+  # :in_template        - Inside <template>
+  # :after_body         - After </body>
+  # :in_frameset        - Inside <frameset>
+  # :after_frameset     - After </frameset>
 
   # --------------------------------------------------------------------------
   # Element categories
@@ -1325,35 +1357,37 @@ defmodule PureHTML.TreeBuilder do
 
   defp set_mode(state, mode), do: %{state | mode: mode}
 
-  defp push_mode(%State{mode: current_mode, mode_stack: stack} = state, new_mode) do
-    %{state | mode: new_mode, mode_stack: [current_mode | stack]}
+  defp push_mode(%State{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
   end
 
-  defp pop_mode(%State{mode_stack: [prev_mode | rest]} = state) do
-    %{state | mode: prev_mode, mode_stack: rest}
+  defp pop_mode(%State{template_mode_stack: [prev_mode | rest]} = state) do
+    %{state | mode: prev_mode, template_mode_stack: rest}
   end
 
-  defp pop_mode(%State{mode_stack: []} = state) do
+  defp pop_mode(%State{template_mode_stack: []} = state) do
     %{state | mode: :in_body}
   end
 
   # Per HTML5 spec for "in template" mode: pop current, push new, switch mode
-  defp switch_template_mode(%State{mode_stack: mode_stack} = state, new_mode) do
+  defp switch_template_mode(%State{template_mode_stack: template_mode_stack} = state, new_mode) do
     # Pop current template insertion mode, push new one
     new_stack =
-      case mode_stack do
+      case template_mode_stack do
         [_ | rest] -> [new_mode | rest]
         [] -> [new_mode]
       end
 
-    %{state | mode: new_mode, mode_stack: new_stack}
+    %{state | mode: new_mode, template_mode_stack: new_stack}
   end
 
   # Per HTML5 spec: "reset the insertion mode appropriately"
   # Examines the stack to determine the correct insertion mode
-  defp reset_insertion_mode(%State{stack: stack, mode_stack: mode_stack} = state) do
+  defp reset_insertion_mode(
+         %State{stack: stack, template_mode_stack: template_mode_stack} = state
+       ) do
     mode = determine_mode_from_stack(stack)
-    %{state | mode: mode, mode_stack: Enum.drop(mode_stack, 1)}
+    %{state | mode: mode, template_mode_stack: Enum.drop(template_mode_stack, 1)}
   end
 
   defp determine_mode_from_stack([]), do: :in_body
