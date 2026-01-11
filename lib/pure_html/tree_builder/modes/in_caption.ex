@@ -107,7 +107,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
     if has_caption_in_table_scope?(stack) do
       {new_stack, closed_refs} = pop_to_caption(stack, MapSet.new())
       new_af = clear_af_to_marker(af, closed_refs)
-      {:ok, %{state | stack: new_stack, af: new_af}}
+      {:ok, %{state | stack: new_stack, af: new_af, mode: :in_table}}
     else
       :not_found
     end

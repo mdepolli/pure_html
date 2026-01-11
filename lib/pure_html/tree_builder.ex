@@ -34,6 +34,8 @@ defmodule PureHTML.TreeBuilder do
       template_mode_stack: [],
       # Original insertion mode (saved when switching to text/in_table_text)
       original_mode: nil,
+      # Pending table character tokens (for in_table_text mode)
+      pending_table_text: "",
       # Frameset-ok flag
       frameset_ok: true,
       # Head element pointer (for "in head" processing)
@@ -79,6 +81,7 @@ defmodule PureHTML.TreeBuilder do
     before_html: Modes.BeforeHtml,
     before_head: Modes.BeforeHead,
     in_head: Modes.InHead,
+    in_head_noscript: Modes.InHeadNoscript,
     after_head: Modes.AfterHead,
     in_body: Modes.InBody,
     text: Modes.Text,
@@ -92,7 +95,8 @@ defmodule PureHTML.TreeBuilder do
     in_row: Modes.InRow,
     in_table_body: Modes.InTableBody,
     in_template: Modes.InTemplate,
-    in_table: Modes.InTable
+    in_table: Modes.InTable,
+    in_table_text: Modes.InTableText
   }
 
   # --------------------------------------------------------------------------
@@ -182,12 +186,33 @@ defmodule PureHTML.TreeBuilder do
 
     case Tokenizer.next_token(tokenizer) do
       nil ->
-        acc
+        # Flush any pending table text before finalizing
+        flush_pending_table_text(acc)
 
       {token, tokenizer} ->
         acc = process_token(token, acc)
         build_loop(tokenizer, acc)
     end
+  end
+
+  # Flush pending table text if any (for in_table_text mode at EOF)
+  defp flush_pending_table_text({doctype, %State{pending_table_text: ""} = state, comments}) do
+    {doctype, state, comments}
+  end
+
+  defp flush_pending_table_text(
+         {doctype, %State{pending_table_text: text, stack: stack} = state, comments}
+       ) do
+    new_stack =
+      if String.trim(text) == "" do
+        # Whitespace only: insert normally
+        add_text(stack, text)
+      else
+        # Contains non-whitespace: foster parent
+        foster_text(stack, text)
+      end
+
+    {doctype, %{state | stack: new_stack, pending_table_text: ""}, comments}
   end
 
   defp update_tokenizer_context(tokenizer, {_, %State{stack: stack}, _}) do

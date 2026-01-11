@@ -53,15 +53,17 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     process_in_table(token, state)
   end
 
-  # Character tokens in table context elements: whitespace inserts, non-whitespace foster parents
+  # Character tokens in table context elements: switch to in_table_text mode
   defp process_in_table({:character, text}, %{stack: [%{tag: tag} | _]} = state)
        when tag in @table_context do
-    if String.trim(text) == "" do
-      {:ok, add_text_to_stack(state, text)}
-    else
-      # Foster parent via in_body
-      InBody.process({:character, text}, state)
-    end
+    # Switch to in_table_text mode to collect character tokens
+    {:ok,
+     %{
+       state
+       | mode: :in_table_text,
+         original_mode: :in_table,
+         pending_table_text: text
+     }}
   end
 
   # Character tokens not in table context: delegate to in_body
@@ -195,6 +197,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Select: foster parent and push in_select mode
+  # Note: HTML5 spec has in_select_in_table mode, but it requires architectural
+  # changes to properly intercept InSelect's mode transitions. For now, use in_select.
   defp process_in_table({:start_tag, "select", attrs, _}, %{stack: stack} = state) do
     {new_stack, _ref} = foster_push_element(stack, "select", attrs)
     {:ok, %{state | stack: new_stack, mode: :in_select}}
@@ -263,21 +267,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp set_mode(state, mode), do: %{state | mode: mode}
 
   defp push_af_marker(%{af: af} = state), do: %{state | af: [:marker | af]}
-
-  defp add_text_to_stack(%{stack: stack} = state, text) do
-    %{state | stack: add_text_child(stack, text)}
-  end
-
-  defp add_text_child([%{children: [prev_text | rest_children]} = parent | rest], text)
-       when is_binary(prev_text) do
-    [%{parent | children: [prev_text <> text | rest_children]} | rest]
-  end
-
-  defp add_text_child([%{children: children} = parent | rest], text) do
-    [%{parent | children: [text | children]} | rest]
-  end
-
-  defp add_text_child([], _text), do: []
 
   defp add_child_to_stack(%{stack: stack} = state, child) do
     %{state | stack: add_child(stack, child)}
