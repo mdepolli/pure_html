@@ -80,6 +80,7 @@ defmodule PureHTML.TreeBuilder do
     before_head: Modes.BeforeHead,
     in_head: Modes.InHead,
     after_head: Modes.AfterHead,
+    in_body: Modes.InBody,
     text: Modes.Text,
     after_body: Modes.AfterBody,
     after_frameset: Modes.AfterFrameset

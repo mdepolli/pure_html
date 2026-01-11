@@ -1,27 +1,27 @@
 # Test Failures Analysis
 
-**Total: 196 failures out of 1476 tests**
+**Total: 194 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_head and text mode extraction (was 198 failures)*
+*Last updated: 2026-01-11 after in_body mode extraction (was 196 failures)*
 
 ## By Test File
 
-| File | Count | Notes |
-|------|-------|-------|
-| tests1 | 24 | Adoption agency, foster parenting |
-| webkit01 | 20 | Various edge cases |
-| tests10 | 19 | Table foster parenting |
-| template | 19 | Template mode edge cases |
-| webkit02 | 14 | Various edge cases |
-| tests7 | 13 | Formatting elements |
-| tests19 | 13 | Various edge cases |
-| tests3 | 10 | Various edge cases |
-| tests17 | 7 | Various edge cases |
-| tests20 | 6 | Various edge cases |
-| tests2 | 6 | Various edge cases |
-| tests26 | 5 | Various edge cases |
-| tests18 | 5 | Various edge cases |
-| Others | ~35 | Various edge cases |
+| File | Before | After |
+|------|--------|-------|
+| tests1 | 24 | 24 |
+| tests10 | 19 | 19 |
+| webkit01 | 20 | 17 |
+| template | 19 | 16 |
+| webkit02 | 14 | 14 |
+| tests7 | 13 | 12 |
+| tests19 | 13 | 12 |
+| tests3 | 10 | 10 |
+| tests17 | 7 | 7 |
+| tests20 | 6 | 5 |
+| tests2 | 6 | 5 |
+| tests26 | 5 | 3 |
+| tests18 | 5 | 5 |
+| **Total** | **196** | **194** |
 
 ## By Category
 
@@ -89,6 +89,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **In body mode extraction** (2026-01-11): Extracted `in_body` insertion mode to `lib/pure_html/tree_builder/modes/in_body.ex` (~1700 LOC). Moved all start tag handling, end tag handling, character processing, foreign content, adoption agency algorithm, active formatting elements, foster parenting, and implicit closing logic. Fixed end tag handling in foreign content to properly break out of SVG/MathML before processing `</p>` and `</br>`. Fixed 2 tests (196 → 194 total).
 
 - **In head and text mode extraction** (2026-01-11): Extracted `in_head` insertion mode to `lib/pure_html/tree_builder/modes/in_head.ex` and created `text` mode for RAWTEXT/RCDATA content (script, style, title). Fixed head element handling in after_head mode to properly reopen head for head elements. Fixed template handling to check if body is in stack before using body-mode rules. Fixed 2 tests (198 → 196 total).
 
