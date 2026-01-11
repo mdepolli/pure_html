@@ -1,27 +1,27 @@
 # Test Failures Analysis
 
-**Total: 187 failures out of 1476 tests**
+**Total: 180 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_frameset mode extraction (was 194 failures)*
+*Last updated: 2026-01-11 after in_select mode extraction (was 187 failures)*
 
 ## By Test File
 
 | File | Before | After |
 |------|--------|-------|
-| tests1 | 24 | 23 |
-| tests10 | 19 | 18 |
-| webkit01 | 17 | 17 |
-| template | 16 | 15 |
+| tests1 | 23 | 23 |
+| tests10 | 18 | 19 |
+| webkit01 | 17 | 16 |
+| template | 15 | 14 |
 | webkit02 | 14 | 14 |
-| tests7 | 12 | 12 |
-| tests19 | 12 | 11 |
+| tests7 | 12 | 11 |
+| tests19 | 11 | 11 |
 | tests3 | 10 | 10 |
-| tests17 | 7 | 7 |
+| tests17 | 7 | 3 |
 | tests20 | 5 | 5 |
-| tests2 | 5 | 5 |
+| tests2 | 5 | 3 |
 | tests26 | 3 | 3 |
-| tests18 | 5 | 4 |
-| **Total** | **194** | **187** |
+| tests18 | 4 | 5 |
+| **Total** | **187** | **180** |
 
 ## By Category
 
@@ -89,6 +89,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **In select mode extraction** (2026-01-11): Extracted `in_select` insertion mode to `lib/pure_html/tree_builder/modes/in_select.ex`. Properly handles option/optgroup opening and closing, table structure elements (close select and reprocess), svg/math elements with namespaces, and ignores table elements per spec. Fixed 7 tests (187 → 180 total).
 
 - **In frameset mode extraction** (2026-01-11): Extracted `in_frameset` insertion mode to `lib/pure_html/tree_builder/modes/in_frameset.ex`. Fixed end tag handling to properly pop frameset element and switch to after_frameset mode when current node is no longer a frameset (was incorrectly staying in in_frameset mode). Fixed 7 tests (194 → 187 total).
 

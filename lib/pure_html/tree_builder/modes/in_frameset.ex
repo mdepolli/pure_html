@@ -42,7 +42,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   end
 
   # Start tag: html - process using in_body rules (merge attrs)
-  def process({:start_tag, "html", _attrs, _} = token, state) do
+  def process({:start_tag, "html", _attrs, _}, state) do
     {:reprocess, %{state | mode: :in_body}}
   end
 
@@ -57,7 +57,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   end
 
   # Start tag: noframes - process using in_head rules
-  def process({:start_tag, "noframes", _attrs, _} = token, state) do
+  def process({:start_tag, "noframes", _attrs, _}, state) do
     {:reprocess, %{state | mode: :in_head}}
   end
 

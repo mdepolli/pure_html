@@ -84,7 +84,8 @@ defmodule PureHTML.TreeBuilder do
     text: Modes.Text,
     after_body: Modes.AfterBody,
     in_frameset: Modes.InFrameset,
-    after_frameset: Modes.AfterFrameset
+    after_frameset: Modes.AfterFrameset,
+    in_select: Modes.InSelect
     # ... add more as migrated
   }
 
