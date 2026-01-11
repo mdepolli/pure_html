@@ -79,7 +79,8 @@ defmodule PureHTML.TreeBuilder do
     before_html: Modes.BeforeHtml,
     before_head: Modes.BeforeHead,
     after_head: Modes.AfterHead,
-    after_body: Modes.AfterBody
+    after_body: Modes.AfterBody,
+    after_frameset: Modes.AfterFrameset
     # ... add more as migrated
   }
 
@@ -424,9 +425,8 @@ defmodule PureHTML.TreeBuilder do
     end
   end
 
-  # In frameset/after frameset modes - only whitespace is kept, non-whitespace is ignored
-  defp process({:character, text}, %State{mode: mode} = state)
-       when mode in [:in_frameset, :after_frameset] do
+  # In frameset mode - only whitespace is kept, non-whitespace is ignored
+  defp process({:character, text}, %State{mode: :in_frameset} = state) do
     case extract_whitespace(text) do
       "" -> state
       whitespace -> add_text_to_stack(state, whitespace)

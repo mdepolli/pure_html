@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 206 failures out of 1476 tests**
+**Total: 198 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after after_body mode extraction (unchanged from 206)*
+*Last updated: 2026-01-10 after after_frameset mode extraction (was 206 failures)*
 
 ## By Test File
 
@@ -92,6 +92,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **After frameset mode extraction** (2026-01-10): Extracted after_frameset insertion mode to `lib/pure_html/tree_builder/modes/after_frameset.ex`. Handles whitespace, comments, and ignores other tokens per spec. Fixed 8 tests (206 → 198 total).
 
 - **After body mode extraction** (2026-01-10): Extracted after_body insertion mode to `lib/pure_html/tree_builder/modes/after_body.ex`. Switches to after_body mode when `</body>` seen in in_body mode. Handles comments by closing elements to html first, then inserting comment. Fixed `ensure_body_final` to check for body in html.children. No net change in failures (206 → 206).
 
