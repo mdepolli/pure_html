@@ -2,7 +2,7 @@
 
 **Total: 206 failures out of 1476 tests**
 
-*Last updated: 2026-01-10 after after_head mode extraction with whitespace/comment fixes (was 207 failures)*
+*Last updated: 2026-01-10 after after_body mode extraction (unchanged from 206)*
 
 ## By Test File
 
@@ -92,6 +92,8 @@
 4. **Remaining adoption agency** (~15) - Complex cases with tables
 
 ## Recent Fixes
+
+- **After body mode extraction** (2026-01-10): Extracted after_body insertion mode to `lib/pure_html/tree_builder/modes/after_body.ex`. Switches to after_body mode when `</body>` seen in in_body mode. Handles comments by closing elements to html first, then inserting comment. Fixed `ensure_body_final` to check for body in html.children. No net change in failures (206 → 206).
 
 - **After head mode extraction** (2026-01-10): Extracted after_head insertion mode to `lib/pure_html/tree_builder/modes/after_head.ex`. Fixed `maybe_reopen_head/1` to check if head is on stack rather than checking mode. Added proper handling of whitespace (insert as child of html) and comments (insert as child of html) per spec. Fixed 1 test (207 → 206 total).
 

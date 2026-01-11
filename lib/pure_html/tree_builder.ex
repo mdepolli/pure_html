@@ -78,7 +78,8 @@ defmodule PureHTML.TreeBuilder do
     initial: Modes.Initial,
     before_html: Modes.BeforeHtml,
     before_head: Modes.BeforeHead,
-    after_head: Modes.AfterHead
+    after_head: Modes.AfterHead,
+    after_body: Modes.AfterBody
     # ... add more as migrated
   }
 
@@ -310,6 +311,11 @@ defmodule PureHTML.TreeBuilder do
   end
 
   defp process({:end_tag, "head"}, state), do: close_head(state)
+
+  defp process({:end_tag, "body"}, %State{mode: :in_body} = state) do
+    %{state | mode: :after_body}
+  end
+
   defp process({:end_tag, "body"}, state), do: state
 
   defp process({:end_tag, tag}, %State{stack: stack, af: af} = state) when tag in @table_cells do
@@ -1987,7 +1993,7 @@ defmodule PureHTML.TreeBuilder do
   defp ensure_body_final([%{tag: "frameset"} | _] = stack), do: stack
 
   defp ensure_body_final([%{tag: "html", children: children} = html]) do
-    if has_tag?(children, "frameset") do
+    if has_tag?(children, "body") or has_tag?(children, "frameset") do
       [html]
     else
       [new_element("body"), html]
