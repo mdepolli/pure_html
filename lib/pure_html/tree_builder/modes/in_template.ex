@@ -27,7 +27,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_child_to_stack: 2, push_element: 3, push_af_marker: 1]
 
   # Void head elements that can just be added directly
   @void_head_elements ~w(base basefont bgsound link meta)
@@ -55,34 +56,45 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   end
 
   # Void head elements: add directly to stack
-  def process({:start_tag, tag, attrs, _}, %{stack: stack} = state)
+  def process({:start_tag, tag, attrs, _}, state)
       when tag in @void_head_elements do
-    {:ok, %{state | stack: add_child(stack, {tag, attrs, []})}}
+    {:ok, add_child_to_stack(state, {tag, attrs, []})}
   end
 
   # Script: push element, switch to text mode with original_mode: :in_template
-  def process({:start_tag, "script", attrs, _}, %{stack: stack} = state) do
-    element = %{ref: make_ref(), tag: "script", attrs: attrs, children: []}
-    {:ok, %{state | stack: [element | stack], original_mode: :in_template, mode: :text}}
+  def process({:start_tag, "script", attrs, _}, state) do
+    state =
+      state
+      |> push_element("script", attrs)
+      |> Map.put(:original_mode, :in_template)
+      |> Map.put(:mode, :text)
+
+    {:ok, state}
   end
 
   # Raw text elements: push element, switch to text mode
-  def process({:start_tag, tag, attrs, _}, %{stack: stack} = state)
+  def process({:start_tag, tag, attrs, _}, state)
       when tag in @raw_text_elements do
-    element = %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-    {:ok, %{state | stack: [element | stack], original_mode: :in_template, mode: :text}}
+    state =
+      state
+      |> push_element(tag, attrs)
+      |> Map.put(:original_mode, :in_template)
+      |> Map.put(:mode, :text)
+
+    {:ok, state}
   end
 
   # Nested template: push element and push mode onto template_mode_stack
-  def process(
-        {:start_tag, "template", attrs, _},
-        %{stack: stack, template_mode_stack: tms, af: af} = state
-      ) do
-    element = %{ref: make_ref(), tag: "template", attrs: attrs, children: []}
+  def process({:start_tag, "template", attrs, _}, %{template_mode_stack: tms} = state) do
     new_tms = [:in_template | tms]
-    # Push AF marker
-    new_af = [:marker | af]
-    {:ok, %{state | stack: [element | stack], template_mode_stack: new_tms, af: new_af}}
+
+    state =
+      state
+      |> push_element("template", attrs)
+      |> push_af_marker()
+      |> Map.put(:template_mode_stack, new_tms)
+
+    {:ok, state}
   end
 
   # Title: delegate to in_head

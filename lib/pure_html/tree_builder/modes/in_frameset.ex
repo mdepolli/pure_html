@@ -23,7 +23,13 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, add_child_to_stack: 2, add_child: 2, push_element: 3]
+    only: [
+      add_text_to_stack: 2,
+      add_child_to_stack: 2,
+      push_element: 3,
+      pop_element: 1,
+      current_tag: 1
+    ]
 
   @impl true
   # Whitespace: insert
@@ -72,28 +78,28 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   # End tag: frameset
   # Per spec: If current node is root html element, ignore. Otherwise pop frameset.
   # If not fragment parsing and current node is no longer frameset, switch to after frameset.
-  def process({:end_tag, "frameset"}, %{stack: stack} = state) do
-    case stack do
-      # Only html on stack - current node is html, ignore
-      [%{tag: "html"}] ->
+  def process({:end_tag, "frameset"}, state) do
+    tag = current_tag(state)
+
+    cond do
+      # Current node is html, ignore
+      tag == "html" ->
         {:ok, state}
 
-      # Frameset on stack - pop it and check what remains
-      [%{tag: "frameset"} = frameset | rest] ->
-        new_stack = add_child(rest, frameset)
+      # Current node is frameset - pop it
+      tag == "frameset" ->
+        new_state = pop_element(state)
 
         # Switch to after_frameset if current node is no longer a frameset
-        case new_stack do
-          [%{tag: "frameset"} | _] ->
-            # Still in a nested frameset, stay in in_frameset mode
-            {:ok, %{state | stack: new_stack}}
-
-          _ ->
-            # Current node is not frameset (likely html), switch to after_frameset
-            {:ok, %{state | stack: new_stack, mode: :after_frameset}}
+        if current_tag(new_state) == "frameset" do
+          # Still in a nested frameset, stay in in_frameset mode
+          {:ok, new_state}
+        else
+          # Current node is not frameset (likely html), switch to after_frameset
+          {:ok, %{new_state | mode: :after_frameset}}
         end
 
-      _ ->
+      true ->
         {:ok, state}
     end
   end

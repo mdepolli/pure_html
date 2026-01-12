@@ -30,7 +30,14 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [push_element: 3, add_child_to_stack: 2, add_child: 2, rebuild_stack: 2]
+    only: [
+      push_element: 3,
+      add_child_to_stack: 2,
+      add_text_to_stack: 2,
+      pop_element: 1,
+      current_tag: 1,
+      in_select_scope?: 2
+    ]
 
   @impl true
   # Character tokens: insert
@@ -76,8 +83,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Start tag: select (nested) - parse error, close select
-  def process({:start_tag, "select", _, _}, %{stack: stack} = state) do
-    if has_select_in_scope?(stack) do
+  def process({:start_tag, "select", _, _}, state) do
+    if in_select_scope?(state, "select") do
       {:ok, close_select(state)}
     else
       {:ok, state}
@@ -85,9 +92,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Start tag: input, keygen, textarea - close select, reprocess
-  def process({:start_tag, tag, _, _}, %{stack: stack} = state)
+  def process({:start_tag, tag, _, _}, state)
       when tag in ["input", "keygen", "textarea"] do
-    if has_select_in_scope?(stack) do
+    if in_select_scope?(state, "select") do
       state = close_select(state)
       {:reprocess, state}
     else
@@ -114,9 +121,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Table structure elements: close select and reprocess
   @table_elements ~w(caption table tbody tfoot thead tr td th)
 
-  def process({:start_tag, tag, _, _}, %{stack: stack} = state)
+  def process({:start_tag, tag, _, _}, state)
       when tag in @table_elements do
-    if has_select_in_scope?(stack) do
+    if in_select_scope?(state, "select") do
       state = close_select(state)
       {:reprocess, state}
     else
@@ -143,37 +150,39 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # End tag: optgroup
-  def process({:end_tag, "optgroup"}, %{stack: stack} = state) do
-    case stack do
+  def process({:end_tag, "optgroup"}, state) do
+    tag = current_tag(state)
+
+    cond do
       # Current is option, parent is optgroup: pop option, then pop optgroup
-      [%{tag: "option"} = option, %{tag: "optgroup"} = optgroup | rest] ->
-        rest = add_child(rest, %{optgroup | children: [option | optgroup.children]})
-        {:ok, %{state | stack: rest}}
+      tag == "option" and get_parent_tag(state) == "optgroup" ->
+        state
+        |> pop_element()
+        |> pop_element()
+        |> then(&{:ok, &1})
 
       # Current is optgroup: pop it
-      [%{tag: "optgroup"} = optgroup | rest] ->
-        {:ok, %{state | stack: add_child(rest, optgroup)}}
+      tag == "optgroup" ->
+        {:ok, pop_element(state)}
 
       # Otherwise ignore
-      _ ->
+      true ->
         {:ok, state}
     end
   end
 
   # End tag: option
-  def process({:end_tag, "option"}, %{stack: stack} = state) do
-    case stack do
-      [%{tag: "option"} = option | rest] ->
-        {:ok, %{state | stack: add_child(rest, option)}}
-
-      _ ->
-        {:ok, state}
+  def process({:end_tag, "option"}, state) do
+    if current_tag(state) == "option" do
+      {:ok, pop_element(state)}
+    else
+      {:ok, state}
     end
   end
 
   # End tag: select
-  def process({:end_tag, "select"}, %{stack: stack} = state) do
-    if has_select_in_scope?(stack) do
+  def process({:end_tag, "select"}, state) do
+    if in_select_scope?(state, "select") do
       {:ok, close_select(state)}
     else
       {:ok, state}
@@ -197,76 +206,75 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp new_foreign_element(ns, tag, attrs) do
-    %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: []}
+  # Get tag of parent element (second in stack)
+  defp get_parent_tag(%{stack: [_, parent_ref | _], elements: elements}) do
+    elements[parent_ref].tag
   end
 
-  defp push_foreign_element(%{stack: stack} = state, ns, tag, attrs, true) do
+  defp get_parent_tag(_), do: nil
+
+  defp push_foreign_element(state, ns, tag, attrs, true) do
     # Self-closing: add as child, not on stack
-    %{state | stack: add_child(stack, {{ns, tag}, attrs, []})}
+    add_child_to_stack(state, {{ns, tag}, attrs, []})
   end
 
-  defp push_foreign_element(%{stack: stack} = state, ns, tag, attrs, _) do
-    %{state | stack: [new_foreign_element(ns, tag, attrs) | stack]}
-  end
+  defp push_foreign_element(
+         %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
+         ns,
+         tag,
+         attrs,
+         _
+       ) do
+    elem = %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: [], parent_ref: parent_ref}
+    new_elements = Map.put(elements, elem.ref, elem)
 
-  defp add_text_to_stack(%{stack: stack} = state, text) do
-    %{state | stack: add_text_child(stack, text)}
-  end
+    new_elements =
+      if parent_ref do
+        Map.update!(new_elements, parent_ref, fn parent ->
+          %{parent | children: [elem.ref | parent.children]}
+        end)
+      else
+        new_elements
+      end
 
-  defp add_text_child([%{children: [prev_text | rest_children]} = parent | rest], text)
-       when is_binary(prev_text) do
-    [%{parent | children: [prev_text <> text | rest_children]} | rest]
+    %{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref}
   end
-
-  defp add_text_child([%{children: children} = parent | rest], text) do
-    [%{parent | children: [text | children]} | rest]
-  end
-
-  defp add_text_child([], _text), do: []
 
   # Close current option if on top of stack
-  defp close_current_option(%{stack: [%{tag: "option"} = option | rest]} = state) do
-    %{state | stack: add_child(rest, option)}
+  defp close_current_option(state) do
+    if current_tag(state) == "option" do
+      pop_element(state)
+    else
+      state
+    end
   end
-
-  defp close_current_option(state), do: state
 
   # Close current optgroup if on top of stack
-  defp close_current_optgroup(%{stack: [%{tag: "optgroup"} = optgroup | rest]} = state) do
-    %{state | stack: add_child(rest, optgroup)}
+  defp close_current_optgroup(state) do
+    if current_tag(state) == "optgroup" do
+      pop_element(state)
+    else
+      state
+    end
   end
-
-  defp close_current_optgroup(state), do: state
-
-  # Check if select is in select scope
-  defp has_select_in_scope?(stack), do: do_has_select_in_scope?(stack)
-
-  defp do_has_select_in_scope?([%{tag: "select"} | _]), do: true
-  defp do_has_select_in_scope?([%{tag: "template"} | _]), do: false
-  defp do_has_select_in_scope?([_ | rest]), do: do_has_select_in_scope?(rest)
-  defp do_has_select_in_scope?([]), do: false
 
   # Close select and pop mode
-  defp close_select(%{stack: stack} = state) do
-    new_stack = close_to_select(stack)
-    pop_mode(%{state | stack: new_stack})
+  defp close_select(%{stack: stack, elements: elements} = state) do
+    {new_stack, parent_ref} = do_close_to_select(stack, elements)
+    pop_mode(%{state | stack: new_stack, current_parent_ref: parent_ref})
   end
 
-  defp close_to_select([%{tag: "select", foster_parent_ref: ref} = select | rest]) do
-    # Foster-parented select - add to foster parent, not normal parent
-    add_to_foster_parent(rest, Map.delete(select, :foster_parent_ref), ref)
+  defp do_close_to_select([ref | rest], elements) do
+    tag = elements[ref].tag
+
+    if tag == "select" do
+      {rest, elements[ref].parent_ref}
+    else
+      do_close_to_select(rest, elements)
+    end
   end
 
-  defp close_to_select([%{tag: "select"} = select | rest]) do
-    add_child(rest, select)
-  end
-
-  defp close_to_select([elem | rest]) do
-    close_to_select(add_child(rest, elem))
-  end
-
-  defp close_to_select([]), do: []
+  defp do_close_to_select([], _elements), do: {[], nil}
 
   # Pop mode from template mode stack
   defp pop_mode(%{template_mode_stack: [prev_mode | rest]} = state) do
@@ -275,30 +283,5 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   defp pop_mode(%{template_mode_stack: []} = state) do
     %{state | mode: :in_body}
-  end
-
-  # Foster parent helpers for select elements that were foster-parented in table context
-  defp add_to_foster_parent(stack, child, foster_ref) do
-    do_add_to_foster_parent(stack, child, foster_ref, [])
-  end
-
-  defp do_add_to_foster_parent(
-         [%{ref: ref, children: children} = parent | rest],
-         child,
-         foster_ref,
-         acc
-       )
-       when ref == foster_ref do
-    updated_parent = %{parent | children: [child | children]}
-    rebuild_stack(acc, [updated_parent | rest])
-  end
-
-  defp do_add_to_foster_parent([elem | rest], child, foster_ref, acc) do
-    do_add_to_foster_parent(rest, child, foster_ref, [elem | acc])
-  end
-
-  defp do_add_to_foster_parent([], child, _foster_ref, acc) do
-    # Foster parent not found, fall back to normal behavior
-    Enum.reverse([child | acc])
   end
 end

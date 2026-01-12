@@ -30,9 +30,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
     end
   end
 
-  def process({:comment, text}, %{stack: stack} = state) do
+  def process({:comment, text}, state) do
     # Insert comment as last child of the first element (html)
-    {:ok, %{state | stack: add_comment_to_html(stack, text)}}
+    {:ok, add_comment_to_html(state, text)}
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
@@ -57,39 +57,33 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   end
 
   # Add comment as last child of html element.
-  # Since body is still on the stack, we need to close elements down to html first,
-  # then add the comment, so it appears after body in the final tree.
-  defp add_comment_to_html(stack, text) do
-    {closed_stack, html} = close_to_html(stack, [])
+  # In the ref-only architecture, we find the html ref and add the comment to its children.
+  defp add_comment_to_html(%{stack: stack, elements: elements} = state, text) do
     comment = {:comment, text}
-    # Add comment to html.children (will be first after reversal = last)
-    updated_html = %{html | children: [comment | html.children]}
-    closed_stack ++ [updated_html]
+
+    # Find the html ref in the stack (should be at the bottom)
+    html_ref = find_html_ref(stack, elements)
+
+    case html_ref do
+      nil ->
+        # No html element found, just ignore
+        state
+
+      ref ->
+        # Add comment to html element's children
+        html_elem = elements[ref]
+        updated_html = %{html_elem | children: html_elem.children ++ [comment]}
+        %{state | elements: Map.put(elements, ref, updated_html)}
+    end
   end
 
-  # Close elements until we reach html, nesting them properly
-  defp close_to_html([%{tag: "html"} = html], acc) do
-    # Nest all accumulated elements and add to html.children
-    nested = nest_elements(acc)
-    updated_children = if nested, do: [nested | html.children], else: html.children
-    {[], %{html | children: updated_children}}
-  end
-
-  defp close_to_html([elem | rest], acc) do
-    close_to_html(rest, [elem | acc])
-  end
-
-  defp close_to_html([], acc) do
-    # No html found, just return as-is
-    {Enum.reverse(acc), nil}
-  end
-
-  # Nest a list of elements inside each other (first becomes outermost)
-  defp nest_elements([]), do: nil
-  defp nest_elements([single]), do: single
-
-  defp nest_elements([outer | rest]) do
-    inner = nest_elements(rest)
-    %{outer | children: [inner | outer.children]}
+  # Find the html element ref in the stack
+  defp find_html_ref(stack, elements) do
+    Enum.find(stack, fn ref ->
+      case elements[ref] do
+        %{tag: "html"} -> true
+        _ -> false
+      end
+    end)
   end
 end

@@ -195,7 +195,11 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Returns the tag of the current element (top of stack).
   """
-  def current_tag(%{stack: [ref | _], elements: elements}), do: elements[ref].tag
+  def current_tag(%{stack: [ref | _], elements: elements}) when is_map_key(elements, ref) do
+    elements[ref].tag
+  end
+
+  def current_tag(%{stack: [_ | _]}), do: nil
   def current_tag(%{stack: []}), do: nil
 
   @doc """
@@ -214,7 +218,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Checks if a tag is in the stack.
   """
   def has_element_in_stack?(%{stack: stack, elements: elements}, tag) do
-    Enum.any?(stack, fn ref -> elements[ref].tag == tag end)
+    Enum.any?(stack, fn ref ->
+      is_map_key(elements, ref) and elements[ref].tag == tag
+    end)
   end
 
   @doc """

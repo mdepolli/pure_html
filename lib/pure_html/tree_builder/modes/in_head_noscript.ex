@@ -27,7 +27,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   alias PureHTML.TreeBuilder.Modes.InHead
   alias PureHTML.TreeBuilder.Modes.InBody
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [pop_element: 1, current_tag: 1]
 
   # Start tags processed using "in head" rules
   @in_head_start_tags ~w(basefont bgsound link meta noframes style)
@@ -104,14 +104,13 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   # --------------------------------------------------------------------------
 
   # Pop noscript element and switch to in_head mode
-  defp pop_noscript(%{stack: stack} = state) do
-    new_stack = close_noscript(stack)
-    %{state | stack: new_stack, mode: :in_head}
+  defp pop_noscript(state) do
+    if current_tag(state) == "noscript" do
+      state
+      |> pop_element()
+      |> Map.put(:mode, :in_head)
+    else
+      %{state | mode: :in_head}
+    end
   end
-
-  defp close_noscript([%{tag: "noscript"} = noscript | rest]) do
-    add_child(rest, noscript)
-  end
-
-  defp close_noscript(stack), do: stack
 end

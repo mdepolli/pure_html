@@ -27,7 +27,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, add_child_to_stack: 2, add_child: 2]
+    only: [add_text_to_stack: 2, add_child_to_stack: 2, pop_element: 1, current_tag: 1]
 
   @impl true
   # Whitespace: insert
@@ -89,14 +89,17 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   end
 
   # End tag: colgroup - pop and switch to in_table
-  def process({:end_tag, "colgroup"}, %{stack: stack} = state) do
-    case stack do
-      [%{tag: "colgroup"} = colgroup | rest] ->
-        {:ok, %{state | stack: add_child(rest, colgroup), mode: :in_table}}
+  def process({:end_tag, "colgroup"}, state) do
+    if current_tag(state) == "colgroup" do
+      state =
+        state
+        |> pop_element()
+        |> Map.put(:mode, :in_table)
 
-      _ ->
-        # Not in colgroup, ignore
-        {:ok, state}
+      {:ok, state}
+    else
+      # Not in colgroup, ignore
+      {:ok, state}
     end
   end
 
@@ -135,9 +138,16 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   end
 
   # Close colgroup if current node is colgroup
-  defp close_colgroup(%{stack: [%{tag: "colgroup"} = colgroup | rest]} = state) do
-    {:ok, %{state | stack: add_child(rest, colgroup), mode: :in_table}}
-  end
+  defp close_colgroup(state) do
+    if current_tag(state) == "colgroup" do
+      new_state =
+        state
+        |> pop_element()
+        |> Map.put(:mode, :in_table)
 
-  defp close_colgroup(_state), do: :not_colgroup
+      {:ok, new_state}
+    else
+      :not_colgroup
+    end
+  end
 end
