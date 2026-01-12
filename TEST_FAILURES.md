@@ -1,52 +1,52 @@
 # Test Failures Analysis
 
-**Total: 315 failures out of 1476 tests**
+**Total: 223 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after foster parenting fixes*
+*Last updated: 2026-01-12 after pop_until_one_of fix*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| template | 12 | 45 | 39 |
-| tests10 | 20 | 33 | 29 |
-| tests1 | 23 | 41 | 28 |
+| tests10 | 20 | 33 | 25 |
 | tests19 | 13 | 31 | 23 |
-| webkit02 | 13 | 23 | 20 |
-| webkit01 | 16 | 23 | 19 |
+| webkit01 | 16 | 23 | 18 |
+| tests1 | 23 | 41 | 18 |
 | ruby | 1 | 16 | 16 |
-| tests18 | 8 | 17 | 13 |
-| tests6 | 3 | 13 | 12 |
-| tests26 | 3 | 18 | 12 |
-| tables01 | 2 | 17 | 12 |
-| tests7 | 7 | 15 | 11 |
-| tests9 | 3 | 14 | 10 |
+| tests26 | 3 | 18 | 11 |
+| webkit02 | 13 | 23 | 11 |
+| template | 12 | 45 | 10 |
 | tests3 | 10 | 12 | 10 |
-| tests2 | 2 | 10 | 8 |
+| tests6 | 3 | 13 | 8 |
+| tests18 | 8 | 17 | 8 |
+| tests9 | 3 | 14 | 7 |
+| tests7 | 7 | 15 | 7 |
 | tests20 | 4 | 7 | 7 |
-| tests17 | 3 | 6 | 6 |
-| tests15 | 3 | 11 | 5 |
+| tests15 | 3 | 11 | 4 |
 | tests5 | 4 | 4 | 4 |
 | tricky01 | 4 | 9 | 4 |
+| tests17 | 3 | 6 | 3 |
 | tests16 | 3 | 3 | 3 |
 | tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
-| adoption01 | 2 | 16 | 2 |
+| tests2 | 2 | 10 | 3 |
+| tables01 | 2 | 17 | 2 |
 | tests12 | 0 | 2 | 2 |
 | search-element | 1 | 2 | 2 |
-| pending-spec-changes | 1 | 2 | 2 |
 | menuitem-element | 2 | 2 | 2 |
 | tests8 | 2 | 6 | 1 |
 | tests24 | 1 | 1 | 1 |
 | tests23 | 1 | 5 | 1 |
 | tests22 | 1 | 5 | 1 |
 | tests14 | 1 | 1 | 1 |
+| pending-spec-changes | 1 | 2 | 1 |
 | namespace-sensitivity | 1 | 1 | 1 |
 | main-element | 0 | 1 | 1 |
 | doctype01 | 1 | 1 | 1 |
+| adoption01 | 2 | 16 | 0 |
 | html5test-com | 1 | 2 | 0 |
 | adoption02 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **315** |
+| **Total** | **177** | **423** | **223** |
 
 ## Status
 
@@ -75,6 +75,10 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **pop_until_one_of current_parent_ref fix** (2026-01-12): Fixed `pop_until_one_of` to set `current_parent_ref` to the boundary element itself, not its parent. This was causing elements inside templates (and other table context boundaries) to be inserted at the wrong level. When clearing to a boundary like template/tr/html, new elements should become children of that boundary element. Fixed 92 tests (315 → 223 total). Template tests down from 39 to 10 failures. adoption01 now passes completely (0 failures).
+
+- **Unified foster parenting API** (2026-01-12): Consolidated four separate foster_* functions into a single `foster_parent/2` function with tagged tuple API: `{:text, text}`, `{:element, tuple}`, `{:push, tag, attrs}`, `{:push_foreign, ns, tag, attrs, self_closing}`. No test changes, just code cleanup.
 
 - **Foster parenting insertion order** (2026-01-12): Fixed foster parenting to insert content BEFORE the table element in the parent's children list (per HTML5 spec). Previously content was appended. Added `insert_ref_before_in_parent`, `insert_child_before_in_elements`, `insert_text_before_in_elements` functions. Fixed adoption agency to use `foster_parent_ref` for common ancestor when FE was foster parented. Added active formatting reconstruction during foster parenting of text in `in_table_text` mode. Added `:in_cell`, `:in_row`, `:in_caption`, `:in_table_body` to `@body_modes` so delegating to InBody doesn't change mode. Fixed 40 tests (355 → 315 total). adoption01 down to 2 failures (table structure nesting issue).
 

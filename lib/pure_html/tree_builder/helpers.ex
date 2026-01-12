@@ -460,13 +460,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   defp do_pop_until_one_of([], _tags, popped, _elements), do: {[], popped, nil}
 
-  defp do_pop_until_one_of([ref | rest] = stack, tags, popped, elements) do
+  defp do_pop_until_one_of([ref | _rest] = stack, tags, popped, elements) do
     elem_tag = elements[ref].tag
 
     if elem_tag in tags do
-      {stack, popped, elements[ref].parent_ref}
+      # The boundary element stays on stack and becomes the current parent
+      # (new elements should be its children)
+      {stack, popped, ref}
     else
-      do_pop_until_one_of(rest, tags, [ref | popped], elements)
+      do_pop_until_one_of(tl(stack), tags, [ref | popped], elements)
     end
   end
 
