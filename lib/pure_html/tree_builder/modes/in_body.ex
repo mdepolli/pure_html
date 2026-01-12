@@ -63,12 +63,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     "tr" => [],
     "td" => ["th"],
     "th" => ["td"],
-    "h1" => ["h2", "h3", "h4", "h5", "h6"],
-    "h2" => ["h1", "h3", "h4", "h5", "h6"],
-    "h3" => ["h1", "h2", "h4", "h5", "h6"],
-    "h4" => ["h1", "h2", "h3", "h5", "h6"],
-    "h5" => ["h1", "h2", "h3", "h4", "h6"],
-    "h6" => ["h1", "h2", "h3", "h4", "h5"],
     "rb" => ["rt", "rtc", "rp"],
     "rt" => ["rb", "rp"],
     "rtc" => ["rb", "rt", "rp"],
@@ -198,6 +192,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   def process({:end_tag, "frameset"}, state) do
     {:ok, close_tag_ref(state, "frameset") |> Map.put(:mode, :after_frameset)}
+  end
+
+  # Heading end tags: close ANY open heading element per spec
+  @headings ~w(h1 h2 h3 h4 h5 h6)
+  def process({:end_tag, tag}, state) when tag in @headings do
+    {:ok, close_any_heading(state)}
   end
 
   def process({:end_tag, tag}, state) do
@@ -577,10 +577,25 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> in_body()
     |> maybe_close_p(tag)
     |> maybe_close_same(tag)
+    |> maybe_close_current_heading(tag)
     |> push_element(tag, attrs)
     |> reconstruct_active_formatting()
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
+
+  # Per HTML5 spec: if current node is a heading and we're inserting a heading,
+  # pop the current node first
+  defp maybe_close_current_heading(state, tag) when tag in @headings do
+    case current_tag(state) do
+      current when current in @headings ->
+        pop_element(state)
+
+      _ ->
+        state
+    end
+  end
+
+  defp maybe_close_current_heading(state, _tag), do: state
 
   defp do_process_html_start_tag_head_context("template", attrs, state) do
     state
@@ -753,7 +768,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         pop_foreign_elements(rest, elements)
 
       _ ->
-        {stack, elements[ref].parent_ref}
+        # Return the ref itself as parent - new elements should be children
+        # of this non-foreign element (e.g., body), not its parent
+        {stack, ref}
     end
   end
 
@@ -1416,6 +1433,35 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       :not_found ->
         state
+    end
+  end
+
+  # Close any heading element (h1-h6) per HTML5 spec
+  # Any heading end tag closes any open heading element
+  defp close_any_heading(%{stack: stack, elements: elements} = state) do
+    case pop_until_any_heading(stack, elements) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  defp pop_until_any_heading([], _elements), do: :not_found
+
+  defp pop_until_any_heading([ref | rest], elements) when is_map_key(elements, ref) do
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
+
+    cond do
+      tag in @headings ->
+        {:found, rest, parent_ref}
+
+      tag == "template" ->
+        :not_found
+
+      true ->
+        pop_until_any_heading(rest, elements)
     end
   end
 

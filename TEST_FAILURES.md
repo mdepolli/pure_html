@@ -1,52 +1,52 @@
 # Test Failures Analysis
 
-**Total: 191 failures out of 1476 tests**
+**Total: 163 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after ruby element fixes*
+*Last updated: 2026-01-12 after foreign content breakout and heading nesting fixes*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| tests10 | 20 | 33 | 25 |
-| webkit01 | 16 | 23 | 18 |
+| tests10 | 20 | 33 | 20 |
 | tests1 | 23 | 41 | 18 |
-| tests19 | 13 | 31 | 12 |
-| ruby | 1 | 16 | 1 |
-| tests26 | 3 | 18 | 11 |
+| webkit01 | 16 | 23 | 17 |
 | webkit02 | 13 | 23 | 11 |
-| template | 12 | 45 | 10 |
 | tests3 | 10 | 12 | 10 |
+| template | 12 | 45 | 10 |
+| tests19 | 13 | 31 | 9 |
 | tests18 | 8 | 17 | 8 |
-| tests9 | 3 | 14 | 7 |
 | tests7 | 7 | 15 | 7 |
-| tests20 | 4 | 7 | 7 |
 | tests5 | 4 | 4 | 4 |
 | tricky01 | 4 | 9 | 4 |
+| tests20 | 4 | 7 | 4 |
+| tests26 | 3 | 18 | 3 |
+| tests9 | 3 | 14 | 3 |
 | tests6 | 3 | 13 | 3 |
+| tests2 | 2 | 10 | 3 |
 | tests17 | 3 | 6 | 3 |
 | tests16 | 3 | 3 | 3 |
 | tests15 | 3 | 11 | 3 |
 | tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
-| tests2 | 2 | 10 | 3 |
 | tables01 | 2 | 17 | 2 |
-| tests12 | 0 | 2 | 2 |
-| search-element | 1 | 2 | 2 |
 | menuitem-element | 2 | 2 | 2 |
+| ruby | 1 | 16 | 1 |
 | tests8 | 2 | 6 | 1 |
 | tests24 | 1 | 1 | 1 |
 | tests23 | 1 | 5 | 1 |
 | tests22 | 1 | 5 | 1 |
 | tests14 | 1 | 1 | 1 |
+| search-element | 1 | 2 | 1 |
 | pending-spec-changes | 1 | 2 | 1 |
 | namespace-sensitivity | 1 | 1 | 1 |
-| main-element | 0 | 1 | 1 |
 | doctype01 | 1 | 1 | 1 |
 | adoption01 | 2 | 16 | 0 |
-| html5test-com | 1 | 2 | 0 |
 | adoption02 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **191** |
+| html5test-com | 1 | 2 | 0 |
+| main-element | 0 | 1 | 0 |
+| tests12 | 0 | 2 | 0 |
+| **Total** | **177** | **423** | **163** |
 
 ## Status
 
@@ -75,6 +75,8 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Foreign content breakout and heading nesting fixes** (2026-01-12): Fixed two issues: (1) `pop_foreign_elements` was returning `elements[ref].parent_ref` but should return `ref` itself - when breaking out of SVG/MathML, new elements should be children of the first non-foreign element (body), not its parent (html). (2) Headings no longer use the general `@implicit_closes` map. Added `maybe_close_current_heading` which only closes a heading if the current node is a heading (per spec). Added `close_any_heading` for heading end tags which close any open heading in scope. Fixed 28 tests (191 → 163 total). tests26: 11 → 3 failures. tests10: 25 → 20. tests19: 12 → 9.
 
 - **Ruby element implicit closing fix** (2026-01-12): Fixed `pop_to_implicit_close_all_ref` to return the top of stack as `current_parent_ref` instead of its parent. After closing all matching ruby elements (rb, rt, rtc, rp), new elements should be children of the remaining top element (e.g., ruby). Fixed 19 tests (210 → 191 total). ruby tests: 16 → 1 failure. tests19: 16 → 12 failures.
 
