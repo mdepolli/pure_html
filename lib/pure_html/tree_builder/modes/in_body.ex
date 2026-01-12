@@ -206,6 +206,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_any_heading(state)}
   end
 
+  # li end tag: only close if li is in list item scope (ul/ol are barriers)
+  def process({:end_tag, "li"}, state) do
+    {:ok, close_li_in_list_scope(state)}
+  end
+
+  # dd/dt end tags: only close if in scope
+  def process({:end_tag, tag}, state) when tag in ~w(dd dt) do
+    {:ok, close_dd_dt_in_scope(state, tag)}
+  end
+
   def process({:end_tag, tag}, state) do
     {:ok, close_tag_ref(state, tag)}
   end
@@ -228,13 +238,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, merge_html_attrs(state, attrs)}
   end
 
-  def process({:start_tag, "head", attrs, _}, state) do
-    state =
-      state
-      |> ensure_html()
-      |> push_element("head", attrs)
-      |> set_mode(:in_head)
-
+  def process({:start_tag, "head", _attrs, _}, state) do
+    # Parse error, ignore the token (head is only valid in before_head mode)
     {:ok, state}
   end
 
@@ -1404,6 +1409,60 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       true -> pop_until_any_heading(rest, elements)
     end
   end
+
+  # Close li only if li is in list item scope (ul/ol are barriers)
+  # List item scope barriers: ol, ul, plus standard scope barriers
+  @list_item_scope_barriers ~w(ol ul applet caption html table td th marquee object template)
+  defp close_li_in_list_scope(%{stack: stack, elements: elements} = state) do
+    case find_li_in_list_scope(stack, elements) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  defp find_li_in_list_scope([], _elements), do: :not_found
+
+  defp find_li_in_list_scope([ref | rest], elements) when is_map_key(elements, ref) do
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
+
+    cond do
+      tag == "li" -> {:found, rest, parent_ref}
+      tag in @list_item_scope_barriers -> :not_found
+      true -> find_li_in_list_scope(rest, elements)
+    end
+  end
+
+  defp find_li_in_list_scope([_ | rest], elements), do: find_li_in_list_scope(rest, elements)
+
+  # Close dd/dt only if in scope (dl is not a barrier for dd/dt unlike ul/ol for li)
+  defp close_dd_dt_in_scope(%{stack: stack, elements: elements} = state, target) do
+    case find_dd_dt_in_scope(stack, elements, target) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  @scope_barriers ~w(applet caption html table td th marquee object template)
+  defp find_dd_dt_in_scope([], _elements, _target), do: :not_found
+
+  defp find_dd_dt_in_scope([ref | rest], elements, target) when is_map_key(elements, ref) do
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
+
+    cond do
+      tag == target -> {:found, rest, parent_ref}
+      tag in @scope_barriers -> :not_found
+      true -> find_dd_dt_in_scope(rest, elements, target)
+    end
+  end
+
+  defp find_dd_dt_in_scope([_ | rest], elements, target),
+    do: find_dd_dt_in_scope(rest, elements, target)
 
   defp pop_until_tag_ref(stack, elements, target) do
     do_pop_until_tag_ref(stack, elements, target)

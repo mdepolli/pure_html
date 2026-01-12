@@ -263,6 +263,20 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:ok, state}
   end
 
+  # </br> special case: foster parent a <br> element (per HTML5 spec, </br> is treated as <br>)
+  defp process_in_table({:end_tag, "br"}, state) do
+    {:ok, foster_parent(state, {:element, {"br", %{}, []}})}
+  end
+
+  # </select> special case: close select if in scope, but don't change mode
+  # (InBody's handler calls pop_mode which would incorrectly switch to in_body)
+  defp process_in_table({:end_tag, "select"}, state) do
+    case close_select_in_scope(state) do
+      {:ok, new_state} -> {:ok, new_state}
+      :not_found -> {:ok, state}
+    end
+  end
+
   # Other end tags: foster parent via in_body
   defp process_in_table({:end_tag, _} = token, state) do
     InBody.process(token, state)
@@ -349,6 +363,28 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
       _ ->
         do_close_table(rest, [ref | closed_refs], elements)
+    end
+  end
+
+  # Close select if in select scope (table/template/html are barriers)
+  defp close_select_in_scope(%{stack: stack, elements: elements} = state) do
+    case find_select_in_scope(stack, elements) do
+      {:found, new_stack, parent_ref} ->
+        {:ok, %{state | stack: new_stack, current_parent_ref: parent_ref}}
+
+      :not_found ->
+        :not_found
+    end
+  end
+
+  @select_scope_barriers ~w(table template html)
+  defp find_select_in_scope([], _elements), do: :not_found
+
+  defp find_select_in_scope([ref | rest], elements) do
+    case elements[ref] do
+      %{tag: "select", parent_ref: parent_ref} -> {:found, rest, parent_ref}
+      %{tag: tag} when tag in @select_scope_barriers -> :not_found
+      _ -> find_select_in_scope(rest, elements)
     end
   end
 end

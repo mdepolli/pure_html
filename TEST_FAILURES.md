@@ -1,20 +1,20 @@
 # Test Failures Analysis
 
-**Total: 144 failures out of 1476 tests**
+**Total: 137 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after mglyph/malignmark namespace fix*
+*Last updated: 2026-01-12 after scope and foster parenting fixes*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| tests1 | 23 | 41 | 18 |
-| webkit01 | 16 | 23 | 17 |
+| tests1 | 23 | 41 | 16 |
+| webkit01 | 16 | 23 | 15 |
 | webkit02 | 13 | 23 | 11 |
-| tests10 | 20 | 33 | 10 |
+| tests10 | 20 | 33 | 9 |
 | template | 12 | 45 | 10 |
 | tests19 | 13 | 31 | 9 |
-| tests18 | 8 | 17 | 8 |
+| tests18 | 8 | 17 | 7 |
 | tests7 | 7 | 15 | 6 |
 | tests5 | 4 | 4 | 4 |
 | tricky01 | 4 | 9 | 4 |
@@ -25,10 +25,10 @@
 | tests2 | 2 | 10 | 3 |
 | tests17 | 3 | 6 | 3 |
 | tests16 | 3 | 3 | 3 |
-| tests15 | 3 | 11 | 3 |
 | tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
 | tests3 | 10 | 12 | 2 |
+| tests15 | 3 | 11 | 2 |
 | tables01 | 2 | 17 | 2 |
 | menuitem-element | 2 | 2 | 2 |
 | ruby | 1 | 16 | 1 |
@@ -46,7 +46,7 @@
 | html5test-com | 1 | 2 | 0 |
 | main-element | 0 | 1 | 0 |
 | tests12 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **144** |
+| **Total** | **177** | **423** | **137** |
 
 ## Status
 
@@ -75,6 +75,8 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Scope and foster parenting fixes** (2026-01-12): Three fixes: (1) `</li>` now only closes if li is in "list item scope" (ul/ol are barriers). Added `close_li_in_list_scope` with proper scope checking. (2) `<head>` in in_body is now properly ignored (parse error per spec). (3) In table context, `</br>` is now foster-parented as `<br>` instead of delegating to InBody. Also fixed `</select>` in table context to not call `pop_mode()` which was incorrectly changing mode to in_body. Fixed 7 tests (144 → 137 total). tests1: 18 → 16. tests15: 3 → 2.
 
 - **MathML mglyph/malignmark namespace fix** (2026-01-12): Elements `mglyph` and `malignmark` should remain in the MathML namespace even when inside MathML text integration points (mi, mo, mn, ms, mtext). Added `mathml_text_integration_point?` helper and special-case handling in start tag processing. Fixed 10 tests (154 → 144 total). tests10: 20 → 10 failures.
 
