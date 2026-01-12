@@ -15,11 +15,26 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       new_element: 2,
       push_element: 3,
       add_child_to_stack: 2,
+      add_text_to_stack: 2,
       add_child: 2,
       set_mode: 2,
       push_af_marker: 1,
       correct_tag: 1,
-      rebuild_stack: 2
+      rebuild_stack: 2,
+      current_tag: 1,
+      current_element: 1,
+      current_ref: 1,
+      get_element: 2,
+      pop_element: 1,
+      pop_until_tag: 2,
+      in_scope?: 2,
+      in_list_scope?: 2,
+      in_button_scope?: 2,
+      in_table_scope?: 2,
+      generate_implied_end_tags: 1,
+      generate_implied_end_tags_except: 2,
+      foster_text: 2,
+      has_element_in_stack?: 2
     ]
 
   # --------------------------------------------------------------------------
@@ -101,29 +116,30 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> then(&{:ok, &1})
   end
 
-  def process({:character, text}, %{stack: [%{tag: tag} | _]} = state)
-      when tag in @head_elements do
-    {:ok, add_text_to_stack(state, text)}
-  end
-
-  def process({:character, text}, %{stack: [%{tag: tag} | _]} = state)
-      when tag in @table_context do
-    if String.trim(text) == "" do
-      {:ok, add_text_to_stack(state, text)}
-    else
-      {:ok, foster_text_to_stack(state, text)}
-    end
-  end
-
   def process({:character, text}, state) do
-    state =
-      state
-      |> in_body()
-      |> reconstruct_active_formatting()
-      |> add_text_to_stack(text)
-      |> maybe_set_frameset_not_ok(text)
+    tag = current_tag(state)
 
-    {:ok, state}
+    cond do
+      tag in @head_elements ->
+        {:ok, add_text_to_stack(state, text)}
+
+      tag in @table_context ->
+        if String.trim(text) == "" do
+          {:ok, add_text_to_stack(state, text)}
+        else
+          {:ok, foster_text(state, text)}
+        end
+
+      true ->
+        state =
+          state
+          |> in_body()
+          |> reconstruct_active_formatting()
+          |> add_text_to_stack(text)
+          |> maybe_set_frameset_not_ok(text)
+
+        {:ok, state}
+    end
   end
 
   # Comment tokens
@@ -596,25 +612,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp new_foreign_element(ns, tag, attrs) do
     %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: []}
   end
-
-  # --------------------------------------------------------------------------
-  # Stack operations (text handling is in_body-specific)
-  # --------------------------------------------------------------------------
-
-  defp add_text_to_stack(%{stack: stack} = state, text) do
-    %{state | stack: add_text_child(stack, text)}
-  end
-
-  defp add_text_child([%{children: [prev_text | rest_children]} = parent | rest], text)
-       when is_binary(prev_text) do
-    [%{parent | children: [prev_text <> text | rest_children]} | rest]
-  end
-
-  defp add_text_child([%{children: children} = parent | rest], text) do
-    [%{parent | children: [text | children]} | rest]
-  end
-
-  defp add_text_child([], _text), do: []
 
   # --------------------------------------------------------------------------
   # Foreign content
@@ -1113,42 +1110,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp ensure_colgroup(state), do: state
 
   # --------------------------------------------------------------------------
-  # Foster parenting
-  # --------------------------------------------------------------------------
-
-  defp foster_text_to_stack(%{stack: stack} = state, text) do
-    %{state | stack: foster_text(stack, text)}
-  end
-
-  defp foster_text(stack, text) do
-    foster_content(stack, text, [], &add_foster_text/2)
-  end
-
-  defp foster_content([%{tag: "table"} = table | rest], content, acc, add_fn) do
-    rest = add_fn.(rest, content)
-    rebuild_stack(acc, [table | rest])
-  end
-
-  defp foster_content([current | rest], content, acc, add_fn) do
-    foster_content(rest, content, [current | acc], add_fn)
-  end
-
-  defp foster_content([], _content, acc, _add_fn) do
-    Enum.reverse(acc)
-  end
-
-  defp add_foster_text([%{children: [prev | children]} = elem | rest], text)
-       when is_binary(prev) do
-    [%{elem | children: [prev <> text | children]} | rest]
-  end
-
-  defp add_foster_text([%{children: children} = elem | rest], text) do
-    [%{elem | children: [text | children]} | rest]
-  end
-
-  defp add_foster_text([], _text), do: []
-
-  # --------------------------------------------------------------------------
   # Implicit closing
   # --------------------------------------------------------------------------
 
@@ -1402,7 +1363,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
-  defp add_formatting_entry(%{stack: [%{ref: ref} | _], af: af} = state, tag, attrs) do
+  defp add_formatting_entry(%{stack: [ref | _], af: af} = state, tag, attrs) do
     %{state | af: apply_noahs_ark([{ref, tag, attrs} | af], tag, attrs)}
   end
 

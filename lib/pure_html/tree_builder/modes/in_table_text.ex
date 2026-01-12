@@ -19,7 +19,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_text: 2, foster_text: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, foster_text: 2]
 
   @impl true
   # Character tokens: collect into pending list
@@ -46,7 +46,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
     state =
       if String.trim(text) == "" do
         # Whitespace only: insert normally
-        %{state | stack: add_text(state.stack, text)}
+        add_text_to_stack(state, text)
       else
         # Contains non-whitespace: foster parent
         foster_text(state, text)

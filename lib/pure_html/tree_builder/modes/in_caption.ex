@@ -24,7 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, in_table_scope?: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [in_table_scope?: 2, pop_until_tag: 2]
 
   # Table-related start tags that close the caption
   @table_tags ~w(caption col colgroup tbody td tfoot th thead tr)
@@ -105,31 +105,17 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
   # --------------------------------------------------------------------------
 
   # Close caption if in table scope
-  defp close_caption(%{stack: stack, af: af} = state) do
-    if in_table_scope?(stack, "caption") do
-      {new_stack, closed_refs} = pop_to_caption(stack, MapSet.new())
-      new_af = reject_closed_refs(af, closed_refs)
-      {:ok, %{state | stack: new_stack, af: new_af, mode: :in_table}}
+  defp close_caption(state) do
+    if in_table_scope?(state, "caption") do
+      case pop_until_tag(state, "caption") do
+        {:ok, new_state} ->
+          {:ok, %{new_state | mode: :in_table}}
+
+        {:not_found, _} ->
+          :not_found
+      end
     else
       :not_found
     end
-  end
-
-  defp pop_to_caption([%{tag: "caption"} = caption | rest], refs) do
-    {add_child(rest, caption), MapSet.put(refs, caption.ref)}
-  end
-
-  defp pop_to_caption([elem | rest], refs) do
-    pop_to_caption(add_child(rest, elem), MapSet.put(refs, elem.ref))
-  end
-
-  defp pop_to_caption([], refs), do: {[], refs}
-
-  # Remove closed refs from active formatting list
-  defp reject_closed_refs(af, closed_refs) do
-    Enum.reject(af, fn
-      :marker -> false
-      {ref, _, _} -> MapSet.member?(closed_refs, ref)
-    end)
   end
 end

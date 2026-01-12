@@ -25,7 +25,14 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [push_element: 3, set_mode: 2, push_af_marker: 1, add_child: 2, in_table_scope?: 2]
+    only: [
+      push_element: 3,
+      set_mode: 2,
+      push_af_marker: 1,
+      in_table_scope?: 2,
+      pop_until_tag: 2,
+      pop_until_one_of: 2
+    ]
 
   # Start tags that close the row
   @row_closing_start_tags ~w(caption col colgroup tbody tfoot thead tr)
@@ -35,6 +42,9 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # Table body end tags that close row if in scope
   @table_body_end_tags ~w(tbody tfoot thead)
+
+  # Table row context tags
+  @table_row_context ~w(tr template html)
 
   @impl true
   # Character tokens: process using in_table rules
@@ -104,8 +114,8 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   end
 
   # Table body end tags: close row if in scope, reprocess
-  def process({:end_tag, tag}, %{stack: stack} = state) when tag in @table_body_end_tags do
-    if in_table_scope?(stack, tag) do
+  def process({:end_tag, tag}, state) when tag in @table_body_end_tags do
+    if in_table_scope?(state, tag) do
       case close_row(state) do
         {:ok, new_state} ->
           {:reprocess, new_state}
@@ -136,38 +146,22 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # --------------------------------------------------------------------------
 
   # Clear stack to table row context (tr, template, html)
-  defp clear_to_table_row_context(%{stack: stack} = state) do
-    %{state | stack: do_clear_to_table_row_context(stack)}
+  defp clear_to_table_row_context(state) do
+    pop_until_one_of(state, @table_row_context)
   end
-
-  defp do_clear_to_table_row_context([%{tag: tag} | _] = stack)
-       when tag in ["tr", "template", "html"] do
-    stack
-  end
-
-  defp do_clear_to_table_row_context([elem | rest]) do
-    do_clear_to_table_row_context(add_child(rest, elem))
-  end
-
-  defp do_clear_to_table_row_context([]), do: []
 
   # Close the current row (tr) if in table scope
-  defp close_row(%{stack: stack} = state) do
-    if in_table_scope?(stack, "tr") do
-      new_stack = pop_to_tr(stack)
-      {:ok, %{state | stack: new_stack, mode: :in_table_body}}
+  defp close_row(state) do
+    if in_table_scope?(state, "tr") do
+      case pop_until_tag(state, "tr") do
+        {:ok, new_state} ->
+          {:ok, %{new_state | mode: :in_table_body}}
+
+        {:not_found, _} ->
+          :not_found
+      end
     else
       :not_found
     end
   end
-
-  defp pop_to_tr([%{tag: "tr"} = tr | rest]) do
-    add_child(rest, tr)
-  end
-
-  defp pop_to_tr([elem | rest]) do
-    pop_to_tr(add_child(rest, elem))
-  end
-
-  defp pop_to_tr([]), do: []
 end

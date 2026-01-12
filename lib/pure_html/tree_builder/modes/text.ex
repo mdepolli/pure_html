@@ -16,22 +16,23 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, add_text: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_text_to_stack: 2, current_tag: 1, pop_element: 1]
 
   @impl true
-  def process({:character, text}, %{stack: stack} = state) do
+  def process({:character, text}, state) do
     # Insert text as child of current element
-    {:ok, %{state | stack: add_text(stack, text)}}
+    {:ok, add_text_to_stack(state, text)}
   end
 
-  def process({:end_tag, tag}, %{stack: [%{tag: tag} | _]} = state) do
+  def process({:end_tag, tag}, state) do
     # End tag matches current element - close it and restore original mode
-    {:ok, close_current_element(state)}
-  end
-
-  def process({:end_tag, _tag}, state) do
-    # End tag doesn't match - parse error, ignore
-    {:ok, state}
+    if current_tag(state) == tag do
+      {:ok, close_current_element(state)}
+    else
+      # End tag doesn't match - parse error, ignore
+      {:ok, state}
+    end
   end
 
   def process(:eof, state) do
@@ -45,11 +46,10 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   end
 
   # Close current element and restore original mode
-  defp close_current_element(%{stack: [elem | rest], original_mode: original_mode} = state) do
-    %{state | stack: add_child(rest, elem), mode: original_mode, original_mode: nil}
-  end
-
-  defp close_current_element(state) do
-    %{state | mode: state.original_mode, original_mode: nil}
+  defp close_current_element(%{original_mode: original_mode} = state) do
+    state
+    |> pop_element()
+    |> Map.put(:mode, original_mode)
+    |> Map.put(:original_mode, nil)
   end
 end

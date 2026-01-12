@@ -25,7 +25,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [push_element: 3, set_mode: 2, add_child: 2, in_table_scope?: 2]
+    only: [
+      push_element: 3,
+      set_mode: 2,
+      in_table_scope?: 2,
+      pop_until_tag: 2,
+      pop_until_one_of: 2
+    ]
 
   # Table body elements
   @table_body_tags ~w(tbody tfoot thead)
@@ -35,6 +41,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # End tags that are parse errors and ignored
   @ignored_end_tags ~w(body caption col colgroup html td th tr)
+
+  # Table body context tags
+  @table_body_context_tags ~w(tbody tfoot thead template html)
 
   @impl true
   # Character tokens: process using in_table rules
@@ -91,10 +100,15 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   end
 
   # End tag: tbody, tfoot, thead - close if in scope
-  def process({:end_tag, tag}, %{stack: stack} = state) when tag in @table_body_tags do
-    if in_table_scope?(stack, tag) do
-      new_stack = pop_to_table_body(stack)
-      {:ok, %{state | stack: new_stack, mode: :in_table}}
+  def process({:end_tag, tag}, state) when tag in @table_body_tags do
+    if in_table_scope?(state, tag) do
+      case pop_until_tag(state, tag) do
+        {:ok, new_state} ->
+          {:ok, %{new_state | mode: :in_table}}
+
+        {:not_found, _} ->
+          {:ok, state}
+      end
     else
       {:ok, state}
     end
@@ -129,47 +143,33 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # --------------------------------------------------------------------------
 
   # Clear stack to table body context (tbody, tfoot, thead, template, html)
-  defp clear_to_table_body_context(%{stack: stack} = state) do
-    %{state | stack: do_clear_to_table_body_context(stack)}
+  defp clear_to_table_body_context(state) do
+    pop_until_one_of(state, @table_body_context_tags)
   end
-
-  @table_body_context_tags ["tbody", "tfoot", "thead", "template", "html"]
-
-  defp do_clear_to_table_body_context([%{tag: tag} | _] = stack)
-       when tag in @table_body_context_tags do
-    stack
-  end
-
-  defp do_clear_to_table_body_context([elem | rest]) do
-    do_clear_to_table_body_context(add_child(rest, elem))
-  end
-
-  defp do_clear_to_table_body_context([]), do: []
 
   # Close the current table body if in table scope
-  defp close_table_body(%{stack: stack} = state) do
+  defp close_table_body(state) do
     cond do
-      in_table_scope?(stack, "tbody") ->
-        {:ok, %{state | stack: pop_to_table_body(stack), mode: :in_table}}
+      in_table_scope?(state, "tbody") ->
+        case pop_until_tag(state, "tbody") do
+          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
+          {:not_found, _} -> :not_found
+        end
 
-      in_table_scope?(stack, "tfoot") ->
-        {:ok, %{state | stack: pop_to_table_body(stack), mode: :in_table}}
+      in_table_scope?(state, "tfoot") ->
+        case pop_until_tag(state, "tfoot") do
+          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
+          {:not_found, _} -> :not_found
+        end
 
-      in_table_scope?(stack, "thead") ->
-        {:ok, %{state | stack: pop_to_table_body(stack), mode: :in_table}}
+      in_table_scope?(state, "thead") ->
+        case pop_until_tag(state, "thead") do
+          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
+          {:not_found, _} -> :not_found
+        end
 
       true ->
         :not_found
     end
   end
-
-  defp pop_to_table_body([%{tag: tag} = elem | rest]) when tag in @table_body_tags do
-    add_child(rest, elem)
-  end
-
-  defp pop_to_table_body([elem | rest]) do
-    pop_to_table_body(add_child(rest, elem))
-  end
-
-  defp pop_to_table_body([]), do: []
 end

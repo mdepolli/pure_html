@@ -24,7 +24,8 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, in_table_scope?: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [in_table_scope?: 2, pop_until_tag: 2, clear_af_to_marker: 1]
 
   # Start tags that close the cell
   @cell_closing_start_tags ~w(caption col colgroup tbody td tfoot th thead tr)
@@ -85,9 +86,9 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   end
 
   # Cell-closing end tags: close cell if TARGET tag is in table scope, reprocess
-  def process({:end_tag, tag}, %{stack: stack} = state) when tag in @cell_closing_end_tags do
+  def process({:end_tag, tag}, state) when tag in @cell_closing_end_tags do
     # Per spec: only close cell if the end tag's target is in table scope
-    if in_table_scope?(stack, tag) do
+    if in_table_scope?(state, tag) do
       case close_cell(state) do
         {:ok, new_state} ->
           {:reprocess, new_state}
@@ -114,17 +115,13 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # --------------------------------------------------------------------------
 
   # Close td or th cell if in table scope
-  defp close_cell(%{stack: stack, af: af} = state) do
+  defp close_cell(state) do
     cond do
-      in_table_scope?(stack, "td") ->
-        {new_stack, closed_refs} = pop_to_tag(stack, "td", MapSet.new())
-        new_af = clear_af_to_marker(af, closed_refs)
-        {:ok, %{state | stack: new_stack, af: new_af, mode: :in_row}}
+      in_table_scope?(state, "td") ->
+        close_cell_for_tag(state, "td")
 
-      in_table_scope?(stack, "th") ->
-        {new_stack, closed_refs} = pop_to_tag(stack, "th", MapSet.new())
-        new_af = clear_af_to_marker(af, closed_refs)
-        {:ok, %{state | stack: new_stack, af: new_af, mode: :in_row}}
+      in_table_scope?(state, "th") ->
+        close_cell_for_tag(state, "th")
 
       true ->
         :not_found
@@ -132,43 +129,17 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   end
 
   # Close specific cell tag if in table scope
-  defp close_cell_for_tag(%{stack: stack, af: af} = state, tag) do
-    if in_table_scope?(stack, tag) do
-      {new_stack, closed_refs} = pop_to_tag(stack, tag, MapSet.new())
-      new_af = clear_af_to_marker(af, closed_refs)
-      {:ok, %{state | stack: new_stack, af: new_af}}
+  defp close_cell_for_tag(state, tag) do
+    if in_table_scope?(state, tag) do
+      case pop_until_tag(state, tag) do
+        {:ok, new_state} ->
+          {:ok, clear_af_to_marker(%{new_state | mode: :in_row})}
+
+        {:not_found, _} ->
+          :not_found
+      end
     else
       :not_found
-    end
-  end
-
-  # Pop elements until we reach the target tag
-  defp pop_to_tag([%{tag: tag} = elem | rest], target, refs) when tag == target do
-    {add_child(rest, elem), MapSet.put(refs, elem.ref)}
-  end
-
-  defp pop_to_tag([elem | rest], target, refs) do
-    pop_to_tag(add_child(rest, elem), target, MapSet.put(refs, elem.ref))
-  end
-
-  defp pop_to_tag([], _target, refs), do: {[], refs}
-
-  # Clear active formatting elements up to marker or for closed refs
-  defp clear_af_to_marker(af, closed_refs) do
-    Enum.reduce_while(af, [], fn
-      :marker, acc ->
-        {:halt, Enum.reverse(acc)}
-
-      {ref, _, _} = entry, acc ->
-        if MapSet.member?(closed_refs, ref) do
-          {:cont, acc}
-        else
-          {:cont, [entry | acc]}
-        end
-    end)
-    |> case do
-      result when is_list(result) -> result
-      _ -> []
     end
   end
 end

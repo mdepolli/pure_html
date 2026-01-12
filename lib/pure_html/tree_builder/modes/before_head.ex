@@ -19,7 +19,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, push_element: 3, set_mode: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, push_element: 3, set_mode: 2]
 
   @impl true
   def process({:character, text}, state) do
@@ -34,9 +34,9 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
     end
   end
 
-  def process({:comment, text}, %{stack: stack} = state) do
+  def process({:comment, text}, state) do
     # Insert comment as child of current element
-    {:ok, %{state | stack: add_child(stack, {:comment, text})}}
+    {:ok, add_child_to_stack(state, {:comment, text})}
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do

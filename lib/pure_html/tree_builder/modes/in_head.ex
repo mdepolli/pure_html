@@ -26,17 +26,24 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [
+      add_child_to_stack: 2,
+      add_text_to_stack: 2,
+      push_element: 3,
+      pop_element: 1,
+      current_tag: 1
+    ]
 
   @void_head_elements ~w(base basefont bgsound link meta)
   @raw_text_elements ~w(noframes noscript style)
 
   @impl true
-  def process({:character, text}, %{stack: stack} = state) do
+  def process({:character, text}, state) do
     case String.trim(text) do
       "" ->
         # Whitespace: insert as child of head
-        {:ok, %{state | stack: add_text_child(stack, text)}}
+        {:ok, add_text_to_stack(state, text)}
 
       _ ->
         # Non-whitespace: close head, switch to after_head, reprocess
@@ -44,9 +51,9 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     end
   end
 
-  def process({:comment, text}, %{stack: stack} = state) do
+  def process({:comment, text}, state) do
     # Insert comment as child of head
-    {:ok, %{state | stack: add_child(stack, {:comment, text})}}
+    {:ok, add_child_to_stack(state, {:comment, text})}
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
@@ -59,30 +66,44 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     {:reprocess, %{state | mode: :in_body}}
   end
 
-  def process({:start_tag, tag, attrs, _self_closing}, %{stack: stack} = state)
+  def process({:start_tag, tag, attrs, _self_closing}, state)
       when tag in @void_head_elements do
     # Insert void element as child of head
-    element = {tag, attrs, []}
-    {:ok, %{state | stack: add_child(stack, element)}}
+    {:ok, add_child_to_stack(state, {tag, attrs, []})}
   end
 
-  def process({:start_tag, "title", attrs, _self_closing}, %{stack: stack} = state) do
+  def process({:start_tag, "title", attrs, _self_closing}, state) do
     # Insert title element, switch to text mode (RCDATA)
-    element = %{ref: make_ref(), tag: "title", attrs: attrs, children: []}
-    {:ok, %{state | stack: [element | stack], original_mode: :in_head, mode: :text}}
+    state =
+      state
+      |> push_element("title", attrs)
+      |> Map.put(:original_mode, :in_head)
+      |> Map.put(:mode, :text)
+
+    {:ok, state}
   end
 
-  def process({:start_tag, tag, attrs, _self_closing}, %{stack: stack} = state)
+  def process({:start_tag, tag, attrs, _self_closing}, state)
       when tag in @raw_text_elements do
     # Insert element, switch to text mode (RAWTEXT)
-    element = %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-    {:ok, %{state | stack: [element | stack], original_mode: :in_head, mode: :text}}
+    state =
+      state
+      |> push_element(tag, attrs)
+      |> Map.put(:original_mode, :in_head)
+      |> Map.put(:mode, :text)
+
+    {:ok, state}
   end
 
-  def process({:start_tag, "script", attrs, _self_closing}, %{stack: stack} = state) do
+  def process({:start_tag, "script", attrs, _self_closing}, state) do
     # Insert script element, switch to text mode
-    element = %{ref: make_ref(), tag: "script", attrs: attrs, children: []}
-    {:ok, %{state | stack: [element | stack], original_mode: :in_head, mode: :text}}
+    state =
+      state
+      |> push_element("script", attrs)
+      |> Map.put(:original_mode, :in_head)
+      |> Map.put(:mode, :text)
+
+    {:ok, state}
   end
 
   def process({:start_tag, "template", _attrs, _self_closing}, state) do
@@ -123,12 +144,13 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   end
 
   # Close head element and switch to after_head mode
-  defp close_head(%{stack: [%{tag: "head"} = head | rest]} = state) do
-    %{state | stack: add_child(rest, head), mode: :after_head}
+  defp close_head(state) do
+    if current_tag(state) == "head" do
+      state
+      |> pop_element()
+      |> Map.put(:mode, :after_head)
+    else
+      %{state | mode: :after_head}
+    end
   end
-
-  defp close_head(state), do: %{state | mode: :after_head}
-
-  # Add text as child of the current element
-  defp add_text_child(stack, text), do: add_child(stack, text)
 end

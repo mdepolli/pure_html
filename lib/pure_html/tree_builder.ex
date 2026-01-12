@@ -24,6 +24,7 @@ defmodule PureHTML.TreeBuilder do
   """
 
   alias PureHTML.Tokenizer
+  alias PureHTML.TreeBuilder.Helpers
   alias PureHTML.TreeBuilder.Modes
 
   # --------------------------------------------------------------------------
@@ -131,10 +132,10 @@ defmodule PureHTML.TreeBuilder do
   Returns `{doctype, nodes}` where nodes is a list of top-level nodes.
   """
   def build(%Tokenizer{} = tokenizer) do
-    {doctype, %State{stack: stack}, pre_html_comments} =
+    {doctype, state, pre_html_comments} =
       build_loop(tokenizer, {nil, %State{}, []})
 
-    html_node = finalize(stack)
+    html_node = finalize(state)
     nodes = Enum.reverse(pre_html_comments) ++ [html_node]
     {doctype, nodes}
   end
@@ -159,29 +160,33 @@ defmodule PureHTML.TreeBuilder do
     {doctype, state, comments}
   end
 
-  defp flush_pending_table_text(
-         {doctype, %State{pending_table_text: text, stack: stack} = state, comments}
-       ) do
-    new_stack =
+  defp flush_pending_table_text({doctype, %State{pending_table_text: text} = state, comments}) do
+    new_state =
       if String.trim(text) == "" do
         # Whitespace only: insert normally
-        add_text(stack, text)
+        Helpers.add_text_to_stack(state, text)
       else
         # Contains non-whitespace: foster parent
-        foster_text(stack, text)
+        Helpers.foster_text(state, text)
       end
 
-    {doctype, %{state | stack: new_stack, pending_table_text: ""}, comments}
+    {doctype, %{new_state | pending_table_text: ""}, comments}
   end
 
-  defp update_tokenizer_context(tokenizer, {_, %State{stack: stack}, _}) do
+  defp update_tokenizer_context(tokenizer, {_, %State{stack: stack, elements: elements}, _}) do
     # We're in foreign content when the current element (top of stack) is foreign
-    in_foreign = current_element_is_foreign?(stack)
+    in_foreign = current_element_is_foreign?(stack, elements)
     Tokenizer.set_foreign_content(tokenizer, in_foreign)
   end
 
-  defp current_element_is_foreign?([%{tag: {ns, _}} | _]) when ns in [:svg, :math], do: true
-  defp current_element_is_foreign?(_), do: false
+  defp current_element_is_foreign?([ref | _], elements) do
+    case elements[ref] do
+      %{tag: {ns, _}} when ns in [:svg, :math] -> true
+      _ -> false
+    end
+  end
+
+  defp current_element_is_foreign?([], _), do: false
 
   defp process_token(
          {:doctype, name, public_id, system_id, _},
@@ -293,107 +298,108 @@ defmodule PureHTML.TreeBuilder do
   # Finalization
   # --------------------------------------------------------------------------
 
-  defp finalize(stack) do
-    stack
-    |> close_through_head()
-    |> ensure_head_final()
-    |> ensure_body_final()
-    |> do_finalize()
-    |> convert_to_tuples()
-  end
+  # Finalize tree from state (ref-only stack + elements map)
+  defp finalize(%State{stack: stack, elements: elements}) do
+    # Find the html element - it should be the last element remaining on stack
+    # or we need to find it by looking for an element with no parent
+    html_ref = find_html_ref(stack, elements)
 
-  defp close_through_head([%{tag: "html"}] = stack), do: stack
-  defp close_through_head([%{tag: "body"} | _] = stack), do: stack
-
-  defp close_through_head([%{tag: "head"} = head | rest]) do
-    # Close head into its parent (should be html)
-    close_through_head(add_to_parent(rest, head))
-  end
-
-  defp close_through_head([elem | rest]) do
-    close_through_head(add_to_parent(rest, elem))
-  end
-
-  defp close_through_head([]) do
-    [%{new_element("html") | children: [new_element("head")]}]
-  end
-
-  defp ensure_head_final([%{tag: "html", children: children} = html]) do
-    if has_tag?(children, "head") do
-      [html]
+    if html_ref do
+      elements
+      |> build_tree_from_elements(html_ref)
+      |> ensure_head()
+      |> ensure_body()
+      |> convert_to_tuples()
     else
-      [%{html | children: children ++ [new_element("head")]}]
+      # No html element - create minimal structure
+      {"html", %{}, [{"head", %{}, []}, {"body", %{}, []}]}
     end
   end
 
-  defp ensure_head_final([current | rest]) do
-    [current | ensure_head_final(rest)]
-  end
+  # Find the html element ref
+  defp find_html_ref(stack, elements) do
+    # First try: find html at bottom of stack
+    html_ref =
+      stack
+      |> Enum.reverse()
+      |> Enum.find(fn ref ->
+        elem = elements[ref]
+        elem && elem.tag == "html"
+      end)
 
-  defp ensure_head_final([]), do: []
-
-  defp ensure_body_final([%{tag: "body"} | _] = stack), do: stack
-  defp ensure_body_final([%{tag: "frameset"} | _] = stack), do: stack
-
-  defp ensure_body_final([%{tag: "html", children: children} = html]) do
-    if has_tag?(children, "body") or has_tag?(children, "frameset") do
-      [html]
+    if html_ref do
+      html_ref
     else
-      [new_element("body"), html]
+      # Fallback: find element with tag "html" in elements map
+      elements
+      |> Enum.find(fn {_ref, elem} -> elem.tag == "html" end)
+      |> case do
+        {ref, _elem} -> ref
+        nil -> nil
+      end
     end
   end
 
-  defp ensure_body_final([current | rest]) do
-    [current | ensure_body_final(rest)]
+  # Build tree recursively from elements map
+  defp build_tree_from_elements(elements, ref) do
+    elem = elements[ref]
+    # Children are stored in reverse order (prepended), so reverse them
+    children = Enum.reverse(elem.children)
+
+    resolved_children =
+      Enum.map(children, fn
+        child_ref when is_reference(child_ref) ->
+          # Recursively build child element
+          build_tree_from_elements(elements, child_ref)
+
+        text when is_binary(text) ->
+          text
+
+        {:comment, _} = comment ->
+          comment
+
+        {tag, attrs, kids} when is_binary(tag) or is_tuple(tag) ->
+          # Already a tuple (foreign elements, void elements)
+          {tag, attrs, Enum.reverse(kids)}
+
+        %{tag: tag, attrs: attrs, children: kids} ->
+          # Map element stored as child (from legacy code paths)
+          %{tag: tag, attrs: attrs, children: Enum.reverse(kids)}
+      end)
+
+    %{tag: elem.tag, attrs: elem.attrs, children: resolved_children}
   end
 
-  defp ensure_body_final([]), do: []
-
-  defp do_finalize([]), do: nil
-
-  defp do_finalize([elem]) do
-    %{elem | children: reverse_all(elem.children)}
+  defp ensure_head(%{tag: "html", children: children} = html) do
+    if Enum.any?(children, fn
+         %{tag: "head"} -> true
+         {"head", _, _} -> true
+         _ -> false
+       end) do
+      html
+    else
+      %{html | children: [%{tag: "head", attrs: %{}, children: []} | children]}
+    end
   end
 
-  defp do_finalize([elem | rest]) do
-    do_finalize(add_to_parent(rest, elem))
+  defp ensure_head(other), do: other
+
+  defp ensure_body(%{tag: "html", children: children} = html) do
+    has_body_or_frameset =
+      Enum.any?(children, fn
+        %{tag: tag} when tag in ["body", "frameset"] -> true
+        {tag, _, _} when tag in ["body", "frameset"] -> true
+        _ -> false
+      end)
+
+    if has_body_or_frameset do
+      html
+    else
+      %{html | children: children ++ [%{tag: "body", attrs: %{}, children: []}]}
+    end
   end
 
-  # Add child to its correct parent using explicit foster_parent_ref if present
-  defp add_to_parent(stack, %{foster_parent_ref: foster_ref} = child) do
-    # Element was foster-parented - add to the element with foster_ref
-    add_to_element_by_ref(stack, child, foster_ref, [])
-  end
-
-  defp add_to_parent(stack, child) do
-    # Normal case - add to immediate parent (top of stack)
-    add_child(stack, child)
-  end
-
-  # Find element by ref in stack and add child to it
-  defp add_to_element_by_ref([%{ref: ref} = target | rest], child, ref, acc) do
-    # Found the target - add child to it
-    rebuild_stack(acc, add_child([target | rest], child))
-  end
-
-  defp add_to_element_by_ref([current | rest], child, ref, acc) do
-    add_to_element_by_ref(rest, child, ref, [current | acc])
-  end
-
-  defp add_to_element_by_ref([], child, _ref, acc) do
-    # Foster parent not found (shouldn't happen) - add to end
-    Enum.reverse([child | acc])
-  end
-
-  defp reverse_all(children) do
-    children
-    |> Enum.reverse()
-    |> Enum.map(&reverse_node/1)
-  end
-
-  defp reverse_node(%{children: kids} = elem), do: %{elem | children: reverse_all(kids)}
-  defp reverse_node({tag, attrs, kids}), do: {tag, attrs, reverse_all(kids)}
-  defp reverse_node(leaf), do: leaf
+  defp ensure_body(other), do: other
 
   defp convert_to_tuples(nil), do: nil
   defp convert_to_tuples({:comment, text}), do: {:comment, text}

@@ -18,23 +18,23 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, add_text: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, add_text_to_stack: 2]
 
   @impl true
-  def process({:character, text}, %{stack: stack} = state) do
+  def process({:character, text}, state) do
     # Only whitespace is inserted, non-whitespace is ignored
     case extract_whitespace(text) do
       "" ->
         {:ok, state}
 
       whitespace ->
-        {:ok, %{state | stack: add_text(stack, whitespace)}}
+        {:ok, add_text_to_stack(state, whitespace)}
     end
   end
 
-  def process({:comment, text}, %{stack: stack} = state) do
+  def process({:comment, text}, state) do
     # Insert comment
-    {:ok, %{state | stack: add_child(stack, {:comment, text})}}
+    {:ok, add_child_to_stack(state, {:comment, text})}
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do

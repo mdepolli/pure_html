@@ -38,7 +38,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       set_mode: 2,
       push_af_marker: 1,
       add_child_to_stack: 2,
-      add_child: 2,
+      current_tag: 1,
       in_table_scope?: 2,
       has_template?: 1,
       foster_element: 2,
@@ -54,36 +54,43 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @impl true
   # If top of stack is foreign content (svg/math), delegate to in_body
   # which has proper foreign content handling
-  def process(token, %{stack: [%{tag: {ns, _}} | _]} = state) when ns in [:svg, :math] do
-    InBody.process(token, state)
-  end
-
-  # Template pushed :in_table mode (e.g., after seeing <tbody> in template)
-  # No real table exists - use body rules
-  def process(token, %{template_mode_stack: [:in_table | _]} = state) do
-    InBody.process(token, state)
-  end
-
   def process(token, state) do
+    case current_tag(state) do
+      {ns, _} when ns in [:svg, :math] ->
+        InBody.process(token, state)
+
+      _ ->
+        process_dispatch(token, state)
+    end
+  end
+
+  defp process_dispatch(token, %{template_mode_stack: [:in_table | _]} = state) do
+    # Template pushed :in_table mode (e.g., after seeing <tbody> in template)
+    # No real table exists - use body rules
+    InBody.process(token, state)
+  end
+
+  defp process_dispatch(token, state) do
     process_in_table(token, state)
   end
 
   # Character tokens in table context elements: switch to in_table_text mode
-  defp process_in_table({:character, text}, %{stack: [%{tag: tag} | _]} = state)
-       when tag in @table_context do
-    # Switch to in_table_text mode to collect character tokens
-    {:ok,
-     %{
-       state
-       | mode: :in_table_text,
-         original_mode: :in_table,
-         pending_table_text: text
-     }}
-  end
+  defp process_in_table({:character, text}, state) do
+    tag = current_tag(state)
 
-  # Character tokens not in table context: delegate to in_body
-  defp process_in_table({:character, _} = token, state) do
-    InBody.process(token, state)
+    if tag in @table_context do
+      # Switch to in_table_text mode to collect character tokens
+      {:ok,
+       %{
+         state
+         | mode: :in_table_text,
+           original_mode: :in_table,
+           pending_table_text: text
+       }}
+    else
+      # Character tokens not in table context: delegate to in_body
+      InBody.process({:character, text}, state)
+    end
   end
 
   # Comments: insert
@@ -153,8 +160,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: nested table - close current table, reprocess
-  defp process_in_table({:start_tag, "table", _, _}, %{stack: stack} = state) do
-    if in_table_scope?(stack, "table") do
+  defp process_in_table({:start_tag, "table", _, _}, state) do
+    if in_table_scope?(state, "table") do
       state = close_table(state)
       {:reprocess, state}
     else
@@ -181,12 +188,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: form - special handling
-  defp process_in_table(
-         {:start_tag, "form", attrs, _},
-         %{stack: stack, form_element: nil} = state
-       ) do
+  defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
     # Only if no form element pointer and no template in stack
-    if not has_template?(stack) do
+    if not has_template?(state) do
       form = new_element("form", attrs)
       {:ok, %{state | form_element: form} |> add_child_to_stack(form)}
     else
@@ -247,8 +251,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # End tag: table
-  defp process_in_table({:end_tag, "table"}, %{stack: stack} = state) do
-    if in_table_scope?(stack, "table") do
+  defp process_in_table({:end_tag, "table"}, state) do
+    if in_table_scope?(state, "table") do
       {:ok, close_table(state)}
     else
       {:ok, state}
@@ -280,64 +284,87 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Clear stack to table context (table, template, html)
   @table_boundaries ["table", "template", "html"]
 
-  defp clear_to_table_context(%{stack: stack} = state) do
-    %{state | stack: do_clear_to_table_context(stack)}
+  defp clear_to_table_context(%{stack: stack, elements: elements} = state) do
+    {new_stack, parent_ref} = do_clear_to_table_context(stack, elements)
+    %{state | stack: new_stack, current_parent_ref: parent_ref}
   end
 
-  defp do_clear_to_table_context([%{tag: tag} | _] = stack) when tag in @table_boundaries do
-    stack
+  defp do_clear_to_table_context([], _elements), do: {[], nil}
+
+  defp do_clear_to_table_context([ref | _rest] = stack, elements) do
+    tag = elements[ref].tag
+
+    if tag in @table_boundaries do
+      # Found boundary, parent is the ref itself since we stay on it
+      {stack, ref}
+    else
+      do_clear_to_table_context(tl(stack), elements)
+    end
   end
 
-  defp do_clear_to_table_context([elem | rest]) do
-    do_clear_to_table_context(add_child(rest, elem))
+  defp ensure_colgroup(state) do
+    tag = current_tag(state)
+
+    case tag do
+      "colgroup" -> state
+      "table" -> push_element(state, "colgroup", %{})
+      _ -> state
+    end
   end
 
-  defp do_clear_to_table_context([]), do: []
+  defp ensure_tbody(state) do
+    tag = current_tag(state)
 
-  defp ensure_colgroup(%{stack: [%{tag: "colgroup"} | _]} = state), do: state
-
-  defp ensure_colgroup(%{stack: [%{tag: "table"} | _]} = state) do
-    push_element(state, "colgroup", %{})
+    cond do
+      tag in @table_sections -> state
+      tag == "table" -> push_element(state, "tbody", %{})
+      true -> state
+    end
   end
 
-  defp ensure_colgroup(state), do: state
-
-  defp ensure_tbody(%{stack: [%{tag: tag} | _]} = state) when tag in @table_sections do
-    state
-  end
-
-  defp ensure_tbody(%{stack: [%{tag: "table"} | _]} = state) do
-    push_element(state, "tbody", %{})
-  end
-
-  defp ensure_tbody(state), do: state
-
-  defp close_table(%{stack: stack, af: af, template_mode_stack: tms} = state) do
-    {new_stack, closed_refs} = do_close_table(stack, MapSet.new())
+  defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
+    {new_stack, closed_refs, parent_ref} = do_close_table(stack, [], elements)
     new_af = reject_refs_from_af(af, closed_refs)
     new_tms = Enum.drop(tms, 1)
     mode = if new_tms == [], do: :in_body, else: hd(new_tms)
-    %{state | stack: new_stack, af: new_af, mode: mode, template_mode_stack: new_tms}
+
+    %{
+      state
+      | stack: new_stack,
+        af: new_af,
+        mode: mode,
+        template_mode_stack: new_tms,
+        current_parent_ref: parent_ref
+    }
   end
 
-  defp do_close_table([%{tag: "table"} = table | rest], refs) do
-    {add_child(rest, table), MapSet.put(refs, table.ref)}
-  end
+  defp do_close_table([], closed_refs, _elements), do: {[], closed_refs, nil}
 
-  defp do_close_table([%{tag: tag} | _] = stack, refs) when tag in ["template", "html"] do
-    {stack, refs}
-  end
+  defp do_close_table([ref | rest], closed_refs, elements) do
+    tag = elements[ref].tag
 
-  defp do_close_table([elem | rest], refs) do
-    do_close_table(add_child(rest, elem), MapSet.put(refs, elem.ref))
-  end
+    cond do
+      tag == "table" ->
+        # Found the table - pop it and return
+        parent_ref = elements[ref].parent_ref
+        {rest, [ref | closed_refs], parent_ref}
 
-  defp do_close_table([], refs), do: {[], refs}
+      tag in ["template", "html"] ->
+        # Boundary - stop here
+        {[ref | rest], closed_refs, ref}
+
+      true ->
+        # Pop this element and continue
+        do_close_table(rest, [ref | closed_refs], elements)
+    end
+  end
 
   defp reject_refs_from_af(af, refs) do
+    ref_set = MapSet.new(refs)
+
     Enum.reject(af, fn
       :marker -> false
-      {ref, _, _} -> MapSet.member?(refs, ref)
+      {ref, _, _} -> MapSet.member?(ref_set, ref)
     end)
   end
 end
