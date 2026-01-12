@@ -2140,16 +2140,18 @@ defmodule PureHTML.Tokenizer do
 
   # Specialized emit/2 for common pattern: input: rest (88% of calls)
   defp emit(%{token: {:start_tag, tag, _, false}} = state, input: new_input) do
-    {:emit, state.token, %{state | state: next_state_for_tag(tag), token: nil, input: new_input}}
+    next = next_state_for_tag(tag, state.adjusted_current_node_not_in_html_namespace)
+    {:emit, state.token, %{state | state: next, token: nil, input: new_input}}
   end
 
   defp emit(%{token: {:start_tag, tag, _, false}} = state, []) do
-    {:emit, state.token, %{state | state: next_state_for_tag(tag), token: nil}}
+    next = next_state_for_tag(tag, state.adjusted_current_node_not_in_html_namespace)
+    {:emit, state.token, %{state | state: next, token: nil}}
   end
 
   # Fallback for start tags with other updates
   defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) do
-    next_state = next_state_for_tag(tag)
+    next_state = next_state_for_tag(tag, state.adjusted_current_node_not_in_html_namespace)
     all_updates = Keyword.merge([state: next_state, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
   end
@@ -2169,11 +2171,14 @@ defmodule PureHTML.Tokenizer do
     {:emit, state.token, struct!(state, all_updates)}
   end
 
-  defp next_state_for_tag("plaintext"), do: :plaintext
-  defp next_state_for_tag("script"), do: :script_data
-  defp next_state_for_tag(tag) when tag in @rawtext_elements, do: :rawtext
-  defp next_state_for_tag(tag) when tag in @rcdata_elements, do: :rcdata
-  defp next_state_for_tag(_tag), do: :data
+  # In foreign content (SVG/MathML), title should NOT switch to RCDATA mode
+  # since it's an HTML integration point where content is parsed as HTML
+  defp next_state_for_tag("title", true), do: :data
+  defp next_state_for_tag("plaintext", _), do: :plaintext
+  defp next_state_for_tag("script", _), do: :script_data
+  defp next_state_for_tag(tag, _) when tag in @rawtext_elements, do: :rawtext
+  defp next_state_for_tag(tag, _) when tag in @rcdata_elements, do: :rcdata
+  defp next_state_for_tag(_, _), do: :data
 
   # Specialized emit_char/3 clauses for common patterns
   defp emit_char(state, char, state: new_state, input: new_input) do

@@ -75,6 +75,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @adopt_on_duplicate_elements ~w(a nobr)
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
   @ruby_elements ~w(rb rt rtc rp)
+  @newline_skipping_elements ~w(pre textarea listing)
 
   # Scope boundary guards
   @scope_boundaries ~w(applet caption html table td th marquee object template)
@@ -114,14 +115,20 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         end
 
       true ->
-        state =
-          state
-          |> in_body()
-          |> reconstruct_active_formatting()
-          |> add_text_to_stack(text)
-          |> maybe_set_frameset_not_ok(text)
+        text = maybe_skip_leading_newline(state, text)
 
-        {:ok, state}
+        if text == "" do
+          {:ok, state}
+        else
+          state =
+            state
+            |> in_body()
+            |> reconstruct_active_formatting()
+            |> add_text_to_stack(text)
+            |> maybe_set_frameset_not_ok(text)
+
+          {:ok, state}
+        end
     end
   end
 
@@ -265,6 +272,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
     state =
       cond do
+        # mglyph/malignmark stay in MathML namespace even at text integration points
+        tag in ~w(mglyph malignmark) and mathml_text_integration_point?(state) ->
+          do_push_foreign_element(state, :math, tag, attrs, self_closing)
+
         is_nil(ns) or html_integration_point?(state) ->
           do_process_html_start_tag(tag, attrs, self_closing, state)
 
@@ -731,6 +742,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
+  defp mathml_text_integration_point?(%{stack: [ref | _], elements: elements}) do
+    case elements[ref].tag do
+      {:math, tag} when tag in ~w(mi mo mn ms mtext) -> true
+      _ -> false
+    end
+  end
+
+  defp mathml_text_integration_point?(_), do: false
+
   @html_breakout_tags ~w(b big blockquote body br center code dd div dl dt em embed
                          h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol
                          p pre ruby s small span strong strike sub sup table tt u ul var)
@@ -1066,6 +1086,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       _ -> determine_mode_from_stack(rest, elements)
     end
   end
+
+  defp maybe_skip_leading_newline(state, <<?\n, rest::binary>>) do
+    case current_element(state) do
+      %{tag: tag, children: []} when tag in @newline_skipping_elements ->
+        rest
+
+      _ ->
+        <<?\n, rest::binary>>
+    end
+  end
+
+  defp maybe_skip_leading_newline(_state, text), do: text
 
   # --------------------------------------------------------------------------
   # Frameset-ok flag
