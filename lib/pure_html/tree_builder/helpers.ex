@@ -583,27 +583,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def in_foster_parent_context?(_state), do: false
 
   @doc """
-  Foster parents an element (adds it to the foster parent's children).
-  Inserts before the table element per HTML5 spec.
+  Unified foster parenting function.
+  Inserts content before the table element per HTML5 spec.
+
+  ## Content types:
+  - `{:text, text}` - insert text, returns `state`
+  - `{:element, {tag, attrs, children}}` - insert complete element tuple, returns `state`
+  - `{:push, tag, attrs}` - create element, insert, push to stack, returns `{state, ref}`
+  - `{:push_foreign, ns, tag, attrs, self_closing}` - create foreign element,
+     returns `state` for self-closing, `{state, ref}` otherwise
   """
-  def foster_element(%{elements: elements} = state, child) do
-    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
+  def foster_parent(state, content)
 
-    if foster_parent_ref == :document do
-      state
-    else
-      new_elements =
-        insert_child_before_in_elements(elements, foster_parent_ref, child, insert_before_ref)
-
-      %{state | elements: new_elements}
-    end
-  end
-
-  @doc """
-  Foster parents text (adds it to the foster parent's children).
-  Inserts before the table element per HTML5 spec.
-  """
-  def foster_text(%{elements: elements} = state, text) do
+  def foster_parent(%{elements: elements} = state, {:text, text}) do
     {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     if foster_parent_ref == :document do
@@ -616,19 +608,29 @@ defmodule PureHTML.TreeBuilder.Helpers do
     end
   end
 
-  @doc """
-  Foster parents an element and pushes it to the stack.
-  Inserts before the table element per HTML5 spec.
-  Returns {state, ref}.
-  """
-  def foster_push_element(%{stack: stack, elements: elements} = state, tag, attrs) do
+  def foster_parent(%{elements: elements} = state, {:element, child}) do
+    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
+
+    if foster_parent_ref == :document do
+      state
+    else
+      new_elements =
+        insert_child_before_in_elements(elements, foster_parent_ref, child, insert_before_ref)
+
+      %{state | elements: new_elements}
+    end
+  end
+
+  def foster_parent(%{stack: stack, elements: elements} = state, {:push, tag, attrs}) do
     {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     actual_parent_ref =
       if foster_parent_ref == :document, do: nil, else: foster_parent_ref
 
-    elem = new_element(tag, attrs, actual_parent_ref)
-    elem = Map.put(elem, :foster_parent_ref, actual_parent_ref)
+    elem =
+      tag
+      |> new_element(attrs, actual_parent_ref)
+      |> Map.put(:foster_parent_ref, actual_parent_ref)
 
     new_elements = Map.put(elements, elem.ref, elem)
 
@@ -643,46 +645,39 @@ defmodule PureHTML.TreeBuilder.Helpers do
      elem.ref}
   end
 
-  @doc """
-  Foster parents a foreign element and pushes it to the stack.
-  Inserts before the table element per HTML5 spec.
-  Returns state (for self-closing) or {state, ref} (for non-self-closing).
-  """
-  def foster_push_foreign_element(
+  def foster_parent(state, {:push_foreign, ns, tag, attrs, true = _self_closing}) do
+    foster_parent(state, {:element, {{ns, tag}, attrs, []}})
+  end
+
+  def foster_parent(
         %{stack: stack, elements: elements} = state,
-        ns,
-        tag,
-        attrs,
-        self_closing
+        {:push_foreign, ns, tag, attrs, false = _self_closing}
       ) do
     {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     actual_parent_ref =
       if foster_parent_ref == :document, do: nil, else: foster_parent_ref
 
-    if self_closing do
-      foster_element(state, {{ns, tag}, attrs, []})
-    else
-      elem = new_foreign_element(ns, tag, attrs, actual_parent_ref)
-      elem = Map.put(elem, :foster_parent_ref, actual_parent_ref)
+    elem =
+      new_foreign_element(ns, tag, attrs, actual_parent_ref)
+      |> Map.put(:foster_parent_ref, actual_parent_ref)
 
-      new_elements = Map.put(elements, elem.ref, elem)
+    new_elements = Map.put(elements, elem.ref, elem)
 
-      new_elements =
-        if actual_parent_ref do
-          insert_ref_before_in_parent(
-            new_elements,
-            elem.ref,
-            actual_parent_ref,
-            insert_before_ref
-          )
-        else
-          new_elements
-        end
+    new_elements =
+      if actual_parent_ref do
+        insert_ref_before_in_parent(
+          new_elements,
+          elem.ref,
+          actual_parent_ref,
+          insert_before_ref
+        )
+      else
+        new_elements
+      end
 
-      {%{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref},
-       elem.ref}
-    end
+    {%{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref},
+     elem.ref}
   end
 
   # --------------------------------------------------------------------------

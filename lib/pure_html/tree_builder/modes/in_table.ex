@@ -41,9 +41,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       current_tag: 1,
       in_table_scope?: 2,
       has_template?: 1,
-      foster_element: 2,
-      foster_push_element: 3,
-      foster_push_foreign_element: 5,
+      foster_parent: 2,
       new_element: 2
     ]
 
@@ -183,7 +181,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       {:ok, add_child_to_stack(state, {"input", attrs, []})}
     else
       # Foster parent
-      {:ok, foster_element(state, {"input", attrs, []})}
+      {:ok, foster_parent(state, {:element, {"input", attrs, []}})}
     end
   end
 
@@ -205,7 +203,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # SVG and math: foster parent as foreign elements
   defp process_in_table({:start_tag, "svg", attrs, self_closing}, state) do
-    result = foster_push_foreign_element(state, :svg, "svg", attrs, self_closing)
+    result = foster_parent(state, {:push_foreign, :svg, "svg", attrs, self_closing})
 
     case result do
       {new_state, _ref} -> {:ok, new_state}
@@ -214,7 +212,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp process_in_table({:start_tag, "math", attrs, self_closing}, state) do
-    result = foster_push_foreign_element(state, :math, "math", attrs, self_closing)
+    result = foster_parent(state, {:push_foreign, :math, "math", attrs, self_closing})
 
     case result do
       {new_state, _ref} -> {:ok, new_state}
@@ -226,7 +224,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Note: HTML5 spec has in_select_in_table mode, but it requires architectural
   # changes to properly intercept InSelect's mode transitions. For now, use in_select.
   defp process_in_table({:start_tag, "select", attrs, _}, state) do
-    {new_state, _ref} = foster_push_element(state, "select", attrs)
+    {new_state, _ref} = foster_parent(state, {:push, "select", attrs})
     {:ok, set_mode(new_state, :in_select)}
   end
 
@@ -237,15 +235,15 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
     cond do
       self_closing or tag in @void_elements ->
-        {:ok, foster_element(state, {tag, attrs, []})}
+        {:ok, foster_parent(state, {:element, {tag, attrs, []}})}
 
       tag in @formatting_elements ->
-        {new_state, new_ref} = foster_push_element(state, tag, attrs)
+        {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
         new_af = [{new_ref, tag, attrs} | af]
         {:ok, %{new_state | af: new_af}}
 
       true ->
-        {new_state, _ref} = foster_push_element(state, tag, attrs)
+        {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
         {:ok, new_state}
     end
   end

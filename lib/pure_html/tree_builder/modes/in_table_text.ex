@@ -20,7 +20,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, foster_text: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, foster_parent: 2]
 
   @impl true
   # Character tokens: collect into pending list
@@ -71,7 +71,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
     if entries_to_reconstruct == [] do
       # No formatting to reconstruct - just foster parent the text
-      foster_text(state, text)
+      foster_parent(state, {:text, text})
     else
       # Reconstruct formatting elements (they'll be foster parented)
       # Then add text to the reconstructed element (not foster parented)
@@ -102,7 +102,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   defp reconstruct_entries_foster([{old_ref, tag, attrs} | rest], state) do
     # Foster-push the element (inserts before table)
     {new_state, new_ref} =
-      PureHTML.TreeBuilder.Helpers.foster_push_element(state, tag, attrs)
+      PureHTML.TreeBuilder.Helpers.foster_parent(state, {:push, tag, attrs})
 
     # Update AF entry to point to new ref
     new_af = update_af_entry(new_state.af, old_ref, {new_ref, tag, attrs})

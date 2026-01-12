@@ -166,7 +166,7 @@ defmodule PureHTML.TreeBuilder do
         Helpers.add_text_to_stack(state, text)
       else
         # Contains non-whitespace: foster parent
-        Helpers.foster_text(state, text)
+        Helpers.foster_parent(state, {:text, text})
       end
 
     {doctype, %{new_state | pending_table_text: ""}, comments}

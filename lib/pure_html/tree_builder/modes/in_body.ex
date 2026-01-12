@@ -24,7 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       current_element: 1,
       pop_element: 1,
       pop_until_one_of: 2,
-      foster_text: 2
+      foster_parent: 2
     ]
 
   # --------------------------------------------------------------------------
@@ -117,7 +117,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         if String.trim(text) == "" do
           {:ok, add_text_to_stack(state, text)}
         else
-          {:ok, foster_text(state, text)}
+          {:ok, foster_parent(state, {:text, text})}
         end
 
       true ->
