@@ -1389,10 +1389,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         do_pop_to_implicit_close_all_ref(new_stack, elements, closes, boundaries, true)
 
       :not_found when found_any ->
-        # Return the last valid parent_ref
+        # Return the top of stack as the new parent
+        # (new elements should be children of the top element)
         parent_ref =
           case stack do
-            [ref | _] -> elements[ref].parent_ref
+            [ref | _] -> ref
             [] -> nil
           end
 
