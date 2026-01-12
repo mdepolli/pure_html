@@ -105,14 +105,12 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   # Pop noscript element and switch to in_head mode
   defp pop_noscript(state) do
-    case current_tag(state) do
-      "noscript" ->
-        state
-        |> pop_element()
-        |> Map.put(:mode, :in_head)
+    state
+    |> pop_noscript_if_current()
+    |> Map.put(:mode, :in_head)
+  end
 
-      _ ->
-        %{state | mode: :in_head}
-    end
+  defp pop_noscript_if_current(state) do
+    if current_tag(state) == "noscript", do: pop_element(state), else: state
   end
 end

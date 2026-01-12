@@ -204,21 +204,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # SVG and math: foster parent as foreign elements
   defp process_in_table({:start_tag, "svg", attrs, self_closing}, state) do
-    result = foster_parent(state, {:push_foreign, :svg, "svg", attrs, self_closing})
-
-    case result do
-      {new_state, _ref} -> {:ok, new_state}
-      new_state -> {:ok, new_state}
-    end
+    {:ok, foster_foreign_element(state, :svg, "svg", attrs, self_closing)}
   end
 
   defp process_in_table({:start_tag, "math", attrs, self_closing}, state) do
-    result = foster_parent(state, {:push_foreign, :math, "math", attrs, self_closing})
-
-    case result do
-      {new_state, _ref} -> {:ok, new_state}
-      new_state -> {:ok, new_state}
-    end
+    {:ok, foster_foreign_element(state, :math, "math", attrs, self_closing)}
   end
 
   # Select: foster parent and push in_select mode
@@ -285,6 +275,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------
 
+  defp foster_foreign_element(state, ns, tag, attrs, self_closing) do
+    case foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing}) do
+      {new_state, _ref} -> new_state
+      new_state -> new_state
+    end
+  end
+
   # Clear stack to table context (table, template, html)
   @table_boundaries ["table", "template", "html"]
 
@@ -326,7 +323,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {new_stack, closed_refs, parent_ref} = do_close_table(stack, [], elements)
     new_af = reject_refs_from_af(af, closed_refs)
     new_tms = Enum.drop(tms, 1)
-    mode = if new_tms == [], do: :in_body, else: hd(new_tms)
+    mode = List.first(new_tms, :in_body)
 
     %{
       state

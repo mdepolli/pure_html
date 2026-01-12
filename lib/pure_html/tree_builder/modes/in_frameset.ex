@@ -33,11 +33,14 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     ]
 
   @impl true
-  # Whitespace: insert
+  # Whitespace: insert, non-whitespace: ignore
   def process({:character, text}, state) do
-    case extract_whitespace(text) do
-      "" -> {:ok, state}
-      whitespace -> {:ok, add_text_to_stack(state, whitespace)}
+    whitespace = extract_whitespace(text)
+
+    if whitespace == "" do
+      {:ok, state}
+    else
+      {:ok, add_text_to_stack(state, whitespace)}
     end
   end
 
@@ -87,11 +90,10 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
       "frameset" ->
         new_state = pop_element(state)
 
-        # Switch to after_frameset if current node is no longer a frameset
-        case current_tag(new_state) do
-          "frameset" -> {:ok, new_state}
-          _ -> {:ok, %{new_state | mode: :after_frameset}}
-        end
+        new_mode =
+          if current_tag(new_state) == "frameset", do: :in_frameset, else: :after_frameset
+
+        {:ok, %{new_state | mode: new_mode}}
 
       _ ->
         {:ok, state}

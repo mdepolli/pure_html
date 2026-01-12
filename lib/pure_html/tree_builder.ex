@@ -242,22 +242,22 @@ defmodule PureHTML.TreeBuilder do
   # Find the html element ref
   defp find_html_ref(stack, elements) do
     # First try: find html at bottom of stack
-    stack
-    |> Enum.reverse()
-    |> Enum.find(fn ref ->
-      elem = elements[ref]
-      elem && elem.tag == "html"
-    end)
-    |> case do
-      nil ->
-        # Fallback: find element with tag "html" in elements map
-        case Enum.find(elements, fn {_ref, elem} -> elem.tag == "html" end) do
-          {ref, _elem} -> ref
-          nil -> nil
-        end
+    html_ref =
+      stack
+      |> Enum.reverse()
+      |> Enum.find(fn ref ->
+        elem = elements[ref]
+        elem && elem.tag == "html"
+      end)
 
-      html_ref ->
-        html_ref
+    # Fallback: find element with tag "html" in elements map
+    html_ref || find_html_ref_in_elements(elements)
+  end
+
+  defp find_html_ref_in_elements(elements) do
+    case Enum.find(elements, fn {_ref, elem} -> elem.tag == "html" end) do
+      {ref, _elem} -> ref
+      nil -> nil
     end
   end
 

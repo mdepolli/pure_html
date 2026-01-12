@@ -2,7 +2,7 @@
 
 **Total: 163 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after foreign content breakout and heading nesting fixes*
+*Last updated: 2026-01-12 after TreeBuilder code simplification*
 
 ## By Test File
 
@@ -75,6 +75,8 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **TreeBuilder code simplification** (2026-01-12): Simplified TreeBuilder and all submodules for improved readability and reduced cyclomatic complexity. Key changes: pattern matching in function heads instead of nested conditionals, pipeline usage with `then/2`, extracted reusable helpers (`find_html_ref_in_elements`, `remove_child_from_parent`, `foster_foreign_element`, `close_if_current_tag`, `pop_head_if_current`, `pop_noscript_if_current`), removed unnecessary `do_` wrapper functions, consolidated duplicate code. No test changes - all 163 failures remain unchanged.
 
 - **Foreign content breakout and heading nesting fixes** (2026-01-12): Fixed two issues: (1) `pop_foreign_elements` was returning `elements[ref].parent_ref` but should return `ref` itself - when breaking out of SVG/MathML, new elements should be children of the first non-foreign element (body), not its parent (html). (2) Headings no longer use the general `@implicit_closes` map. Added `maybe_close_current_heading` which only closes a heading if the current node is a heading (per spec). Added `close_any_heading` for heading end tags which close any open heading in scope. Fixed 28 tests (191 → 163 total). tests26: 11 → 3 failures. tests10: 25 → 20. tests19: 12 → 9.
 

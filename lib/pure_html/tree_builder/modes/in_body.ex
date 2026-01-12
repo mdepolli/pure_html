@@ -699,11 +699,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp foreign_namespace(%{stack: stack, elements: elements}) do
     Enum.find_value(stack, fn ref ->
-      if is_map_key(elements, ref) do
-        case elements[ref].tag do
-          {ns, _} when ns in [:svg, :math] -> ns
-          _ -> nil
-        end
+      case elements[ref] do
+        %{tag: {ns, _}} when ns in [:svg, :math] -> ns
+        _ -> nil
       end
     end)
   end
@@ -935,10 +933,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp find_html_ref([], _elements), do: nil
 
   defp find_html_ref([ref | rest], elements) do
-    if elements[ref].tag == "html" do
-      ref
-    else
-      find_html_ref(rest, elements)
+    case elements[ref].tag do
+      "html" -> ref
+      _ -> find_html_ref(rest, elements)
     end
   end
 
@@ -1002,16 +999,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
     case tag do
       "body" ->
-        # Remove body from its parent (html) per spec
-        new_elements =
-          if parent_ref do
-            Map.update!(elements, parent_ref, fn parent ->
-              %{parent | children: List.delete(parent.children, ref)}
-            end)
-          else
-            elements
-          end
-
+        new_elements = remove_child_from_parent(elements, ref, parent_ref)
         {rest, new_elements, parent_ref}
 
       "html" ->
@@ -1020,6 +1008,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       _ ->
         do_close_body_for_frameset(rest, elements)
     end
+  end
+
+  defp remove_child_from_parent(elements, _child_ref, nil), do: elements
+
+  defp remove_child_from_parent(elements, child_ref, parent_ref) do
+    Map.update!(elements, parent_ref, fn parent ->
+      %{parent | children: List.delete(parent.children, child_ref)}
+    end)
   end
 
   # --------------------------------------------------------------------------
@@ -1038,14 +1034,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     %{state | mode: :in_body}
   end
 
-  defp switch_template_mode(%{template_mode_stack: template_mode_stack} = state, new_mode) do
-    new_stack =
-      case template_mode_stack do
-        [_ | rest] -> [new_mode | rest]
-        [] -> [new_mode]
-      end
+  defp switch_template_mode(%{template_mode_stack: [_ | rest]} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [new_mode | rest]}
+  end
 
-    %{state | mode: new_mode, template_mode_stack: new_stack}
+  defp switch_template_mode(%{template_mode_stack: []} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [new_mode]}
   end
 
   defp reset_insertion_mode(
@@ -1101,14 +1095,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   defp close_option_optgroup_in_select(state) do
-    case current_tag(state) do
-      tag when tag in ["option", "optgroup"] ->
-        state
-        |> pop_element()
-        |> close_option_optgroup_in_select()
-
-      _ ->
-        state
+    if current_tag(state) in ["option", "optgroup"] do
+      state
+      |> pop_element()
+      |> close_option_optgroup_in_select()
+    else
+      state
     end
   end
 
@@ -1268,13 +1260,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     do_find_p_in_scope_ref(rest, elements, above)
   end
 
-  defp pop_to_ref(stack, elements, target_ref) do
-    do_pop_to_ref(stack, elements, target_ref)
-  end
-
-  defp do_pop_to_ref([], _elements, _target), do: {[], nil}
-  defp do_pop_to_ref([ref | rest], elements, ref), do: {rest, elements[ref].parent_ref}
-  defp do_pop_to_ref([_ | rest], elements, target), do: do_pop_to_ref(rest, elements, target)
+  defp pop_to_ref([], _elements, _target), do: {[], nil}
+  defp pop_to_ref([ref | rest], elements, ref), do: {rest, elements[ref].parent_ref}
+  defp pop_to_ref([_ | rest], elements, target), do: pop_to_ref(rest, elements, target)
 
   @implicit_close_boundaries ~w(table template body html)
   @li_scope_boundaries ~w(ol ul table template body html)
@@ -1315,19 +1303,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp get_implicit_close_config(_), do: nil
 
-  defp pop_to_implicit_close_ref(stack, elements, closes, boundaries) do
-    do_pop_to_implicit_close_ref(stack, elements, closes, boundaries)
-  end
+  defp pop_to_implicit_close_ref([], _elements, _closes, _boundaries), do: :not_found
 
-  defp do_pop_to_implicit_close_ref([], _elements, _closes, _boundaries), do: :not_found
-
-  defp do_pop_to_implicit_close_ref([ref | rest], elements, closes, boundaries) do
+  defp pop_to_implicit_close_ref([ref | rest], elements, closes, boundaries) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
     cond do
       tag in boundaries -> :not_found
       tag in closes -> {:ok, rest, parent_ref}
-      true -> do_pop_to_implicit_close_ref(rest, elements, closes, boundaries)
+      true -> pop_to_implicit_close_ref(rest, elements, closes, boundaries)
     end
   end
 
@@ -1342,13 +1326,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       :not_found when found_any ->
         # Return the top of stack as the new parent
-        # (new elements should be children of the top element)
-        parent_ref =
-          case stack do
-            [ref | _] -> ref
-            [] -> nil
-          end
-
+        parent_ref = List.first(stack)
         {:ok, stack, parent_ref}
 
       :not_found ->

@@ -208,49 +208,42 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   defp get_parent_tag(_), do: nil
 
-  defp push_foreign_element(state, ns, tag, attrs, true) do
-    # Self-closing: add as child, not on stack
+  defp push_foreign_element(state, ns, tag, attrs, true = _self_closing) do
     add_child_to_stack(state, {{ns, tag}, attrs, []})
   end
 
-  defp push_foreign_element(
-         %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
-         ns,
-         tag,
-         attrs,
-         _
-       ) do
+  defp push_foreign_element(state, ns, tag, attrs, false = _self_closing) do
+    %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state
     elem = %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: [], parent_ref: parent_ref}
-    new_elements = Map.put(elements, elem.ref, elem)
 
     new_elements =
-      if parent_ref do
-        Map.update!(new_elements, parent_ref, fn parent ->
-          %{parent | children: [elem.ref | parent.children]}
-        end)
-      else
-        new_elements
-      end
+      elements
+      |> Map.put(elem.ref, elem)
+      |> add_to_parent_children(elem.ref, parent_ref)
 
     %{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref}
   end
 
+  defp add_to_parent_children(elements, _child_ref, nil), do: elements
+
+  defp add_to_parent_children(elements, child_ref, parent_ref) do
+    Map.update!(elements, parent_ref, fn parent ->
+      %{parent | children: [child_ref | parent.children]}
+    end)
+  end
+
   # Close current option if on top of stack
   defp close_current_option(state) do
-    if current_tag(state) == "option" do
-      pop_element(state)
-    else
-      state
-    end
+    close_if_current_tag(state, "option")
   end
 
   # Close current optgroup if on top of stack
   defp close_current_optgroup(state) do
-    if current_tag(state) == "optgroup" do
-      pop_element(state)
-    else
-      state
-    end
+    close_if_current_tag(state, "optgroup")
+  end
+
+  defp close_if_current_tag(state, tag) do
+    if current_tag(state) == tag, do: pop_element(state), else: state
   end
 
   # Close select and pop mode

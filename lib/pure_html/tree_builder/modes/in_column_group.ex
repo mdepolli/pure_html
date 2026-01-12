@@ -88,14 +88,13 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   # End tag: colgroup - pop and switch to in_table
   def process({:end_tag, "colgroup"}, state) do
     if current_tag(state) == "colgroup" do
-      state =
+      new_state =
         state
         |> pop_element()
         |> Map.put(:mode, :in_table)
 
-      {:ok, state}
+      {:ok, new_state}
     else
-      # Not in colgroup, ignore
       {:ok, state}
     end
   end

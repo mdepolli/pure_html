@@ -171,13 +171,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   # Merge text at end of list if last element is text
-  defp merge_text_at_end(list, text) do
-    case List.last(list) do
-      last_text when is_binary(last_text) ->
-        List.update_at(list, -1, &(&1 <> text))
+  defp merge_text_at_end([], text), do: [text]
 
-      _ ->
-        list ++ [text]
+  defp merge_text_at_end(list, text) do
+    {init, [last]} = Enum.split(list, -1)
+
+    if is_binary(last) do
+      init ++ [last <> text]
+    else
+      list ++ [text]
     end
   end
 
@@ -466,13 +468,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Removes formatting entries from the active formatting list that have refs in the given set.
   """
-  def reject_refs_from_af(af, refs) do
-    ref_set = if is_struct(refs, MapSet), do: refs, else: MapSet.new(refs)
-
+  def reject_refs_from_af(af, %MapSet{} = ref_set) do
     Enum.reject(af, fn
       :marker -> false
       {ref, _, _} -> MapSet.member?(ref_set, ref)
     end)
+  end
+
+  def reject_refs_from_af(af, refs) when is_list(refs) do
+    reject_refs_from_af(af, MapSet.new(refs))
   end
 
   # --------------------------------------------------------------------------
@@ -709,11 +713,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Returns {whitespace, rest}.
   """
   def split_whitespace(text) do
-    {ws, rest} =
-      text
-      |> String.graphemes()
-      |> Enum.split_while(&(&1 in @whitespace_chars))
-
-    {Enum.join(ws), Enum.join(rest)}
+    text
+    |> String.graphemes()
+    |> Enum.split_while(&(&1 in @whitespace_chars))
+    |> then(fn {ws, rest} -> {Enum.join(ws), Enum.join(rest)} end)
   end
 end
