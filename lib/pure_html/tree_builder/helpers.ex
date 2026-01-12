@@ -218,12 +218,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Pops the current element from the stack and adds it as a child of the new top.
-  Also restores current_parent_ref to the popped element's parent.
+  Also restores current_parent_ref and updates elements map.
   """
-  def pop_element(%{stack: [elem | rest]} = state) do
-    # Restore current_parent_ref to the popped element's parent
+  def pop_element(%{stack: [elem | rest], elements: elements} = state) do
     parent_ref = Map.get(elem, :parent_ref)
-    %{state | stack: add_child(rest, elem), current_parent_ref: parent_ref}
+    # Update stack (legacy)
+    new_stack = add_child(rest, elem)
+    # Update elements map - add elem.ref to parent's children
+    new_elements = add_ref_to_parent_children(elements, elem.ref, parent_ref)
+    %{state | stack: new_stack, elements: new_elements, current_parent_ref: parent_ref}
   end
 
   def pop_element(%{stack: []} = state), do: state
@@ -232,47 +235,59 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Pops elements from the stack until an element with the given tag is found.
   Returns {:ok, state} if found, {:not_found, state} otherwise.
   """
-  def pop_until_tag(%{stack: stack, af: af} = state, tag) do
-    case do_pop_until_tag(stack, tag, []) do
-      {:found, new_stack, popped_refs} ->
+  def pop_until_tag(%{stack: stack, af: af, elements: elements} = state, tag) do
+    case do_pop_until_tag(stack, tag, [], elements) do
+      {:found, new_stack, popped_refs, new_elements} ->
         new_af = reject_refs_from_af(af, popped_refs)
-        {:ok, %{state | stack: new_stack, af: new_af}}
+        {:ok, %{state | stack: new_stack, af: new_af, elements: new_elements}}
 
       :not_found ->
         {:not_found, state}
     end
   end
 
-  defp do_pop_until_tag([], _tag, _popped), do: :not_found
+  defp do_pop_until_tag([], _tag, _popped, _elements), do: :not_found
 
-  defp do_pop_until_tag([%{tag: tag} = elem | rest], tag, popped) do
-    {:found, add_child(rest, elem), [elem.ref | popped]}
+  defp do_pop_until_tag([%{tag: tag, ref: ref, parent_ref: parent_ref} = elem | rest], tag, popped, elements) do
+    new_elements = add_ref_to_parent_children(elements, ref, parent_ref)
+    {:found, add_child(rest, elem), [ref | popped], new_elements}
   end
 
-  defp do_pop_until_tag([%{tag: "template"} | _], _tag, _popped), do: :not_found
+  defp do_pop_until_tag([%{tag: "template"} | _], _tag, _popped, _elements), do: :not_found
 
-  defp do_pop_until_tag([elem | rest], tag, popped) do
-    do_pop_until_tag(add_child(rest, elem), tag, [elem.ref | popped])
+  defp do_pop_until_tag([%{ref: ref, parent_ref: parent_ref} = elem | rest], tag, popped, elements) do
+    new_elements = add_ref_to_parent_children(elements, ref, parent_ref)
+    do_pop_until_tag(add_child(rest, elem), tag, [ref | popped], new_elements)
   end
 
   @doc """
   Pops elements from the stack until a tag in the given list is at the top.
   """
-  def pop_until_one_of(%{stack: stack, af: af} = state, tags) when is_list(tags) do
-    {new_stack, popped_refs} = do_pop_until_one_of(stack, tags, [])
+  def pop_until_one_of(%{stack: stack, af: af, elements: elements} = state, tags) when is_list(tags) do
+    {new_stack, popped_refs, new_elements} = do_pop_until_one_of(stack, tags, [], elements)
     new_af = reject_refs_from_af(af, popped_refs)
-    %{state | stack: new_stack, af: new_af}
+    %{state | stack: new_stack, af: new_af, elements: new_elements}
   end
 
-  defp do_pop_until_one_of([], _tags, popped), do: {[], popped}
+  defp do_pop_until_one_of([], _tags, popped, elements), do: {[], popped, elements}
 
-  defp do_pop_until_one_of([%{tag: tag} | _] = stack, tags, popped) do
+  defp do_pop_until_one_of([%{tag: tag} | _] = stack, tags, popped, elements) do
     if tag in tags do
-      {stack, popped}
+      {stack, popped, elements}
     else
-      [elem | rest] = stack
-      do_pop_until_one_of(add_child(rest, elem), tags, [elem.ref | popped])
+      [%{ref: ref, parent_ref: parent_ref} = elem | rest] = stack
+      new_elements = add_ref_to_parent_children(elements, ref, parent_ref)
+      do_pop_until_one_of(add_child(rest, elem), tags, [ref | popped], new_elements)
     end
+  end
+
+  # Add element ref to its parent's children in elements map
+  defp add_ref_to_parent_children(elements, _ref, nil), do: elements
+
+  defp add_ref_to_parent_children(elements, ref, parent_ref) do
+    Map.update!(elements, parent_ref, fn parent ->
+      %{parent | children: [ref | parent.children]}
+    end)
   end
 
   defp reject_refs_from_af(af, refs) do
@@ -293,29 +308,34 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Generates implied end tags (pops elements with implied end tags).
   """
-  def generate_implied_end_tags(%{stack: stack} = state) do
-    %{state | stack: do_generate_implied_end_tags(stack)}
+  def generate_implied_end_tags(%{stack: stack, elements: elements} = state) do
+    {new_stack, new_elements} = do_generate_implied_end_tags(stack, elements)
+    %{state | stack: new_stack, elements: new_elements}
   end
 
   @doc """
   Generates implied end tags except for the given tag.
   """
-  def generate_implied_end_tags_except(%{stack: stack} = state, except_tag) do
-    %{state | stack: do_generate_implied_end_tags_except(stack, except_tag)}
+  def generate_implied_end_tags_except(%{stack: stack, elements: elements} = state, except_tag) do
+    {new_stack, new_elements} = do_generate_implied_end_tags_except(stack, except_tag, elements)
+    %{state | stack: new_stack, elements: new_elements}
   end
 
-  defp do_generate_implied_end_tags([%{tag: tag} = elem | rest]) when tag in @implied_end_tags do
-    do_generate_implied_end_tags(add_child(rest, elem))
+  defp do_generate_implied_end_tags([%{tag: tag, ref: ref, parent_ref: parent_ref} = elem | rest], elements)
+       when tag in @implied_end_tags do
+    new_elements = add_ref_to_parent_children(elements, ref, parent_ref)
+    do_generate_implied_end_tags(add_child(rest, elem), new_elements)
   end
 
-  defp do_generate_implied_end_tags(stack), do: stack
+  defp do_generate_implied_end_tags(stack, elements), do: {stack, elements}
 
-  defp do_generate_implied_end_tags_except([%{tag: tag} = elem | rest], except)
+  defp do_generate_implied_end_tags_except([%{tag: tag, ref: ref, parent_ref: parent_ref} = elem | rest], except, elements)
        when tag in @implied_end_tags and tag != except do
-    do_generate_implied_end_tags_except(add_child(rest, elem), except)
+    new_elements = add_ref_to_parent_children(elements, ref, parent_ref)
+    do_generate_implied_end_tags_except(add_child(rest, elem), except, new_elements)
   end
 
-  defp do_generate_implied_end_tags_except(stack, _except), do: stack
+  defp do_generate_implied_end_tags_except(stack, _except, elements), do: {stack, elements}
 
   # --------------------------------------------------------------------------
   # Foster Parenting
