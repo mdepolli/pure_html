@@ -9,6 +9,19 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [
+      new_element: 1,
+      new_element: 2,
+      push_element: 3,
+      add_child_to_stack: 2,
+      add_child: 2,
+      set_mode: 2,
+      push_af_marker: 1,
+      correct_tag: 1,
+      rebuild_stack: 2
+    ]
+
   # --------------------------------------------------------------------------
   # Element categories
   # --------------------------------------------------------------------------
@@ -577,26 +590,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # --------------------------------------------------------------------------
-  # Element creation
+  # Element creation (foreign elements only - standard elements use Helpers)
   # --------------------------------------------------------------------------
-
-  defp new_element(tag, attrs \\ %{}) do
-    %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-  end
 
   defp new_foreign_element(ns, tag, attrs) do
     %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: []}
   end
 
-  defp correct_tag(tag) do
-    case tag do
-      "image" -> "img"
-      _ -> tag
-    end
-  end
-
   # --------------------------------------------------------------------------
-  # Stack operations
+  # Stack operations (text handling is in_body-specific)
   # --------------------------------------------------------------------------
 
   defp add_text_to_stack(%{stack: stack} = state, text) do
@@ -613,20 +615,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp add_text_child([], _text), do: []
-
-  defp add_child_to_stack(%{stack: stack} = state, child) do
-    %{state | stack: add_child(stack, child)}
-  end
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], child), do: [child]
-
-  defp push_element(%{stack: stack} = state, tag, attrs) do
-    %{state | stack: [new_element(tag, attrs) | stack]}
-  end
 
   # --------------------------------------------------------------------------
   # Foreign content
@@ -935,8 +923,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Mode transitions
   # --------------------------------------------------------------------------
 
-  defp set_mode(state, mode), do: %{state | mode: mode}
-
   defp push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
     %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
   end
@@ -1161,8 +1147,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp add_foster_text([], _text), do: []
-
-  defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 
   # --------------------------------------------------------------------------
   # Implicit closing
@@ -1446,8 +1430,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       af
     end
   end
-
-  defp push_af_marker(%{af: af} = state), do: %{state | af: [:marker | af]}
 
   defp clear_af_to_marker(af) do
     af

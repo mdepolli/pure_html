@@ -24,6 +24,8 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2, in_table_scope?: 2]
+
   # Start tags that close the cell
   @cell_closing_start_tags ~w(caption col colgroup tbody td tfoot th thead tr)
 
@@ -85,7 +87,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # Cell-closing end tags: close cell if TARGET tag is in table scope, reprocess
   def process({:end_tag, tag}, %{stack: stack} = state) when tag in @cell_closing_end_tags do
     # Per spec: only close cell if the end tag's target is in table scope
-    if has_in_table_scope?(stack, tag) do
+    if in_table_scope?(stack, tag) do
       case close_cell(state) do
         {:ok, new_state} ->
           {:reprocess, new_state}
@@ -114,12 +116,12 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # Close td or th cell if in table scope
   defp close_cell(%{stack: stack, af: af} = state) do
     cond do
-      has_in_table_scope?(stack, "td") ->
+      in_table_scope?(stack, "td") ->
         {new_stack, closed_refs} = pop_to_tag(stack, "td", MapSet.new())
         new_af = clear_af_to_marker(af, closed_refs)
         {:ok, %{state | stack: new_stack, af: new_af, mode: :in_row}}
 
-      has_in_table_scope?(stack, "th") ->
+      in_table_scope?(stack, "th") ->
         {new_stack, closed_refs} = pop_to_tag(stack, "th", MapSet.new())
         new_af = clear_af_to_marker(af, closed_refs)
         {:ok, %{state | stack: new_stack, af: new_af, mode: :in_row}}
@@ -131,7 +133,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   # Close specific cell tag if in table scope
   defp close_cell_for_tag(%{stack: stack, af: af} = state, tag) do
-    if has_in_table_scope?(stack, tag) do
+    if in_table_scope?(stack, tag) do
       {new_stack, closed_refs} = pop_to_tag(stack, tag, MapSet.new())
       new_af = clear_af_to_marker(af, closed_refs)
       {:ok, %{state | stack: new_stack, af: new_af}}
@@ -139,18 +141,6 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
       :not_found
     end
   end
-
-  # Check if tag is in table scope
-  defp has_in_table_scope?(stack, target), do: do_has_in_table_scope?(stack, target)
-
-  defp do_has_in_table_scope?([%{tag: tag} | _], target) when tag == target, do: true
-
-  defp do_has_in_table_scope?([%{tag: tag} | _], _)
-       when tag in ["table", "template", "html"],
-       do: false
-
-  defp do_has_in_table_scope?([_ | rest], target), do: do_has_in_table_scope?(rest, target)
-  defp do_has_in_table_scope?([], _), do: false
 
   # Pop elements until we reach the target tag
   defp pop_to_tag([%{tag: tag} = elem | rest], target, refs) when tag == target do
@@ -162,12 +152,6 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   end
 
   defp pop_to_tag([], _target, refs), do: {[], refs}
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 
   # Clear active formatting elements up to marker or for closed refs
   defp clear_af_to_marker(af, closed_refs) do

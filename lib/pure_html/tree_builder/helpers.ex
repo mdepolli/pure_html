@@ -409,6 +409,72 @@ defmodule PureHTML.TreeBuilder.Helpers do
     Enum.reverse(acc)
   end
 
+  @doc """
+  Foster parents an element and pushes it to the stack.
+
+  This is for elements that need to be foster-parented (inserted before the table)
+  but also need to be on the stack to receive children.
+
+  Returns {state, ref} where ref is the new element's reference.
+  """
+  def foster_push_element(%{stack: stack} = state, tag, attrs) do
+    elem = new_element(tag, attrs)
+    {new_stack, ref} = do_foster_push(stack, elem, [])
+    {%{state | stack: new_stack}, ref}
+  end
+
+  @doc """
+  Foster parents a foreign element and pushes it to the stack.
+
+  For self-closing elements, adds as a child without pushing to stack.
+  For non-self-closing, pushes to stack to receive children.
+
+  Returns state (for self-closing) or {state, ref} (for non-self-closing).
+  """
+  def foster_push_foreign_element(%{stack: stack} = state, ns, tag, attrs, self_closing) do
+    if self_closing do
+      # Self-closing: add as child before table, don't push to stack
+      foster_element(state, {{ns, tag}, attrs, []})
+    else
+      # Non-self-closing: push to stack to receive children
+      elem = new_foreign_element(ns, tag, attrs)
+      new_stack = do_foster_push_only(stack, elem, [])
+      {%{state | stack: new_stack}, elem.ref}
+    end
+  end
+
+  defp do_foster_push([%{tag: "table"} = table | rest], elem, acc) do
+    # Mark element with foster parent ref
+    [foster_parent | _] = rest
+    marked_elem = Map.put(elem, :foster_parent_ref, foster_parent.ref)
+    # Push marked element on top of rebuilt stack
+    {[marked_elem | rebuild_stack(acc, [table | rest])], elem.ref}
+  end
+
+  defp do_foster_push([current | rest], elem, acc) do
+    do_foster_push(rest, elem, [current | acc])
+  end
+
+  defp do_foster_push([], elem, acc) do
+    {[elem | Enum.reverse(acc)], elem.ref}
+  end
+
+  defp do_foster_push_only([%{tag: "table"} = table | rest], elem, acc) do
+    # Mark element with foster parent ref
+    [foster_parent | _] = rest
+    marked_elem = Map.put(elem, :foster_parent_ref, foster_parent.ref)
+    # Push marked element on top of rebuilt stack
+    [marked_elem | rebuild_stack(acc, [table | rest])]
+  end
+
+  defp do_foster_push_only([current | rest], elem, acc) do
+    do_foster_push_only(rest, elem, [current | acc])
+  end
+
+  defp do_foster_push_only([], elem, acc) do
+    [elem | Enum.reverse(acc)]
+  end
+
   # --------------------------------------------------------------------------
   # Utility
   # --------------------------------------------------------------------------

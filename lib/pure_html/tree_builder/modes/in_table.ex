@@ -32,6 +32,21 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [
+      push_element: 3,
+      set_mode: 2,
+      push_af_marker: 1,
+      add_child_to_stack: 2,
+      add_child: 2,
+      in_table_scope?: 2,
+      has_template?: 1,
+      foster_element: 2,
+      foster_push_element: 3,
+      foster_push_foreign_element: 5,
+      new_element: 2
+    ]
+
   @table_sections ~w(tbody thead tfoot)
   @table_context ~w(table tbody thead tfoot tr)
   @ignored_end_tags ~w(body caption col colgroup html tbody td tfoot th thead tr)
@@ -139,7 +154,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Start tag: nested table - close current table, reprocess
   defp process_in_table({:start_tag, "table", _, _}, %{stack: stack} = state) do
-    if has_table_in_scope?(stack) do
+    if in_table_scope?(stack, "table") do
       state = close_table(state)
       {:reprocess, state}
     else
@@ -153,7 +168,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: input - check for type=hidden
-  defp process_in_table({:start_tag, "input", attrs, _}, %{stack: stack} = state) do
+  defp process_in_table({:start_tag, "input", attrs, _}, state) do
     type = Map.get(attrs, "type", "") |> String.downcase()
 
     if type == "hidden" do
@@ -161,8 +176,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       {:ok, add_child_to_stack(state, {"input", attrs, []})}
     else
       # Foster parent
-      new_stack = foster_element(stack, {"input", attrs, []})
-      {:ok, %{state | stack: new_stack}}
+      {:ok, foster_element(state, {"input", attrs, []})}
     end
   end
 
@@ -186,48 +200,55 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # SVG and math: foster parent as foreign elements
-  defp process_in_table({:start_tag, "svg", attrs, self_closing}, %{stack: stack} = state) do
-    new_stack = foster_push_foreign_element(stack, :svg, "svg", attrs, self_closing)
-    {:ok, %{state | stack: new_stack}}
+  defp process_in_table({:start_tag, "svg", attrs, self_closing}, state) do
+    result = foster_push_foreign_element(state, :svg, "svg", attrs, self_closing)
+
+    case result do
+      {new_state, _ref} -> {:ok, new_state}
+      new_state -> {:ok, new_state}
+    end
   end
 
-  defp process_in_table({:start_tag, "math", attrs, self_closing}, %{stack: stack} = state) do
-    new_stack = foster_push_foreign_element(stack, :math, "math", attrs, self_closing)
-    {:ok, %{state | stack: new_stack}}
+  defp process_in_table({:start_tag, "math", attrs, self_closing}, state) do
+    result = foster_push_foreign_element(state, :math, "math", attrs, self_closing)
+
+    case result do
+      {new_state, _ref} -> {:ok, new_state}
+      new_state -> {:ok, new_state}
+    end
   end
 
   # Select: foster parent and push in_select mode
   # Note: HTML5 spec has in_select_in_table mode, but it requires architectural
   # changes to properly intercept InSelect's mode transitions. For now, use in_select.
-  defp process_in_table({:start_tag, "select", attrs, _}, %{stack: stack} = state) do
-    {new_stack, _ref} = foster_push_element(stack, "select", attrs)
-    {:ok, %{state | stack: new_stack, mode: :in_select}}
+  defp process_in_table({:start_tag, "select", attrs, _}, state) do
+    {new_state, _ref} = foster_push_element(state, "select", attrs)
+    {:ok, set_mode(new_state, :in_select)}
   end
 
   # Other start tags: foster parent directly
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
 
-  defp process_in_table({:start_tag, tag, attrs, self_closing}, %{stack: stack, af: af} = state) do
+  defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
     cond do
       self_closing or tag in @void_elements ->
-        new_stack = foster_element(stack, {tag, attrs, []})
-        {:ok, %{state | stack: new_stack}}
+        {:ok, foster_element(state, {tag, attrs, []})}
 
       tag in @formatting_elements ->
-        {new_stack, new_ref} = foster_push_element(stack, tag, attrs)
+        {new_state, new_ref} = foster_push_element(state, tag, attrs)
         new_af = [{new_ref, tag, attrs} | af]
-        {:ok, %{state | stack: new_stack, af: new_af}}
+        {:ok, %{new_state | af: new_af}}
 
       true ->
-        {new_stack, _ref} = foster_push_element(stack, tag, attrs)
-        {:ok, %{state | stack: new_stack}}
+        {new_state, _ref} = foster_push_element(state, tag, attrs)
+        {:ok, new_state}
     end
   end
 
   # End tag: table
   defp process_in_table({:end_tag, "table"}, %{stack: stack} = state) do
-    if has_table_in_scope?(stack) do
+    if in_table_scope?(stack, "table") do
       {:ok, close_table(state)}
     else
       {:ok, state}
@@ -253,30 +274,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp process_in_table({:error, _}, state), do: {:ok, state}
 
   # --------------------------------------------------------------------------
-  # Helpers
+  # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------
-
-  defp new_element(tag, attrs) do
-    %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-  end
-
-  defp push_element(%{stack: stack} = state, tag, attrs) do
-    %{state | stack: [new_element(tag, attrs) | stack]}
-  end
-
-  defp set_mode(state, mode), do: %{state | mode: mode}
-
-  defp push_af_marker(%{af: af} = state), do: %{state | af: [:marker | af]}
-
-  defp add_child_to_stack(%{stack: stack} = state, child) do
-    %{state | stack: add_child(stack, child)}
-  end
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 
   # Clear stack to table context (table, template, html)
   @table_boundaries ["table", "template", "html"]
@@ -313,15 +312,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp ensure_tbody(state), do: state
 
-  defp has_table_in_scope?(stack), do: do_has_table_in_scope?(stack)
-
-  defp do_has_table_in_scope?([%{tag: "table"} | _]), do: true
-  defp do_has_table_in_scope?([%{tag: tag} | _]) when tag in ["template", "html"], do: false
-  defp do_has_table_in_scope?([_ | rest]), do: do_has_table_in_scope?(rest)
-  defp do_has_table_in_scope?([]), do: false
-
-  defp has_template?(stack), do: Enum.any?(stack, &match?(%{tag: "template"}, &1))
-
   defp close_table(%{stack: stack, af: af, template_mode_stack: tms} = state) do
     {new_stack, closed_refs} = do_close_table(stack, MapSet.new())
     new_af = reject_refs_from_af(af, closed_refs)
@@ -350,62 +340,4 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       {ref, _, _} -> MapSet.member?(refs, ref)
     end)
   end
-
-  # Foreign element foster parenting helpers
-
-  defp new_foreign_element(ns, tag, attrs) do
-    %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: []}
-  end
-
-  defp foster_push_foreign_element(stack, ns, tag, attrs, self_closing) do
-    if self_closing do
-      # Self-closing: add as child before table, don't push to stack
-      foster_element(stack, {{ns, tag}, attrs, []})
-    else
-      # Non-self-closing: push to stack to receive children
-      new_elem = new_foreign_element(ns, tag, attrs)
-      do_foster_push(stack, new_elem, [])
-    end
-  end
-
-  defp foster_push_element(stack, tag, attrs) do
-    new_elem = new_element(tag, attrs)
-    {do_foster_push(stack, new_elem, []), new_elem.ref}
-  end
-
-  defp foster_element(stack, element) do
-    do_foster_element(stack, element, [])
-  end
-
-  defp do_foster_element([%{tag: "table"} = table | rest], element, acc) do
-    # Insert element as child of table's parent (body)
-    rest = add_child(rest, element)
-    rebuild_stack(acc, [table | rest])
-  end
-
-  defp do_foster_element([current | rest], element, acc) do
-    do_foster_element(rest, element, [current | acc])
-  end
-
-  defp do_foster_element([], _element, acc) do
-    Enum.reverse(acc)
-  end
-
-  defp do_foster_push([%{tag: "table"} = table | rest], new_elem, acc) do
-    # Mark element with foster parent ref so it gets added to body when closed
-    [foster_parent | _] = rest
-    marked_elem = Map.put(new_elem, :foster_parent_ref, foster_parent.ref)
-    table_and_below = [table | rest]
-    [marked_elem | rebuild_stack(acc, table_and_below)]
-  end
-
-  defp do_foster_push([current | rest], new_elem, acc) do
-    do_foster_push(rest, new_elem, [current | acc])
-  end
-
-  defp do_foster_push([], new_elem, acc) do
-    Enum.reverse([new_elem | acc])
-  end
-
-  defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 end

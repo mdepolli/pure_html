@@ -26,6 +26,8 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2]
+
   @void_head_elements ~w(base basefont bgsound link meta)
   @raw_text_elements ~w(noframes noscript style)
 
@@ -126,13 +128,6 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   end
 
   defp close_head(state), do: %{state | mode: :after_head}
-
-  # Add a child to the current element
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 
   # Add text as child of the current element
   defp add_text_child(stack, text), do: add_child(stack, text)

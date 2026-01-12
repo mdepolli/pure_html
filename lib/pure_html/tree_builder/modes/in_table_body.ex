@@ -24,6 +24,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [push_element: 3, set_mode: 2, add_child: 2, in_table_scope?: 2]
+
   # Table body elements
   @table_body_tags ~w(tbody tfoot thead)
 
@@ -89,7 +92,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # End tag: tbody, tfoot, thead - close if in scope
   def process({:end_tag, tag}, %{stack: stack} = state) when tag in @table_body_tags do
-    if has_in_table_scope?(stack, tag) do
+    if in_table_scope?(stack, tag) do
       new_stack = pop_to_table_body(stack)
       {:ok, %{state | stack: new_stack, mode: :in_table}}
     else
@@ -125,16 +128,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp new_element(tag, attrs) do
-    %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-  end
-
-  defp push_element(%{stack: stack} = state, tag, attrs) do
-    %{state | stack: [new_element(tag, attrs) | stack]}
-  end
-
-  defp set_mode(state, mode), do: %{state | mode: mode}
-
   # Clear stack to table body context (tbody, tfoot, thead, template, html)
   defp clear_to_table_body_context(%{stack: stack} = state) do
     %{state | stack: do_clear_to_table_body_context(stack)}
@@ -156,13 +149,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # Close the current table body if in table scope
   defp close_table_body(%{stack: stack} = state) do
     cond do
-      has_in_table_scope?(stack, "tbody") ->
+      in_table_scope?(stack, "tbody") ->
         {:ok, %{state | stack: pop_to_table_body(stack), mode: :in_table}}
 
-      has_in_table_scope?(stack, "tfoot") ->
+      in_table_scope?(stack, "tfoot") ->
         {:ok, %{state | stack: pop_to_table_body(stack), mode: :in_table}}
 
-      has_in_table_scope?(stack, "thead") ->
+      in_table_scope?(stack, "thead") ->
         {:ok, %{state | stack: pop_to_table_body(stack), mode: :in_table}}
 
       true ->
@@ -179,22 +172,4 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   end
 
   defp pop_to_table_body([]), do: []
-
-  # Check if tag is in table scope
-  defp has_in_table_scope?(stack, target), do: do_has_in_table_scope?(stack, target)
-
-  defp do_has_in_table_scope?([%{tag: tag} | _], target) when tag == target, do: true
-
-  defp do_has_in_table_scope?([%{tag: tag} | _], _)
-       when tag in ["table", "template", "html"],
-       do: false
-
-  defp do_has_in_table_scope?([_ | rest], target), do: do_has_in_table_scope?(rest, target)
-  defp do_has_in_table_scope?([], _), do: false
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 end

@@ -29,6 +29,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  import PureHTML.TreeBuilder.Helpers,
+    only: [push_element: 3, add_child_to_stack: 2, add_child: 2, rebuild_stack: 2]
+
   @impl true
   # Character tokens: insert
   def process({:character, text}, state) do
@@ -194,16 +197,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp new_element(tag, attrs) do
-    %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
-  end
-
   defp new_foreign_element(ns, tag, attrs) do
     %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: []}
-  end
-
-  defp push_element(%{stack: stack} = state, tag, attrs) do
-    %{state | stack: [new_element(tag, attrs) | stack]}
   end
 
   defp push_foreign_element(%{stack: stack} = state, ns, tag, attrs, true) do
@@ -229,16 +224,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   defp add_text_child([], _text), do: []
-
-  defp add_child_to_stack(%{stack: stack} = state, child) do
-    %{state | stack: add_child(stack, child)}
-  end
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 
   # Close current option if on top of stack
   defp close_current_option(%{stack: [%{tag: "option"} = option | rest]} = state) do
@@ -316,6 +301,4 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     # Foster parent not found, fall back to normal behavior
     Enum.reverse([child | acc])
   end
-
-  defp rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 end

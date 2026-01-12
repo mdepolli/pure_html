@@ -27,6 +27,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_child: 2]
+
   # Void head elements that can just be added directly
   @void_head_elements ~w(base basefont bgsound link meta)
 
@@ -136,10 +138,4 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
     %{state | mode: new_mode, template_mode_stack: new_tms}
   end
-
-  defp add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  defp add_child([], _child), do: []
 end
