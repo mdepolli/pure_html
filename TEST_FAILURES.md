@@ -1,32 +1,32 @@
 # Test Failures Analysis
 
-**Total: 223 failures out of 1476 tests**
+**Total: 210 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after pop_until_one_of fix*
+*Last updated: 2026-01-12 after frameset fixes*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
 | tests10 | 20 | 33 | 25 |
-| tests19 | 13 | 31 | 23 |
 | webkit01 | 16 | 23 | 18 |
 | tests1 | 23 | 41 | 18 |
+| tests19 | 13 | 31 | 16 |
 | ruby | 1 | 16 | 16 |
 | tests26 | 3 | 18 | 11 |
 | webkit02 | 13 | 23 | 11 |
 | template | 12 | 45 | 10 |
 | tests3 | 10 | 12 | 10 |
-| tests6 | 3 | 13 | 8 |
 | tests18 | 8 | 17 | 8 |
 | tests9 | 3 | 14 | 7 |
 | tests7 | 7 | 15 | 7 |
 | tests20 | 4 | 7 | 7 |
-| tests15 | 3 | 11 | 4 |
 | tests5 | 4 | 4 | 4 |
 | tricky01 | 4 | 9 | 4 |
+| tests6 | 3 | 13 | 3 |
 | tests17 | 3 | 6 | 3 |
 | tests16 | 3 | 3 | 3 |
+| tests15 | 3 | 11 | 3 |
 | tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
 | tests2 | 2 | 10 | 3 |
@@ -46,7 +46,7 @@
 | adoption01 | 2 | 16 | 0 |
 | html5test-com | 1 | 2 | 0 |
 | adoption02 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **223** |
+| **Total** | **177** | **423** | **210** |
 
 ## Status
 
@@ -75,6 +75,8 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Frameset handling fixes** (2026-01-12): Fixed two frameset issues: (1) `close_body_for_frameset` now removes body from html's children in the DOM, not just from the stack. This ensures body and its content are properly removed when frameset replaces it. (2) Added frameset/frame handlers in InTable to ignore them (parse error per spec, since table sets frameset_ok to false). Fixed 13 tests (223 → 210 total). tests19 down from 23 to 16 failures.
 
 - **pop_until_one_of current_parent_ref fix** (2026-01-12): Fixed `pop_until_one_of` to set `current_parent_ref` to the boundary element itself, not its parent. This was causing elements inside templates (and other table context boundaries) to be inserted at the wrong level. When clearing to a boundary like template/tr/html, new elements should become children of that boundary element. Fixed 92 tests (315 → 223 total). Template tests down from 39 to 10 failures. adoption01 now passes completely (0 failures).
 

@@ -228,6 +228,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:ok, set_mode(new_state, :in_select)}
   end
 
+  # Frameset/frame: parse error, ignore (table sets frameset_ok to false)
+  defp process_in_table({:start_tag, tag, _, _}, state) when tag in ["frameset", "frame"] do
+    {:ok, state}
+  end
+
   # Other start tags: foster parent directly
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)

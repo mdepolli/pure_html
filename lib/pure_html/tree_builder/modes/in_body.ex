@@ -1008,22 +1008,32 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp close_body_for_frameset(%{stack: stack, elements: elements} = state) do
-    {new_stack, parent_ref} = do_close_body_for_frameset(stack, elements)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
+    {new_stack, new_elements, parent_ref} = do_close_body_for_frameset(stack, elements)
+    %{state | stack: new_stack, elements: new_elements, current_parent_ref: parent_ref}
   end
 
-  defp do_close_body_for_frameset([], _elements), do: {[], nil}
+  defp do_close_body_for_frameset([], elements), do: {[], elements, nil}
 
   defp do_close_body_for_frameset([ref | rest] = stack, elements) do
     case elements[ref].tag do
       "body" ->
-        # Pop body, return rest
+        # Remove body from its parent (html) per spec
         parent_ref = elements[ref].parent_ref
-        {rest, parent_ref}
+
+        new_elements =
+          if parent_ref do
+            Map.update!(elements, parent_ref, fn parent ->
+              %{parent | children: List.delete(parent.children, ref)}
+            end)
+          else
+            elements
+          end
+
+        {rest, new_elements, parent_ref}
 
       "html" ->
         # Stop at html
-        {stack, elements[ref].parent_ref}
+        {stack, elements, ref}
 
       _ ->
         do_close_body_for_frameset(rest, elements)
