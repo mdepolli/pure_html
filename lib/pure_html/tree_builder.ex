@@ -122,13 +122,6 @@ defmodule PureHTML.TreeBuilder do
   }
 
   # --------------------------------------------------------------------------
-  # Element categories (used by finalization)
-  # --------------------------------------------------------------------------
-
-  @table_context ~w(table tbody thead tfoot tr)
-  @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
-
-  # --------------------------------------------------------------------------
   # Public API
   # --------------------------------------------------------------------------
 
@@ -314,11 +307,11 @@ defmodule PureHTML.TreeBuilder do
 
   defp close_through_head([%{tag: "head"} = head | rest]) do
     # Close head into its parent (should be html)
-    close_through_head(foster_aware_add_child(rest, head))
+    close_through_head(add_to_parent(rest, head))
   end
 
   defp close_through_head([elem | rest]) do
-    close_through_head(foster_aware_add_child(rest, elem))
+    close_through_head(add_to_parent(rest, elem))
   end
 
   defp close_through_head([]) do
@@ -363,36 +356,32 @@ defmodule PureHTML.TreeBuilder do
   end
 
   defp do_finalize([elem | rest]) do
-    do_finalize(foster_aware_add_child(rest, elem))
+    do_finalize(add_to_parent(rest, elem))
   end
 
-  defp foster_aware_add_child([%{tag: next_tag} | _] = rest, %{tag: child_tag} = child)
-       when next_tag in @table_context and child_tag in @table_elements do
-    add_child(rest, child)
+  # Add child to its correct parent using explicit foster_parent_ref if present
+  defp add_to_parent(stack, %{foster_parent_ref: foster_ref} = child) do
+    # Element was foster-parented - add to the element with foster_ref
+    add_to_element_by_ref(stack, child, foster_ref, [])
   end
 
-  defp foster_aware_add_child([%{tag: next_tag} | _] = rest, child)
-       when next_tag in @table_context do
-    if has_tag?(rest, "body") do
-      foster_add_to_body(rest, child, [])
-    else
-      add_child(rest, child)
-    end
+  defp add_to_parent(stack, child) do
+    # Normal case - add to immediate parent (top of stack)
+    add_child(stack, child)
   end
 
-  defp foster_aware_add_child(rest, child) do
-    add_child(rest, child)
+  # Find element by ref in stack and add child to it
+  defp add_to_element_by_ref([%{ref: ref} = target | rest], child, ref, acc) do
+    # Found the target - add child to it
+    rebuild_stack(acc, add_child([target | rest], child))
   end
 
-  defp foster_add_to_body([%{tag: "body"} | _] = stack, child, acc) do
-    rebuild_stack(acc, add_child(stack, child))
+  defp add_to_element_by_ref([current | rest], child, ref, acc) do
+    add_to_element_by_ref(rest, child, ref, [current | acc])
   end
 
-  defp foster_add_to_body([current | rest], child, acc) do
-    foster_add_to_body(rest, child, [current | acc])
-  end
-
-  defp foster_add_to_body([], child, acc) do
+  defp add_to_element_by_ref([], child, _ref, acc) do
+    # Foster parent not found (shouldn't happen) - add to end
     Enum.reverse([child | acc])
   end
 
