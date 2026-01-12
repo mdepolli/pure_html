@@ -1,22 +1,21 @@
 # Test Failures Analysis
 
-**Total: 163 failures out of 1476 tests**
+**Total: 144 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after TreeBuilder code simplification*
+*Last updated: 2026-01-12 after mglyph/malignmark namespace fix*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| tests10 | 20 | 33 | 20 |
 | tests1 | 23 | 41 | 18 |
 | webkit01 | 16 | 23 | 17 |
 | webkit02 | 13 | 23 | 11 |
-| tests3 | 10 | 12 | 10 |
+| tests10 | 20 | 33 | 10 |
 | template | 12 | 45 | 10 |
 | tests19 | 13 | 31 | 9 |
 | tests18 | 8 | 17 | 8 |
-| tests7 | 7 | 15 | 7 |
+| tests7 | 7 | 15 | 6 |
 | tests5 | 4 | 4 | 4 |
 | tricky01 | 4 | 9 | 4 |
 | tests20 | 4 | 7 | 4 |
@@ -29,6 +28,7 @@
 | tests15 | 3 | 11 | 3 |
 | tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
+| tests3 | 10 | 12 | 2 |
 | tables01 | 2 | 17 | 2 |
 | menuitem-element | 2 | 2 | 2 |
 | ruby | 1 | 16 | 1 |
@@ -46,7 +46,7 @@
 | html5test-com | 1 | 2 | 0 |
 | main-element | 0 | 1 | 0 |
 | tests12 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **163** |
+| **Total** | **177** | **423** | **144** |
 
 ## Status
 
@@ -75,6 +75,10 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **MathML mglyph/malignmark namespace fix** (2026-01-12): Elements `mglyph` and `malignmark` should remain in the MathML namespace even when inside MathML text integration points (mi, mo, mn, ms, mtext). Added `mathml_text_integration_point?` helper and special-case handling in start tag processing. Fixed 10 tests (154 → 144 total). tests10: 20 → 10 failures.
+
+- **Leading newline stripping for pre/textarea/listing** (2026-01-12): Per HTML5 spec, a single newline immediately following the start tag of a pre, listing, or textarea element is ignored. Added `maybe_skip_leading_newline` helper that checks if current element is one of these tags with no children yet, then strips the leading newline. Fixed 9 tests (163 → 154 total). tests3: 10 → 2 failures. tests7: 7 → 6 failures.
 
 - **TreeBuilder code simplification** (2026-01-12): Simplified TreeBuilder and all submodules for improved readability and reduced cyclomatic complexity. Key changes: pattern matching in function heads instead of nested conditionals, pipeline usage with `then/2`, extracted reusable helpers (`find_html_ref_in_elements`, `remove_child_from_parent`, `foster_foreign_element`, `close_if_current_tag`, `pop_head_if_current`, `pop_noscript_if_current`), removed unnecessary `do_` wrapper functions, consolidated duplicate code. No test changes - all 163 failures remain unchanged.
 
