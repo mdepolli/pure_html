@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 178 failures out of 1476 tests**
+**Total: 177 failures out of 1476 tests**
 
-*Last updated: 2026-01-11 after in_table_text mode implementation*
+*Last updated: 2026-01-11 after stack/DOM separation Phase 5*
 
 ## By Test File
 
@@ -43,7 +43,7 @@
 | namespace-sensitivity | 1 | 1 |
 | html5test-com | 1 | 1 |
 | doctype01 | 1 | 1 |
-| **Total** | **179** | **178** |
+| **Total** | **178** | **177** |
 
 ## By Category
 
@@ -111,6 +111,8 @@
 4. **Template** (12) - Remaining template edge cases
 
 ## Recent Fixes
+
+- **Stack/DOM separation Phase 5** (2026-01-11): Refactored tree builder architecture to separate parsing context (stack) from DOM structure (elements map). Added `current_parent_ref` to State for O(1) parent tracking. Elements now store explicit `parent_ref` relationships. Foster parenting now uses explicit `foster_parent_ref` markers instead of tag-based heuristics in finalization. Pop operations track element-to-element children in elements map. Replaced heuristic-based `foster_aware_add_child` with `add_to_parent` that uses explicit refs. Fixed 1 test (178 → 177 total).
 
 - **In table text and in head noscript modes** (2026-01-11): Added two new insertion modes. `in_table_text` properly collects and batches character tokens in table context before deciding whether to insert normally (whitespace only) or foster parent (non-whitespace). `in_head_noscript` handles content inside `<noscript>` within `<head>` when scripting is disabled. Also fixed `in_caption` to set mode to `:in_table` when closing caption for reprocessing. Note: `in_select_in_table` mode deferred - requires architectural refactoring to properly intercept InSelect's mode transitions. Fixed 1 test (179 → 178 total). 20 of 21 HTML5 insertion modes now implemented.
 
