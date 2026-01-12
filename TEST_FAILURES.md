@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 210 failures out of 1476 tests**
+**Total: 191 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after frameset fixes*
+*Last updated: 2026-01-12 after ruby element fixes*
 
 ## By Test File
 
@@ -11,8 +11,8 @@
 | tests10 | 20 | 33 | 25 |
 | webkit01 | 16 | 23 | 18 |
 | tests1 | 23 | 41 | 18 |
-| tests19 | 13 | 31 | 16 |
-| ruby | 1 | 16 | 16 |
+| tests19 | 13 | 31 | 12 |
+| ruby | 1 | 16 | 1 |
 | tests26 | 3 | 18 | 11 |
 | webkit02 | 13 | 23 | 11 |
 | template | 12 | 45 | 10 |
@@ -46,7 +46,7 @@
 | adoption01 | 2 | 16 | 0 |
 | html5test-com | 1 | 2 | 0 |
 | adoption02 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **210** |
+| **Total** | **177** | **423** | **191** |
 
 ## Status
 
@@ -75,6 +75,8 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Ruby element implicit closing fix** (2026-01-12): Fixed `pop_to_implicit_close_all_ref` to return the top of stack as `current_parent_ref` instead of its parent. After closing all matching ruby elements (rb, rt, rtc, rp), new elements should be children of the remaining top element (e.g., ruby). Fixed 19 tests (210 → 191 total). ruby tests: 16 → 1 failure. tests19: 16 → 12 failures.
 
 - **Frameset handling fixes** (2026-01-12): Fixed two frameset issues: (1) `close_body_for_frameset` now removes body from html's children in the DOM, not just from the stack. This ensures body and its content are properly removed when frameset replaces it. (2) Added frameset/frame handlers in InTable to ignore them (parse error per spec, since table sets frameset_ok to false). Fixed 13 tests (223 → 210 total). tests19 down from 23 to 16 failures.
 
