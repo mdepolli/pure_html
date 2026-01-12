@@ -17,16 +17,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Creates a new HTML element with the given tag and attributes.
+  Optionally accepts a parent_ref for elements map tracking.
   """
-  def new_element(tag, attrs \\ %{}) do
-    %{ref: make_ref(), tag: tag, attrs: attrs, children: []}
+  def new_element(tag, attrs \\ %{}, parent_ref \\ nil) do
+    %{ref: make_ref(), tag: tag, attrs: attrs, children: [], parent_ref: parent_ref}
   end
 
   @doc """
   Creates a new foreign (SVG/MathML) element with namespace.
+  Optionally accepts a parent_ref for elements map tracking.
   """
-  def new_foreign_element(ns, tag, attrs) do
-    %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: []}
+  def new_foreign_element(ns, tag, attrs, parent_ref \\ nil) do
+    %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: [], parent_ref: parent_ref}
   end
 
   # --------------------------------------------------------------------------
@@ -35,16 +37,31 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Pushes a new element onto the stack.
+  Also stores the element in the elements map with parent_ref for O(1) tree building.
   """
-  def push_element(%{stack: stack} = state, tag, attrs) do
-    %{state | stack: [new_element(tag, attrs) | stack]}
+  def push_element(
+        %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
+        tag,
+        attrs
+      ) do
+    elem = new_element(tag, attrs, parent_ref)
+    new_elements = Map.put(elements, elem.ref, elem)
+    %{state | stack: [elem | stack], elements: new_elements, current_parent_ref: elem.ref}
   end
 
   @doc """
   Pushes a new foreign element onto the stack.
+  Also stores the element in the elements map with parent_ref.
   """
-  def push_foreign_element(%{stack: stack} = state, ns, tag, attrs) do
-    %{state | stack: [new_foreign_element(ns, tag, attrs) | stack]}
+  def push_foreign_element(
+        %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
+        ns,
+        tag,
+        attrs
+      ) do
+    elem = new_foreign_element(ns, tag, attrs, parent_ref)
+    new_elements = Map.put(elements, elem.ref, elem)
+    %{state | stack: [elem | stack], elements: new_elements, current_parent_ref: elem.ref}
   end
 
   @doc """
@@ -201,9 +218,12 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Pops the current element from the stack and adds it as a child of the new top.
+  Also restores current_parent_ref to the popped element's parent.
   """
   def pop_element(%{stack: [elem | rest]} = state) do
-    %{state | stack: add_child(rest, elem)}
+    # Restore current_parent_ref to the popped element's parent
+    parent_ref = Map.get(elem, :parent_ref)
+    %{state | stack: add_child(rest, elem), current_parent_ref: parent_ref}
   end
 
   def pop_element(%{stack: []} = state), do: state
@@ -415,12 +435,21 @@ defmodule PureHTML.TreeBuilder.Helpers do
   This is for elements that need to be foster-parented (inserted before the table)
   but also need to be on the stack to receive children.
 
+  The element's parent_ref is set to the foster parent (table's parent) for correct
+  DOM structure, and current_parent_ref is updated to this element since it will
+  receive children.
+
   Returns {state, ref} where ref is the new element's reference.
   """
-  def foster_push_element(%{stack: stack} = state, tag, attrs) do
-    elem = new_element(tag, attrs)
+  def foster_push_element(%{stack: stack, elements: elements} = state, tag, attrs) do
+    # Find the foster parent ref (table's parent)
+    foster_parent_ref = find_foster_parent_ref(stack)
+    # Create element with foster parent as its parent_ref
+    elem = new_element(tag, attrs, foster_parent_ref)
     {new_stack, ref} = do_foster_push(stack, elem, [])
-    {%{state | stack: new_stack}, ref}
+    # Store in elements map and update current_parent_ref
+    new_elements = Map.put(elements, elem.ref, elem)
+    {%{state | stack: new_stack, elements: new_elements, current_parent_ref: elem.ref}, ref}
   end
 
   @doc """
@@ -431,20 +460,42 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   Returns state (for self-closing) or {state, ref} (for non-self-closing).
   """
-  def foster_push_foreign_element(%{stack: stack} = state, ns, tag, attrs, self_closing) do
+  def foster_push_foreign_element(
+        %{stack: stack, elements: elements} = state,
+        ns,
+        tag,
+        attrs,
+        self_closing
+      ) do
     if self_closing do
       # Self-closing: add as child before table, don't push to stack
       foster_element(state, {{ns, tag}, attrs, []})
     else
-      # Non-self-closing: push to stack to receive children
-      elem = new_foreign_element(ns, tag, attrs)
+      # Find the foster parent ref (table's parent)
+      foster_parent_ref = find_foster_parent_ref(stack)
+      # Create element with foster parent as its parent_ref
+      elem = new_foreign_element(ns, tag, attrs, foster_parent_ref)
       new_stack = do_foster_push_only(stack, elem, [])
-      {%{state | stack: new_stack}, elem.ref}
+      # Store in elements map and update current_parent_ref
+      new_elements = Map.put(elements, elem.ref, elem)
+
+      {%{state | stack: new_stack, elements: new_elements, current_parent_ref: elem.ref},
+       elem.ref}
     end
   end
 
+  # Find the ref of the table's parent (the foster parent)
+  defp find_foster_parent_ref(stack) do
+    do_find_foster_parent_ref(stack)
+  end
+
+  defp do_find_foster_parent_ref([%{tag: "table"}, %{ref: parent_ref} | _]), do: parent_ref
+  defp do_find_foster_parent_ref([%{tag: "table"}]), do: nil
+  defp do_find_foster_parent_ref([_ | rest]), do: do_find_foster_parent_ref(rest)
+  defp do_find_foster_parent_ref([]), do: nil
+
   defp do_foster_push([%{tag: "table"} = table | rest], elem, acc) do
-    # Mark element with foster parent ref
+    # Mark element with foster parent ref (for legacy finalization)
     [foster_parent | _] = rest
     marked_elem = Map.put(elem, :foster_parent_ref, foster_parent.ref)
     # Push marked element on top of rebuilt stack
@@ -460,7 +511,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   defp do_foster_push_only([%{tag: "table"} = table | rest], elem, acc) do
-    # Mark element with foster parent ref
+    # Mark element with foster parent ref (for legacy finalization)
     [foster_parent | _] = rest
     marked_elem = Map.put(elem, :foster_parent_ref, foster_parent.ref)
     # Push marked element on top of rebuilt stack

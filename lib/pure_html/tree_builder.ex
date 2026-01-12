@@ -64,6 +64,8 @@ defmodule PureHTML.TreeBuilder do
       # === DOM Structure ===
       # Element storage: ref => %{ref, tag, attrs, parent_ref, children}
       elements: %{},
+      # Current parent element ref (for O(1) parent lookup during insertion)
+      current_parent_ref: nil,
       # Top-level document children (comments before <html>)
       document_children: []
     ]
