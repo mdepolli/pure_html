@@ -115,16 +115,12 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # --------------------------------------------------------------------------
 
   # Close td or th cell if in table scope
+  @cell_tags ~w(td th)
+
   defp close_cell(state) do
-    cond do
-      in_table_scope?(state, "td") ->
-        close_cell_for_tag(state, "td")
-
-      in_table_scope?(state, "th") ->
-        close_cell_for_tag(state, "th")
-
-      true ->
-        :not_found
+    case Enum.find(@cell_tags, &in_table_scope?(state, &1)) do
+      nil -> :not_found
+      tag -> close_cell_for_tag(state, tag)
     end
   end
 

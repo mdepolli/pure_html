@@ -149,27 +149,18 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # Close the current table body if in table scope
   defp close_table_body(state) do
-    cond do
-      in_table_scope?(state, "tbody") ->
-        case pop_until_tag(state, "tbody") do
-          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
-          {:not_found, _} -> :not_found
-        end
+    tag_to_close =
+      Enum.find(@table_body_tags, fn tag -> in_table_scope?(state, tag) end)
 
-      in_table_scope?(state, "tfoot") ->
-        case pop_until_tag(state, "tfoot") do
-          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
-          {:not_found, _} -> :not_found
-        end
-
-      in_table_scope?(state, "thead") ->
-        case pop_until_tag(state, "thead") do
-          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
-          {:not_found, _} -> :not_found
-        end
-
-      true ->
+    case tag_to_close do
+      nil ->
         :not_found
+
+      tag ->
+        case pop_until_tag(state, tag) do
+          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
+          {:not_found, _} -> :not_found
+        end
     end
   end
 end

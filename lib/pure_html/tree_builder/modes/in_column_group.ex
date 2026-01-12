@@ -27,18 +27,21 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, add_child_to_stack: 2, pop_element: 1, current_tag: 1]
+    only: [
+      add_text_to_stack: 2,
+      add_child_to_stack: 2,
+      pop_element: 1,
+      current_tag: 1,
+      split_whitespace: 1
+    ]
 
   @impl true
   # Whitespace: insert
   def process({:character, text}, state) do
-    case extract_whitespace(text) do
+    case split_whitespace(text) do
       {"", _non_ws} ->
         # Non-whitespace: close colgroup, reprocess
-        case close_colgroup(state) do
-          {:ok, new_state} -> {:reprocess, new_state}
-          :not_colgroup -> {:ok, state}
-        end
+        close_colgroup_or_ignore(state)
 
       {ws, ""} ->
         # All whitespace: insert
@@ -46,12 +49,9 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
 
       {ws, _non_ws} ->
         # Mixed: insert whitespace, then close colgroup and reprocess rest
-        state = add_text_to_stack(state, ws)
-
-        case close_colgroup(state) do
-          {:ok, new_state} -> {:reprocess, new_state}
-          :not_colgroup -> {:ok, state}
-        end
+        state
+        |> add_text_to_stack(ws)
+        |> close_colgroup_or_ignore()
     end
   end
 
@@ -82,10 +82,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
 
   # Other start tags: close colgroup, reprocess
   def process({:start_tag, _, _, _}, state) do
-    case close_colgroup(state) do
-      {:ok, new_state} -> {:reprocess, new_state}
-      :not_colgroup -> {:ok, state}
-    end
+    close_colgroup_or_ignore(state)
   end
 
   # End tag: colgroup - pop and switch to in_table
@@ -115,10 +112,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
 
   # Other end tags: close colgroup, reprocess
   def process({:end_tag, _}, state) do
-    case close_colgroup(state) do
-      {:ok, new_state} -> {:reprocess, new_state}
-      :not_colgroup -> {:ok, state}
-    end
+    close_colgroup_or_ignore(state)
   end
 
   # Error tokens: ignore
@@ -128,26 +122,17 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp extract_whitespace(text) do
-    {ws, rest} =
-      text
-      |> String.graphemes()
-      |> Enum.split_while(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
-
-    {Enum.join(ws), Enum.join(rest)}
-  end
-
-  # Close colgroup if current node is colgroup
-  defp close_colgroup(state) do
+  # Close colgroup and reprocess, or ignore if not in colgroup
+  defp close_colgroup_or_ignore(state) do
     if current_tag(state) == "colgroup" do
       new_state =
         state
         |> pop_element()
         |> Map.put(:mode, :in_table)
 
-      {:ok, new_state}
+      {:reprocess, new_state}
     else
-      :not_colgroup
+      {:ok, state}
     end
   end
 end

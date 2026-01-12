@@ -18,16 +18,10 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   @impl true
-  def process({:character, text}, state) do
-    case String.trim(text) do
-      "" ->
-        # Whitespace: process using "in body" rules
-        {:reprocess, %{state | mode: :in_body}}
-
-      _ ->
-        # Non-whitespace: parse error, switch to in_body, reprocess
-        {:reprocess, %{state | mode: :in_body}}
-    end
+  # Any character token: process using "in body" rules
+  # (whitespace is processed normally, non-whitespace is a parse error but same handling)
+  def process({:character, _}, state) do
+    {:reprocess, %{state | mode: :in_body}}
   end
 
   def process({:comment, text}, state) do

@@ -28,7 +28,8 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
       add_child_to_stack: 2,
       push_element: 3,
       pop_element: 1,
-      current_tag: 1
+      current_tag: 1,
+      extract_whitespace: 1
     ]
 
   @impl true
@@ -111,15 +112,4 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # Error tokens: ignore
   def process({:error, _}, state), do: {:ok, state}
-
-  # --------------------------------------------------------------------------
-  # Helpers
-  # --------------------------------------------------------------------------
-
-  defp extract_whitespace(text) do
-    text
-    |> String.graphemes()
-    |> Enum.filter(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
-    |> Enum.join()
-  end
 end

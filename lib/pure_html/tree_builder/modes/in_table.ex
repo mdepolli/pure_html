@@ -42,7 +42,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       in_table_scope?: 2,
       has_template?: 1,
       foster_parent: 2,
-      new_element: 2
+      new_element: 2,
+      reject_refs_from_af: 2
     ]
 
   @table_sections ~w(tbody thead tfoot)
@@ -360,14 +361,5 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
         # Pop this element and continue
         do_close_table(rest, [ref | closed_refs], elements)
     end
-  end
-
-  defp reject_refs_from_af(af, refs) do
-    ref_set = MapSet.new(refs)
-
-    Enum.reject(af, fn
-      :marker -> false
-      {ref, _, _} -> MapSet.member?(ref_set, ref)
-    end)
   end
 end

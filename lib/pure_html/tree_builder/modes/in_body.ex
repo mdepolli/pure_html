@@ -43,7 +43,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   )
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_context ~w(table tbody thead tfoot tr)
-  @table_elements ~w(table caption colgroup col thead tbody tfoot tr td th script template style)
   @table_sections ~w(tbody thead tfoot)
   @table_cells ~w(td th)
   @table_row_context ~w(tr tbody thead tfoot)
@@ -310,16 +309,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # HTML start tag processing
   # --------------------------------------------------------------------------
 
-  defp process_html_start_tag(tag, attrs, self_closing, state)
-       when tag in ["frameset", "frame"] do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
-
-  defp process_html_start_tag(tag, attrs, self_closing, state)
-       when tag not in @table_elements do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
-
+  # All HTML start tags are processed through do_process_html_start_tag
   defp process_html_start_tag(tag, attrs, self_closing, state) do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
@@ -792,36 +782,25 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     }
   end
 
-  defp ensure_html(state) do
-    if current_tag(state) == "html" do
-      state
-    else
-      state
-    end
-  end
+  defp ensure_html(state), do: state
 
   defp ensure_head(state) do
-    tag = current_tag(state)
-
-    cond do
-      tag == "head" ->
+    case current_tag(state) do
+      tag when tag in ["head", "body"] ->
         state
 
-      tag == "body" ->
-        state
-
-      tag == "html" ->
-        # Check if html element already has head in children
+      "html" ->
         html_elem = current_element(state)
 
         if has_tag_in_children?(state, html_elem.children, "head") do
           state
         else
-          push_element(state, "head", %{})
+          state
+          |> push_element("head", %{})
           |> set_mode(:in_head)
         end
 
-      true ->
+      _ ->
         state
     end
   end
@@ -844,31 +823,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp ensure_body(state) do
-    tag = current_tag(state)
-
-    cond do
-      tag == "body" ->
+    case current_tag(state) do
+      tag when tag in ["body", "frameset", nil] ->
         state
 
-      tag == "frameset" ->
-        state
-
-      tag == "html" ->
+      "html" ->
         html_elem = current_element(state)
 
         if has_tag_in_children?(state, html_elem.children, "frameset") do
           state
         else
-          push_element(state, "body", %{})
+          state
+          |> push_element("body", %{})
           |> set_mode(:in_body)
         end
 
-      tag == nil ->
-        state
-
-      true ->
-        # Pop current element, ensure body, push it back
-        # This is a simplification - in practice, we should already be at html level
+      _ ->
         state
     end
   end

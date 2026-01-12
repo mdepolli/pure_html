@@ -18,7 +18,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, add_text_to_stack: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_child_to_stack: 2, add_text_to_stack: 2, extract_whitespace: 1]
 
   @impl true
   def process({:character, text}, state) do
@@ -60,13 +61,5 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
   def process(_token, state) do
     # Anything else: parse error, ignore
     {:ok, state}
-  end
-
-  # Extract only whitespace characters from text
-  defp extract_whitespace(text) do
-    text
-    |> String.graphemes()
-    |> Enum.filter(&(&1 in [" ", "\t", "\n", "\r", "\f"]))
-    |> Enum.join()
   end
 end

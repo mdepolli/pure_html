@@ -468,8 +468,11 @@ defmodule PureHTML.TreeBuilder.Helpers do
     end
   end
 
-  defp reject_refs_from_af(af, refs) do
-    ref_set = MapSet.new(refs)
+  @doc """
+  Removes formatting entries from the active formatting list that have refs in the given set.
+  """
+  def reject_refs_from_af(af, refs) do
+    ref_set = if is_struct(refs, MapSet), do: refs, else: MapSet.new(refs)
 
     Enum.reject(af, fn
       :marker -> false
@@ -692,4 +695,30 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def correct_tag("image"), do: "img"
   def correct_tag(tag), do: tag
+
+  @whitespace_chars [" ", "\t", "\n", "\r", "\f"]
+
+  @doc """
+  Extracts only whitespace characters from text.
+  Returns the whitespace portion of the string.
+  """
+  def extract_whitespace(text) do
+    text
+    |> String.graphemes()
+    |> Enum.filter(&(&1 in @whitespace_chars))
+    |> Enum.join()
+  end
+
+  @doc """
+  Splits text into leading whitespace and remaining content.
+  Returns {whitespace, rest}.
+  """
+  def split_whitespace(text) do
+    {ws, rest} =
+      text
+      |> String.graphemes()
+      |> Enum.split_while(&(&1 in @whitespace_chars))
+
+    {Enum.join(ws), Enum.join(rest)}
+  end
 end
