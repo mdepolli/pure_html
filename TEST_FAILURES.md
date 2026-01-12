@@ -1,52 +1,52 @@
 # Test Failures Analysis
 
-**Total: 423 failures out of 1476 tests**
+**Total: 315 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after stack/DOM separation Phase 6*
+*Last updated: 2026-01-12 after foster parenting fixes*
 
 ## By Test File
 
-| File | Before | After |
-|------|--------|-------|
-| template | 12 | 45 |
-| tests1 | 23 | 41 |
-| tests10 | 20 | 33 |
-| tests19 | 13 | 31 |
-| webkit01 | 16 | 23 |
-| webkit02 | 13 | 23 |
-| tests26 | 3 | 18 |
-| tests18 | 8 | 17 |
-| tables01 | 2 | 17 |
-| ruby | 1 | 16 |
-| adoption01 | 2 | 16 |
-| tests7 | 7 | 15 |
-| tests9 | 3 | 14 |
-| tests6 | 3 | 13 |
-| tests3 | 10 | 12 |
-| tests15 | 3 | 11 |
-| tests2 | 2 | 10 |
-| tricky01 | 4 | 9 |
-| tests20 | 4 | 7 |
-| tests8 | 2 | 6 |
-| tests17 | 3 | 6 |
-| tests23 | 1 | 5 |
-| tests22 | 1 | 5 |
-| tests5 | 4 | 4 |
-| tests16 | 3 | 3 |
-| tests11 | 3 | 3 |
-| quirks01 | 3 | 3 |
-| tests12 | 0 | 2 |
-| search-element | 1 | 2 |
-| pending-spec-changes | 1 | 2 |
-| menuitem-element | 2 | 2 |
-| html5test-com | 1 | 2 |
-| adoption02 | 0 | 2 |
-| tests24 | 1 | 1 |
-| tests14 | 1 | 1 |
-| namespace-sensitivity | 1 | 1 |
-| main-element | 0 | 1 |
-| doctype01 | 1 | 1 |
-| **Total** | **177** | **423** |
+| File | Phase 5 | Phase 6 | Current |
+|------|---------|---------|---------|
+| template | 12 | 45 | 39 |
+| tests10 | 20 | 33 | 29 |
+| tests1 | 23 | 41 | 28 |
+| tests19 | 13 | 31 | 23 |
+| webkit02 | 13 | 23 | 20 |
+| webkit01 | 16 | 23 | 19 |
+| ruby | 1 | 16 | 16 |
+| tests18 | 8 | 17 | 13 |
+| tests6 | 3 | 13 | 12 |
+| tests26 | 3 | 18 | 12 |
+| tables01 | 2 | 17 | 12 |
+| tests7 | 7 | 15 | 11 |
+| tests9 | 3 | 14 | 10 |
+| tests3 | 10 | 12 | 10 |
+| tests2 | 2 | 10 | 8 |
+| tests20 | 4 | 7 | 7 |
+| tests17 | 3 | 6 | 6 |
+| tests15 | 3 | 11 | 5 |
+| tests5 | 4 | 4 | 4 |
+| tricky01 | 4 | 9 | 4 |
+| tests16 | 3 | 3 | 3 |
+| tests11 | 3 | 3 | 3 |
+| quirks01 | 3 | 3 | 3 |
+| adoption01 | 2 | 16 | 2 |
+| tests12 | 0 | 2 | 2 |
+| search-element | 1 | 2 | 2 |
+| pending-spec-changes | 1 | 2 | 2 |
+| menuitem-element | 2 | 2 | 2 |
+| tests8 | 2 | 6 | 1 |
+| tests24 | 1 | 1 | 1 |
+| tests23 | 1 | 5 | 1 |
+| tests22 | 1 | 5 | 1 |
+| tests14 | 1 | 1 | 1 |
+| namespace-sensitivity | 1 | 1 | 1 |
+| main-element | 0 | 1 | 1 |
+| doctype01 | 1 | 1 | 1 |
+| html5test-com | 1 | 2 | 0 |
+| adoption02 | 0 | 2 | 0 |
+| **Total** | **177** | **423** | **315** |
 
 ## Status
 
@@ -75,6 +75,10 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Foster parenting insertion order** (2026-01-12): Fixed foster parenting to insert content BEFORE the table element in the parent's children list (per HTML5 spec). Previously content was appended. Added `insert_ref_before_in_parent`, `insert_child_before_in_elements`, `insert_text_before_in_elements` functions. Fixed adoption agency to use `foster_parent_ref` for common ancestor when FE was foster parented. Added active formatting reconstruction during foster parenting of text in `in_table_text` mode. Added `:in_cell`, `:in_row`, `:in_caption`, `:in_table_body` to `@body_modes` so delegating to InBody doesn't change mode. Fixed 40 tests (355 → 315 total). adoption01 down to 2 failures (table structure nesting issue).
+
+- **Adoption agency algorithm fixes** (2026-01-12): Fixed critical bug in `find_in_stack_by_ref` that expected `%{ref: ref}` but stack now contains bare refs (adoption agency never ran). Fixed `reconstruct_active_formatting` to use ref-only stack architecture - was pushing full element maps instead of refs, and not adding elements to elements map or setting parent/child relationships. Implemented full HTML5 adoption agency inner loop. Fixed 68 tests (423 → 355 total). adoption02 now passes completely.
 
 - **Stack/DOM separation Phase 6** (2026-01-12): Completed migration to ref-only stack architecture. Updated all mode modules (after_body, in_body, in_column_group, in_frameset, in_head_noscript, in_select, in_template) to use refs instead of full elements. Added `is_map_key` guard clauses for nil-safety. Removed unused legacy functions from tree_builder.ex. Code compiles with zero warnings. All failures are now assertion failures (no crashes). Regression from 177 → 423 failures expected during architectural migration.
 

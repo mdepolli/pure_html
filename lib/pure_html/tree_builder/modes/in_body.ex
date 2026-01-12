@@ -698,15 +698,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp foreign_namespace(%{stack: stack, elements: elements}) do
     Enum.find_value(stack, fn ref ->
-      case elements[ref] do
-        nil ->
-          nil
-
-        elem ->
-          case elem.tag do
-            {ns, _} when ns in [:svg, :math] -> ns
-            _ -> nil
-          end
+      if is_map_key(elements, ref) do
+        case elements[ref].tag do
+          {ns, _} when ns in [:svg, :math] -> ns
+          _ -> nil
+        end
       end
     end)
   end
@@ -871,7 +867,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
-  @body_modes [:in_body, :in_select, :in_table, :in_template]
+  # Modes that can delegate to InBody without mode being changed
+  @body_modes [
+    :in_body,
+    :in_select,
+    :in_table,
+    :in_template,
+    :in_cell,
+    :in_row,
+    :in_caption,
+    :in_table_body
+  ]
 
   defp in_body(%{mode: mode, stack: []} = state) when mode in @body_modes do
     transition_to(%{state | mode: :initial}, :in_body)
@@ -1450,19 +1456,45 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp find_in_stack_by_ref(stack, target_ref) do
-    Enum.find_index(stack, fn
-      %{ref: ref} -> ref == target_ref
-      _ -> false
-    end)
+    Enum.find_index(stack, &(&1 == target_ref))
   end
 
   defp reconstruct_entries([], state), do: state
 
-  defp reconstruct_entries([{old_ref, tag, attrs} | rest], %{stack: stack, af: af} = state) do
-    new_elem = new_element(tag, attrs)
-    new_stack = [new_elem | stack]
+  defp reconstruct_entries(
+         [{old_ref, tag, attrs} | rest],
+         %{stack: stack, af: af, elements: elements, current_parent_ref: parent_ref} = state
+       ) do
+    # Create new element with proper parent
+    new_elem = new_element(tag, attrs, parent_ref)
+
+    # Add to elements map
+    new_elements = Map.put(elements, new_elem.ref, new_elem)
+
+    # Add as child of current parent
+    new_elements =
+      if parent_ref && is_map_key(new_elements, parent_ref) do
+        Map.update!(new_elements, parent_ref, fn p ->
+          %{p | children: [new_elem.ref | p.children]}
+        end)
+      else
+        new_elements
+      end
+
+    # Push ref onto stack (not the whole element)
+    new_stack = [new_elem.ref | stack]
+
+    # Update AF entry to point to new ref
     new_af = update_af_entry(af, old_ref, {new_elem.ref, tag, attrs})
-    reconstruct_entries(rest, %{state | stack: new_stack, af: new_af})
+
+    # Continue with updated state, new element becomes current parent
+    reconstruct_entries(rest, %{
+      state
+      | stack: new_stack,
+        af: new_af,
+        elements: new_elements,
+        current_parent_ref: new_elem.ref
+    })
   end
 
   defp update_af_entry(af, old_ref, new_entry) do
@@ -1622,53 +1654,256 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
-  # Simplified adoption agency with furthest block for ref-only architecture
-  # This handles the common case - full spec compliance would need more work
-  defp run_adoption_agency_with_furthest_block(
+  # Find AF entry by ref (for inner loop)
+  defp find_af_entry_by_ref(af, target_ref) do
+    af
+    |> Enum.with_index()
+    |> Enum.find_value(fn
+      {{^target_ref, tag, attrs}, idx} -> {idx, {target_ref, tag, attrs}}
+      _ -> nil
+    end)
+  end
+
+  # Reparent a node to a new parent
+  # Note: children are stored in reverse order (prepended), so we prepend here too
+  defp reparent_node(elements, child_ref, new_parent_ref) do
+    child = elements[child_ref]
+    old_parent_ref = child.parent_ref
+
+    elements
+    |> maybe_remove_from_old_parent(child_ref, old_parent_ref)
+    |> Map.update!(child_ref, &%{&1 | parent_ref: new_parent_ref})
+    |> Map.update!(new_parent_ref, fn p -> %{p | children: [child_ref | p.children]} end)
+  end
+
+  # Reparent node with foster parenting awareness - inserts before any table element
+  defp reparent_node_foster_aware(elements, child_ref, new_parent_ref) do
+    child = elements[child_ref]
+    old_parent_ref = child.parent_ref
+
+    elements = maybe_remove_from_old_parent(elements, child_ref, old_parent_ref)
+    elements = Map.update!(elements, child_ref, &%{&1 | parent_ref: new_parent_ref})
+
+    # Find table in parent's children to insert before it
+    parent = elements[new_parent_ref]
+
+    table_ref =
+      Enum.find(parent.children, fn
+        ref when is_reference(ref) -> elements[ref] && elements[ref].tag == "table"
+        _ -> false
+      end)
+
+    new_children =
+      if table_ref do
+        # Insert after table in stored list (= before table in output)
+        insert_after_in_list(parent.children, child_ref, table_ref)
+      else
+        # No table, just prepend
+        [child_ref | parent.children]
+      end
+
+    Map.update!(elements, new_parent_ref, fn p -> %{p | children: new_children} end)
+  end
+
+  # Insert new_item after target_item in list (because children are reversed)
+  defp insert_after_in_list(list, new_item, target_item) do
+    do_insert_after(list, new_item, target_item, [])
+  end
+
+  defp do_insert_after([], new_item, _target, acc) do
+    Enum.reverse([new_item | acc])
+  end
+
+  defp do_insert_after([target | rest], new_item, target, acc) do
+    Enum.reverse(acc) ++ [target, new_item | rest]
+  end
+
+  defp do_insert_after([item | rest], new_item, target, acc) do
+    do_insert_after(rest, new_item, target, [item | acc])
+  end
+
+  defp maybe_remove_from_old_parent(elements, _child_ref, nil), do: elements
+
+  defp maybe_remove_from_old_parent(elements, child_ref, old_parent_ref) do
+    if Map.has_key?(elements, old_parent_ref) do
+      Map.update!(elements, old_parent_ref, fn p ->
+        %{p | children: List.delete(p.children, child_ref)}
+      end)
+    else
+      elements
+    end
+  end
+
+  # Update parent_ref for multiple children
+  defp update_children_parent_refs(elements, children, new_parent_ref) do
+    Enum.reduce(children, elements, fn
+      child_ref, elems when is_reference(child_ref) ->
+        Map.update!(elems, child_ref, &%{&1 | parent_ref: new_parent_ref})
+
+      _, elems ->
+        elems
+    end)
+  end
+
+  # Inner loop for adoption agency algorithm
+  # Processes each node between furthest block and formatting element
+  defp run_adoption_inner_loop(
+         state,
+         _fe_ref,
+         _node_idx,
+         last_node_ref,
+         _fb_ref,
+         _common_ancestor_ref,
+         bookmark,
+         counter
+       )
+       when counter >= 3 do
+    {state, last_node_ref, bookmark}
+  end
+
+  defp run_adoption_inner_loop(
          %{stack: stack, af: af, elements: elements} = state,
-         {af_idx, _fe_ref, fe_tag, fe_attrs},
+         fe_ref,
+         node_idx,
+         last_node_ref,
+         fb_ref,
+         common_ancestor_ref,
+         bookmark,
+         counter
+       ) do
+    # Advance node toward FE (node = element before node in stack)
+    next_node_idx = node_idx + 1
+    node_ref = Enum.at(stack, next_node_idx)
+
+    cond do
+      # Reached the formatting element or past it - done
+      node_ref == fe_ref or node_ref == nil ->
+        {state, last_node_ref, bookmark}
+
+      # Node not in AF - remove from stack, continue (don't increment counter)
+      find_af_entry_by_ref(af, node_ref) == nil ->
+        new_stack = List.delete_at(stack, next_node_idx)
+
+        run_adoption_inner_loop(
+          %{state | stack: new_stack},
+          fe_ref,
+          node_idx,
+          last_node_ref,
+          fb_ref,
+          common_ancestor_ref,
+          bookmark,
+          counter
+        )
+
+      # Node in AF - create new element, replace in AF, reparent
+      true ->
+        {node_af_idx, {_, node_tag, node_attrs}} = find_af_entry_by_ref(af, node_ref)
+
+        # Create new element for node's token
+        new_node = new_element(node_tag, node_attrs, common_ancestor_ref)
+        new_elements = Map.put(elements, new_node.ref, new_node)
+
+        # Replace node in AF with new element
+        new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
+
+        # Replace node in stack with new element
+        new_stack = List.replace_at(stack, next_node_idx, new_node.ref)
+
+        # Update bookmark: if last_node is furthest block, move bookmark after new element
+        new_bookmark = if last_node_ref == fb_ref, do: node_af_idx + 1, else: bookmark
+
+        # Reparent last_node to new_node
+        new_elements = reparent_node(new_elements, last_node_ref, new_node.ref)
+
+        run_adoption_inner_loop(
+          %{state | stack: new_stack, af: new_af, elements: new_elements},
+          fe_ref,
+          next_node_idx,
+          new_node.ref,
+          fb_ref,
+          common_ancestor_ref,
+          new_bookmark,
+          counter + 1
+        )
+    end
+  end
+
+  # Full adoption agency with furthest block - HTML5 spec compliant
+  defp run_adoption_agency_with_furthest_block(
+         %{stack: stack, elements: elements} = state,
+         {af_idx, fe_ref, fe_tag, fe_attrs},
          fe_stack_idx,
          fb_idx
        ) do
-    # Get refs involved
-    {above_fb_refs, [fb_ref | rest2]} = Enum.split(stack, fb_idx)
-    between_count = fe_stack_idx - fb_idx - 1
-    {between_refs, [_fe_ref | below_fe_refs]} = Enum.split(rest2, between_count)
+    # Common ancestor = element immediately before FE in stack
+    # BUT: if FE was foster parented, use its actual parent_ref instead
+    common_ancestor_ref =
+      if is_map_key(elements, fe_ref) and
+           is_map_key(elements[fe_ref], :foster_parent_ref) and
+           elements[fe_ref].foster_parent_ref != nil do
+        elements[fe_ref].foster_parent_ref
+      else
+        Enum.at(stack, fe_stack_idx + 1)
+      end
 
-    fb_elem = elements[fb_ref]
+    fb_ref = Enum.at(stack, fb_idx)
 
-    # Partition between elements into formatting and block elements
-    {formatting_refs, _block_refs} = partition_between_refs(between_refs, af, elements)
+    # Run inner loop (processes nodes between FB and FE)
+    {state, last_node_ref, bookmark} =
+      run_adoption_inner_loop(
+        state,
+        fe_ref,
+        fb_idx,
+        fb_ref,
+        fb_ref,
+        common_ancestor_ref,
+        af_idx,
+        0
+      )
 
-    # Create a new formatting element clone to wrap the furthest block's children
-    new_fe_clone = new_element(fe_tag, fe_attrs, fb_elem.parent_ref)
-    new_elements = Map.put(elements, new_fe_clone.ref, new_fe_clone)
+    # Insert last_node at common ancestor
+    # For foster parented elements, insert before the table
+    new_elements = reparent_node_foster_aware(state.elements, last_node_ref, common_ancestor_ref)
 
-    # Update furthest block to have empty children (they're now under the clone)
-    # The children stay in the elements map, just reparent them
-    new_elements = Map.put(new_elements, fb_ref, %{fb_elem | children: [new_fe_clone.ref]})
+    # Create new element for formatting element
+    new_fe = new_element(fe_tag, fe_attrs, fb_ref)
+    new_elements = Map.put(new_elements, new_fe.ref, new_fe)
 
-    # Update clone's children to be the original fb children
+    # Move FB's children to new FE
+    fb_elem = new_elements[fb_ref]
+
     new_elements =
-      Map.update!(new_elements, new_fe_clone.ref, fn clone ->
-        %{clone | children: fb_elem.children}
-      end)
+      new_elements
+      |> Map.update!(new_fe.ref, &%{&1 | children: fb_elem.children})
+      |> Map.put(fb_ref, %{fb_elem | children: [new_fe.ref]})
+      |> update_children_parent_refs(fb_elem.children, new_fe.ref)
 
-    # Build new stack
-    new_stack = above_fb_refs ++ [fb_ref, new_fe_clone.ref] ++ below_fe_refs
+    # Update AF: remove old FE, insert new FE at bookmark
+    adjusted_bookmark = if af_idx < bookmark, do: bookmark - 1, else: bookmark
 
-    # Update af: remove old formatting element and refs
     new_af =
-      af
+      state.af
       |> List.delete_at(af_idx)
-      |> remove_refs_from_af(formatting_refs)
-      |> then(&[{new_fe_clone.ref, fe_tag, fe_attrs} | &1])
+      |> List.insert_at(adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
 
-    # Update parent ref
-    parent_ref =
+    # Update stack: remove FE, insert new FE below FB
+    fe_current_idx = Enum.find_index(state.stack, &(&1 == fe_ref))
+    fb_current_idx = Enum.find_index(state.stack, &(&1 == fb_ref))
+
+    new_stack =
+      if fe_current_idx do
+        state.stack
+        |> List.delete_at(fe_current_idx)
+        |> List.insert_at(fb_current_idx, new_fe.ref)
+      else
+        List.insert_at(state.stack, fb_current_idx + 1, new_fe.ref)
+      end
+
+    # Update current_parent_ref
+    current_parent_ref =
       case new_stack do
-        [top_ref | _] -> new_elements[top_ref].parent_ref
-        [] -> nil
+        [top_ref | _] when is_map_key(new_elements, top_ref) -> new_elements[top_ref].parent_ref
+        _ -> state.current_parent_ref
       end
 
     %{
@@ -1676,30 +1911,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       | stack: new_stack,
         af: new_af,
         elements: new_elements,
-        current_parent_ref: parent_ref
+        current_parent_ref: current_parent_ref
     }
-  end
-
-  defp partition_between_refs(refs, af, _elements) do
-    Enum.split_with(refs, fn ref ->
-      ref_in_af?(af, ref)
-    end)
-  end
-
-  defp ref_in_af?(af, target_ref) do
-    Enum.any?(af, fn
-      {^target_ref, _, _} -> true
-      _ -> false
-    end)
-  end
-
-  defp remove_refs_from_af(af, refs) do
-    ref_set = MapSet.new(refs)
-
-    Enum.reject(af, fn
-      {ref, _, _} -> MapSet.member?(ref_set, ref)
-      _ -> false
-    end)
   end
 
   defp find_furthest_block(%{stack: stack, elements: elements}, fe_idx) do

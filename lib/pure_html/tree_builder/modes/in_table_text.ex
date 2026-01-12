@@ -10,6 +10,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   - Character tokens: append to pending table character tokens
   - Anything else:
     - If pending tokens have any non-whitespace: foster parent all
+      (using "in body" rules with foster parenting enabled)
     - Otherwise: insert as normal text
     - Switch back to original mode
     - Reprocess current token
@@ -48,10 +49,72 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
         # Whitespace only: insert normally
         add_text_to_stack(state, text)
       else
-        # Contains non-whitespace: foster parent
-        foster_text(state, text)
+        # Contains non-whitespace: foster parent with active formatting reconstruction
+        # Per spec: "process the token using the rules for 'in body' insertion mode"
+        # with foster parenting enabled
+        foster_parent_with_formatting(state, text)
       end
 
     %{state | pending_table_text: ""}
+  end
+
+  # Foster parent text with active formatting reconstruction
+  # This emulates "in body" processing with foster parenting enabled
+  defp foster_parent_with_formatting(%{af: af} = state, text) do
+    # Check if we have any formatting elements to reconstruct
+    entries_to_reconstruct =
+      af
+      |> Enum.take_while(&(&1 != :marker))
+      |> Enum.filter(fn {ref, _tag, _attrs} ->
+        not Enum.any?(state.stack, &(&1 == ref))
+      end)
+
+    if entries_to_reconstruct == [] do
+      # No formatting to reconstruct - just foster parent the text
+      foster_text(state, text)
+    else
+      # Reconstruct formatting elements (they'll be foster parented)
+      # Then add text to the reconstructed element (not foster parented)
+      state
+      |> reconstruct_formatting_for_foster()
+      |> add_text_to_stack(text)
+    end
+  end
+
+  # Reconstruct active formatting elements for foster parenting
+  # Creates clones of formatting elements and foster-parents them
+  defp reconstruct_formatting_for_foster(%{stack: stack, af: af} = state) do
+    # Get entries to reconstruct (formatting elements not on stack)
+    entries =
+      af
+      |> Enum.take_while(&(&1 != :marker))
+      |> Enum.reverse()
+      |> Enum.filter(fn {ref, _tag, _attrs} ->
+        not Enum.any?(stack, &(&1 == ref))
+      end)
+
+    # Reconstruct each entry with foster parenting
+    reconstruct_entries_foster(entries, state)
+  end
+
+  defp reconstruct_entries_foster([], state), do: state
+
+  defp reconstruct_entries_foster([{old_ref, tag, attrs} | rest], state) do
+    # Foster-push the element (inserts before table)
+    {new_state, new_ref} =
+      PureHTML.TreeBuilder.Helpers.foster_push_element(state, tag, attrs)
+
+    # Update AF entry to point to new ref
+    new_af = update_af_entry(new_state.af, old_ref, {new_ref, tag, attrs})
+    new_state = %{new_state | af: new_af}
+
+    reconstruct_entries_foster(rest, new_state)
+  end
+
+  defp update_af_entry(af, old_ref, new_entry) do
+    Enum.map(af, fn
+      {^old_ref, _, _} -> new_entry
+      entry -> entry
+    end)
   end
 end

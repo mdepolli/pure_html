@@ -116,6 +116,71 @@ defmodule PureHTML.TreeBuilder.Helpers do
     end)
   end
 
+  # Insert a child before a specific element (for foster parenting)
+  defp insert_child_before_in_elements(elements, parent_ref, child, nil) do
+    add_child_to_elements(elements, parent_ref, child)
+  end
+
+  defp insert_child_before_in_elements(elements, parent_ref, child, insert_before_ref) do
+    Map.update!(elements, parent_ref, fn parent ->
+      children = insert_after_in_list(parent.children, child, insert_before_ref)
+      %{parent | children: children}
+    end)
+  end
+
+  # Insert text before a specific element (for foster parenting)
+  # Merges with adjacent text if possible
+  defp insert_text_before_in_elements(elements, parent_ref, text, nil) do
+    add_text_to_elements(elements, parent_ref, text)
+  end
+
+  defp insert_text_before_in_elements(elements, parent_ref, text, insert_before_ref) do
+    Map.update!(elements, parent_ref, fn parent ->
+      children = insert_text_after_in_list(parent.children, text, insert_before_ref)
+      %{parent | children: children}
+    end)
+  end
+
+  # Insert text after target in list, merging with adjacent text if possible
+  defp insert_text_after_in_list(list, text, target_ref) do
+    do_insert_text_after(list, text, target_ref, [])
+  end
+
+  defp do_insert_text_after([], text, _target, acc) do
+    # Target not found, prepend text to result
+    merge_text_at_end(Enum.reverse(acc), text)
+  end
+
+  defp do_insert_text_after([target | rest], text, target, acc) do
+    # Found target - insert text right after it, merging if next is text
+    prefix = Enum.reverse(acc) ++ [target]
+    merge_text_at_start(prefix, text, rest)
+  end
+
+  defp do_insert_text_after([item | rest], text, target, acc) do
+    do_insert_text_after(rest, text, target, [item | acc])
+  end
+
+  # Merge text at start of suffix list if first element is text
+  defp merge_text_at_start(prefix, text, [next_text | rest]) when is_binary(next_text) do
+    prefix ++ [next_text <> text | rest]
+  end
+
+  defp merge_text_at_start(prefix, text, rest) do
+    prefix ++ [text | rest]
+  end
+
+  # Merge text at end of list if last element is text
+  defp merge_text_at_end(list, text) do
+    case List.last(list) do
+      last_text when is_binary(last_text) ->
+        List.update_at(list, -1, &(&1 <> text))
+
+      _ ->
+        list ++ [text]
+    end
+  end
+
   # Add element ref to parent's children in elements map
   defp add_ref_to_parent_children(elements, _ref, nil), do: elements
 
@@ -123,6 +188,40 @@ defmodule PureHTML.TreeBuilder.Helpers do
     Map.update!(elements, parent_ref, fn parent ->
       %{parent | children: [ref | parent.children]}
     end)
+  end
+
+  # Insert a child ref before a specific element in the parent's children.
+  # Children are stored in reverse order, so "before X" in final output means
+  # "after X" in the stored list.
+  defp insert_ref_before_in_parent(elements, ref, parent_ref, nil) do
+    # No insert_before specified, just prepend
+    add_ref_to_parent_children(elements, ref, parent_ref)
+  end
+
+  defp insert_ref_before_in_parent(elements, ref, parent_ref, insert_before_ref) do
+    Map.update!(elements, parent_ref, fn parent ->
+      children = insert_after_in_list(parent.children, ref, insert_before_ref)
+      %{parent | children: children}
+    end)
+  end
+
+  # Insert new_item after target_item in list (because children are reversed)
+  defp insert_after_in_list(list, new_item, target_item) do
+    do_insert_after(list, new_item, target_item, [])
+  end
+
+  defp do_insert_after([], new_item, _target, acc) do
+    # Target not found, prepend to result (append to original)
+    Enum.reverse([new_item | acc])
+  end
+
+  defp do_insert_after([target | rest], new_item, target, acc) do
+    # Found target, insert new_item right after it
+    Enum.reverse(acc) ++ [target, new_item | rest]
+  end
+
+  defp do_insert_after([item | rest], new_item, target, acc) do
+    do_insert_after(rest, new_item, target, [item | acc])
   end
 
   # --------------------------------------------------------------------------
@@ -462,8 +561,11 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   defp do_find_foster_parent([ref | rest], elements) do
     if elements[ref].tag == "table" do
+      table_ref = ref
+
       case rest do
-        [parent_ref | _] -> {parent_ref, nil}
+        # Insert before the table in its parent's children
+        [parent_ref | _] -> {parent_ref, table_ref}
         [] -> {:document, nil}
       end
     else
@@ -482,38 +584,45 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Foster parents an element (adds it to the foster parent's children).
+  Inserts before the table element per HTML5 spec.
   """
   def foster_element(%{elements: elements} = state, child) do
-    {foster_parent_ref, _} = find_foster_parent(state)
+    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     if foster_parent_ref == :document do
       state
     else
-      new_elements = add_child_to_elements(elements, foster_parent_ref, child)
+      new_elements =
+        insert_child_before_in_elements(elements, foster_parent_ref, child, insert_before_ref)
+
       %{state | elements: new_elements}
     end
   end
 
   @doc """
   Foster parents text (adds it to the foster parent's children).
+  Inserts before the table element per HTML5 spec.
   """
   def foster_text(%{elements: elements} = state, text) do
-    {foster_parent_ref, _} = find_foster_parent(state)
+    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     if foster_parent_ref == :document do
       state
     else
-      new_elements = add_text_to_elements(elements, foster_parent_ref, text)
+      new_elements =
+        insert_text_before_in_elements(elements, foster_parent_ref, text, insert_before_ref)
+
       %{state | elements: new_elements}
     end
   end
 
   @doc """
   Foster parents an element and pushes it to the stack.
+  Inserts before the table element per HTML5 spec.
   Returns {state, ref}.
   """
   def foster_push_element(%{stack: stack, elements: elements} = state, tag, attrs) do
-    {foster_parent_ref, _} = find_foster_parent(state)
+    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     actual_parent_ref =
       if foster_parent_ref == :document, do: nil, else: foster_parent_ref
@@ -525,7 +634,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
     new_elements =
       if actual_parent_ref do
-        add_ref_to_parent_children(new_elements, elem.ref, actual_parent_ref)
+        insert_ref_before_in_parent(new_elements, elem.ref, actual_parent_ref, insert_before_ref)
       else
         new_elements
       end
@@ -536,6 +645,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Foster parents a foreign element and pushes it to the stack.
+  Inserts before the table element per HTML5 spec.
   Returns state (for self-closing) or {state, ref} (for non-self-closing).
   """
   def foster_push_foreign_element(
@@ -545,7 +655,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
         attrs,
         self_closing
       ) do
-    {foster_parent_ref, _} = find_foster_parent(state)
+    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     actual_parent_ref =
       if foster_parent_ref == :document, do: nil, else: foster_parent_ref
@@ -560,7 +670,12 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
       new_elements =
         if actual_parent_ref do
-          add_ref_to_parent_children(new_elements, elem.ref, actual_parent_ref)
+          insert_ref_before_in_parent(
+            new_elements,
+            elem.ref,
+            actual_parent_ref,
+            insert_before_ref
+          )
         else
           new_elements
         end

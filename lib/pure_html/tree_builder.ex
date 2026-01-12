@@ -24,8 +24,7 @@ defmodule PureHTML.TreeBuilder do
   """
 
   alias PureHTML.Tokenizer
-  alias PureHTML.TreeBuilder.Helpers
-  alias PureHTML.TreeBuilder.Modes
+  alias PureHTML.TreeBuilder.{Helpers, Modes}
 
   # --------------------------------------------------------------------------
   # State and Element structures
