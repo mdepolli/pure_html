@@ -151,22 +151,17 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # End tag: optgroup
   def process({:end_tag, "optgroup"}, state) do
-    tag = current_tag(state)
-
-    cond do
-      # Current is option, parent is optgroup: pop option, then pop optgroup
-      tag == "option" and get_parent_tag(state) == "optgroup" ->
+    case {current_tag(state), get_parent_tag(state)} do
+      {"option", "optgroup"} ->
         state
         |> pop_element()
         |> pop_element()
         |> then(&{:ok, &1})
 
-      # Current is optgroup: pop it
-      tag == "optgroup" ->
+      {"optgroup", _} ->
         {:ok, pop_element(state)}
 
-      # Otherwise ignore
-      true ->
+      _ ->
         {:ok, state}
     end
   end
@@ -265,12 +260,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   defp do_close_to_select([ref | rest], elements) do
-    tag = elements[ref].tag
-
-    if tag == "select" do
-      {rest, elements[ref].parent_ref}
-    else
-      do_close_to_select(rest, elements)
+    case elements[ref].tag do
+      "select" -> {rest, elements[ref].parent_ref}
+      _ -> do_close_to_select(rest, elements)
     end
   end
 

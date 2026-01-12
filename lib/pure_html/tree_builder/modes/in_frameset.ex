@@ -80,27 +80,20 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   # Per spec: If current node is root html element, ignore. Otherwise pop frameset.
   # If not fragment parsing and current node is no longer frameset, switch to after frameset.
   def process({:end_tag, "frameset"}, state) do
-    tag = current_tag(state)
-
-    cond do
-      # Current node is html, ignore
-      tag == "html" ->
+    case current_tag(state) do
+      "html" ->
         {:ok, state}
 
-      # Current node is frameset - pop it
-      tag == "frameset" ->
+      "frameset" ->
         new_state = pop_element(state)
 
         # Switch to after_frameset if current node is no longer a frameset
-        if current_tag(new_state) == "frameset" do
-          # Still in a nested frameset, stay in in_frameset mode
-          {:ok, new_state}
-        else
-          # Current node is not frameset (likely html), switch to after_frameset
-          {:ok, %{new_state | mode: :after_frameset}}
+        case current_tag(new_state) do
+          "frameset" -> {:ok, new_state}
+          _ -> {:ok, %{new_state | mode: :after_frameset}}
         end
 
-      true ->
+      _ ->
         {:ok, state}
     end
   end

@@ -307,9 +307,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp ensure_colgroup(state) do
-    tag = current_tag(state)
-
-    case tag do
+    case current_tag(state) do
       "colgroup" -> state
       "table" -> push_element(state, "colgroup", %{})
       _ -> state
@@ -317,12 +315,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp ensure_tbody(state) do
-    tag = current_tag(state)
-
-    cond do
-      tag in @table_sections -> state
-      tag == "table" -> push_element(state, "tbody", %{})
-      true -> state
+    case current_tag(state) do
+      tag when tag in @table_sections -> state
+      "table" -> push_element(state, "tbody", %{})
+      _ -> state
     end
   end
 
@@ -345,20 +341,16 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp do_close_table([], closed_refs, _elements), do: {[], closed_refs, nil}
 
   defp do_close_table([ref | rest], closed_refs, elements) do
-    tag = elements[ref].tag
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    cond do
-      tag == "table" ->
-        # Found the table - pop it and return
-        parent_ref = elements[ref].parent_ref
+    case tag do
+      "table" ->
         {rest, [ref | closed_refs], parent_ref}
 
-      tag in ["template", "html"] ->
-        # Boundary - stop here
+      boundary when boundary in ["template", "html"] ->
         {[ref | rest], closed_refs, ref}
 
-      true ->
-        # Pop this element and continue
+      _ ->
         do_close_table(rest, [ref | closed_refs], elements)
     end
   end

@@ -242,24 +242,22 @@ defmodule PureHTML.TreeBuilder do
   # Find the html element ref
   defp find_html_ref(stack, elements) do
     # First try: find html at bottom of stack
-    html_ref =
-      stack
-      |> Enum.reverse()
-      |> Enum.find(fn ref ->
-        elem = elements[ref]
-        elem && elem.tag == "html"
-      end)
+    stack
+    |> Enum.reverse()
+    |> Enum.find(fn ref ->
+      elem = elements[ref]
+      elem && elem.tag == "html"
+    end)
+    |> case do
+      nil ->
+        # Fallback: find element with tag "html" in elements map
+        case Enum.find(elements, fn {_ref, elem} -> elem.tag == "html" end) do
+          {ref, _elem} -> ref
+          nil -> nil
+        end
 
-    if html_ref do
-      html_ref
-    else
-      # Fallback: find element with tag "html" in elements map
-      elements
-      |> Enum.find(fn {_ref, elem} -> elem.tag == "html" end)
-      |> case do
-        {ref, _elem} -> ref
-        nil -> nil
-      end
+      html_ref ->
+        html_ref
     end
   end
 
@@ -308,14 +306,14 @@ defmodule PureHTML.TreeBuilder do
   defp ensure_head(other), do: other
 
   defp ensure_body(%{tag: "html", children: children} = html) do
-    has_body_or_frameset =
+    has_body_or_frameset? =
       Enum.any?(children, fn
-        %{tag: tag} when tag in ["body", "frameset"] -> true
-        {tag, _, _} when tag in ["body", "frameset"] -> true
+        %{tag: tag} -> tag in ["body", "frameset"]
+        {tag, _, _} -> tag in ["body", "frameset"]
         _ -> false
       end)
 
-    if has_body_or_frameset do
+    if has_body_or_frameset? do
       html
     else
       %{html | children: children ++ [%{tag: "body", attrs: %{}, children: []}]}

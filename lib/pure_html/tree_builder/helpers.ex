@@ -436,15 +436,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
   defp do_pop_until_tag([ref | rest], tag, popped, elements) do
     elem = elements[ref]
 
-    cond do
-      elem.tag == tag ->
-        {:found, rest, [ref | popped], elem.parent_ref}
-
-      elem.tag == "template" ->
-        :not_found
-
-      true ->
-        do_pop_until_tag(rest, tag, [ref | popped], elements)
+    case elem.tag do
+      ^tag -> {:found, rest, [ref | popped], elem.parent_ref}
+      "template" -> :not_found
+      _ -> do_pop_until_tag(rest, tag, [ref | popped], elements)
     end
   end
 
@@ -517,12 +512,12 @@ defmodule PureHTML.TreeBuilder.Helpers do
   defp do_generate_implied_end_tags_except([], _except, _elements), do: {[], nil}
 
   defp do_generate_implied_end_tags_except([ref | rest] = stack, except, elements) do
-    elem = elements[ref]
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    if elem.tag in @implied_end_tags and elem.tag != except do
+    if tag in @implied_end_tags and tag != except do
       do_generate_implied_end_tags_except(rest, except, elements)
     else
-      {stack, elem.parent_ref}
+      {stack, parent_ref}
     end
   end
 

@@ -145,12 +145,14 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   # Close head element and switch to after_head mode
   defp close_head(state) do
-    if current_tag(state) == "head" do
-      state
-      |> pop_element()
-      |> Map.put(:mode, :after_head)
-    else
-      %{state | mode: :after_head}
+    case current_tag(state) do
+      "head" ->
+        state
+        |> pop_element()
+        |> Map.put(:mode, :after_head)
+
+      _ ->
+        %{state | mode: :after_head}
     end
   end
 end

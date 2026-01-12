@@ -266,11 +266,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state =
       cond do
         is_nil(ns) or html_integration_point?(state) ->
-          process_html_start_tag(tag, attrs, self_closing, state)
+          do_process_html_start_tag(tag, attrs, self_closing, state)
 
         html_breakout_tag?(tag) ->
           state = close_foreign_content(state)
-          process_html_start_tag(tag, attrs, self_closing, state)
+          do_process_html_start_tag(tag, attrs, self_closing, state)
 
         true ->
           do_push_foreign_element(state, ns, tag, attrs, self_closing)
@@ -308,11 +308,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
   # HTML start tag processing
   # --------------------------------------------------------------------------
-
-  # All HTML start tags are processed through do_process_html_start_tag
-  defp process_html_start_tag(tag, attrs, self_closing, state) do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
 
   # Template in template mode
   defp do_process_html_start_tag("template", attrs, _, %{mode: :in_template} = state) do
@@ -522,7 +517,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Adopt-on-duplicate formatting elements
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @adopt_on_duplicate_elements do
+  defp do_process_html_start_tag(tag, attrs, _, state)
+       when tag in @adopt_on_duplicate_elements do
     state
     |> in_body()
     |> reconstruct_active_formatting()
@@ -1002,11 +998,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_close_body_for_frameset([], elements), do: {[], elements, nil}
 
   defp do_close_body_for_frameset([ref | rest] = stack, elements) do
-    case elements[ref].tag do
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
+
+    case tag do
       "body" ->
         # Remove body from its parent (html) per spec
-        parent_ref = elements[ref].parent_ref
-
         new_elements =
           if parent_ref do
             Map.update!(elements, parent_ref, fn parent ->
@@ -1019,7 +1015,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         {rest, new_elements, parent_ref}
 
       "html" ->
-        # Stop at html
         {stack, elements, ref}
 
       _ ->
@@ -1063,20 +1058,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp determine_mode_from_stack([], _elements), do: :in_body
 
   defp determine_mode_from_stack([ref | rest], elements) do
-    tag = elements[ref].tag
-
-    cond do
-      tag == "template" -> :in_template
-      tag in ~w(tbody thead tfoot) -> :in_table
-      tag == "tr" -> :in_table
-      tag in ~w(td th caption) -> :in_body
-      tag == "table" -> :in_table
-      tag == "body" -> :in_body
-      tag == "frameset" -> :in_frameset
-      tag == "head" -> :in_head
-      tag == "html" -> :before_head
-      tag == "select" -> :in_select
-      true -> determine_mode_from_stack(rest, elements)
+    case elements[ref].tag do
+      "template" -> :in_template
+      tag when tag in ~w(tbody thead tfoot) -> :in_table
+      "tr" -> :in_table
+      tag when tag in ~w(td th caption) -> :in_body
+      "table" -> :in_table
+      "body" -> :in_body
+      "frameset" -> :in_frameset
+      "head" -> :in_head
+      "html" -> :before_head
+      "select" -> :in_select
+      _ -> determine_mode_from_stack(rest, elements)
     end
   end
 
@@ -1108,14 +1101,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   defp close_option_optgroup_in_select(state) do
-    tag = current_tag(state)
+    case current_tag(state) do
+      tag when tag in ["option", "optgroup"] ->
+        state
+        |> pop_element()
+        |> close_option_optgroup_in_select()
 
-    if tag in ["option", "optgroup"] do
-      state
-      |> pop_element()
-      |> close_option_optgroup_in_select()
-    else
-      state
+      _ ->
+        state
     end
   end
 
@@ -1150,12 +1143,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_get_refs_to_close_for_table([], _elements, acc), do: acc
 
   defp do_get_refs_to_close_for_table([ref | rest], elements, acc) do
-    tag = elements[ref].tag
-
-    cond do
-      tag == "table" -> MapSet.put(acc, ref)
-      tag in ["template", "html"] -> acc
-      true -> do_get_refs_to_close_for_table(rest, elements, MapSet.put(acc, ref))
+    case elements[ref].tag do
+      "table" -> MapSet.put(acc, ref)
+      tag when tag in ["template", "html"] -> acc
+      _ -> do_get_refs_to_close_for_table(rest, elements, MapSet.put(acc, ref))
     end
   end
 
@@ -1166,27 +1157,23 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp ensure_tbody(state) do
-    tag = current_tag(state)
-
-    cond do
-      tag == "table" -> push_element(state, "tbody", %{})
-      tag in @table_sections -> state
-      tag == "tr" -> state
-      true -> state
+    case current_tag(state) do
+      "table" -> push_element(state, "tbody", %{})
+      tag when tag in @table_sections -> state
+      "tr" -> state
+      _ -> state
     end
   end
 
   defp ensure_tr(state) do
-    tag = current_tag(state)
-
-    cond do
-      tag in @table_sections ->
+    case current_tag(state) do
+      tag when tag in @table_sections ->
         push_element(state, "tr", %{})
 
-      tag == "tr" ->
+      "tr" ->
         state
 
-      tag == "template" ->
+      "template" ->
         elem = current_element(state)
 
         if has_table_row_structure?(state, elem.children) do
@@ -1195,7 +1182,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
           state
         end
 
-      true ->
+      _ ->
         state
     end
   end
@@ -1210,20 +1197,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @colgroup_close_tags ["td", "th", "tr"] ++ @table_sections
 
   defp ensure_colgroup(state) do
-    tag = current_tag(state)
-
-    cond do
-      tag == "colgroup" ->
-        state
-
-      tag == "table" ->
-        push_element(state, "colgroup", %{})
-
-      tag in @colgroup_close_tags ->
-        state |> pop_element() |> ensure_colgroup()
-
-      true ->
-        state
+    case current_tag(state) do
+      "colgroup" -> state
+      "table" -> push_element(state, "colgroup", %{})
+      tag when tag in @colgroup_close_tags -> state |> pop_element() |> ensure_colgroup()
+      _ -> state
     end
   end
 
@@ -1271,19 +1249,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_find_p_in_scope_ref([], _elements, _above), do: nil
 
   defp do_find_p_in_scope_ref([ref | rest], elements, above) when is_map_key(elements, ref) do
-    %{tag: tag} = elements[ref]
-
-    cond do
-      tag == "p" ->
+    case elements[ref].tag do
+      "p" ->
         {ref, Enum.reverse(above)}
 
-      is_button_scope_boundary(tag) ->
+      tag when is_button_scope_boundary(tag) ->
         nil
 
-      is_tuple(tag) and elem(tag, 0) in [:svg, :math] ->
+      {ns, _} when ns in [:svg, :math] ->
         nil
 
-      true ->
+      _ ->
         do_find_p_in_scope_ref(rest, elements, [ref | above])
     end
   end
@@ -1297,14 +1273,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp do_pop_to_ref([], _elements, _target), do: {[], nil}
-
-  defp do_pop_to_ref([ref | rest], elements, target) do
-    if ref == target do
-      {rest, elements[ref].parent_ref}
-    else
-      do_pop_to_ref(rest, elements, target)
-    end
-  end
+  defp do_pop_to_ref([ref | rest], elements, ref), do: {rest, elements[ref].parent_ref}
+  defp do_pop_to_ref([_ | rest], elements, target), do: do_pop_to_ref(rest, elements, target)
 
   @implicit_close_boundaries ~w(table template body html)
   @li_scope_boundaries ~w(ol ul table template body html)
@@ -1352,17 +1322,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_pop_to_implicit_close_ref([], _elements, _closes, _boundaries), do: :not_found
 
   defp do_pop_to_implicit_close_ref([ref | rest], elements, closes, boundaries) do
-    tag = elements[ref].tag
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
     cond do
-      tag in boundaries ->
-        :not_found
-
-      tag in closes ->
-        {:ok, rest, elements[ref].parent_ref}
-
-      true ->
-        do_pop_to_implicit_close_ref(rest, elements, closes, boundaries)
+      tag in boundaries -> :not_found
+      tag in closes -> {:ok, rest, parent_ref}
+      true -> do_pop_to_implicit_close_ref(rest, elements, closes, boundaries)
     end
   end
 
@@ -1424,14 +1389,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
     cond do
-      tag in @headings ->
-        {:found, rest, parent_ref}
-
-      tag == "template" ->
-        :not_found
-
-      true ->
-        pop_until_any_heading(rest, elements)
+      tag in @headings -> {:found, rest, parent_ref}
+      tag == "template" -> :not_found
+      true -> pop_until_any_heading(rest, elements)
     end
   end
 
@@ -1444,21 +1404,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_pop_until_tag_ref([ref | rest], elements, target) when is_map_key(elements, ref) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    cond do
-      tag == target ->
-        {:found, rest, parent_ref}
-
-      tag == {:svg, target} ->
-        {:found, rest, parent_ref}
-
-      tag == {:math, target} ->
-        {:found, rest, parent_ref}
-
-      tag == "template" ->
-        :not_found
-
-      true ->
-        do_pop_until_tag_ref(rest, elements, target)
+    case tag do
+      ^target -> {:found, rest, parent_ref}
+      {:svg, ^target} -> {:found, rest, parent_ref}
+      {:math, ^target} -> {:found, rest, parent_ref}
+      "template" -> :not_found
+      _ -> do_pop_until_tag_ref(rest, elements, target)
     end
   end
 
