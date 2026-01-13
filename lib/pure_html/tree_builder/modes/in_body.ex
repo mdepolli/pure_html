@@ -9,6 +9,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  alias PureHTML.TreeBuilder.AdoptionAgency
+
   import PureHTML.TreeBuilder.Helpers,
     only: [
       new_element: 2,
@@ -32,15 +34,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
-  @special_elements ~w(
-    address applet area article aside base basefont bgsound blockquote body br button
-    caption center col colgroup dd details dialog dir div dl dt embed fieldset
-    figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hgroup
-    hr html iframe img input keygen li link listing main marquee menu menuitem meta
-    nav noembed noframes noscript object ol p param plaintext pre ruby script section
-    select source style summary table tbody td template textarea tfoot th thead title
-    tr track ul wbr xmp
-  )
   @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
   @table_context ~w(table tbody thead tfoot tr)
   @table_sections ~w(tbody thead tfoot)
@@ -79,8 +72,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Scope boundary guards
   @scope_boundaries ~w(applet caption html table td th marquee object template)
-  defguardp is_scope_boundary(tag) when tag in @scope_boundaries
-
   @button_scope_extras ~w(button)
   defguardp is_button_scope_boundary(tag)
             when tag in @scope_boundaries or tag in @button_scope_extras
@@ -170,7 +161,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   def process({:end_tag, tag}, state) when tag in @formatting_elements do
-    {:ok, run_adoption_agency(state, tag)}
+    {:ok, AdoptionAgency.run(state, tag, &close_tag_ref/2)}
   end
 
   def process({:end_tag, tag}, %{af: af} = state) when tag in @table_cells do
@@ -1557,7 +1548,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp maybe_close_existing_formatting(%{af: af} = state, tag) do
     if find_formatting_entry(af, tag) do
-      state = run_adoption_agency(state, tag)
+      state = AdoptionAgency.run(state, tag, &close_tag_ref/2)
       %{state | af: remove_formatting_entry(state.af, tag)}
     else
       state
@@ -1593,98 +1584,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
-  # --------------------------------------------------------------------------
-  # Adoption agency algorithm
-  # --------------------------------------------------------------------------
-
-  defp run_adoption_agency(state, subject) do
-    run_adoption_agency_outer_loop(state, subject, 0)
-  end
-
-  defp run_adoption_agency_outer_loop(state, _subject, iteration) when iteration >= 8, do: state
-
-  defp run_adoption_agency_outer_loop(%{af: af} = state, subject, iteration) do
-    case locate_formatting_element(state, subject) do
-      :not_in_af ->
-        handle_no_formatting_entry(state, subject, iteration)
-
-      {:not_in_stack, af_idx} ->
-        %{state | af: List.delete_at(af, af_idx)}
-
-      :not_in_scope ->
-        state
-
-      {:no_furthest_block, af_idx, stack_idx} ->
-        pop_to_formatting_element_ref(state, af_idx, stack_idx)
-
-      {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx} ->
-        state
-        |> run_adoption_agency_with_furthest_block(
-          {af_idx, fe_ref, fe_tag, fe_attrs},
-          stack_idx,
-          fb_idx
-        )
-        |> run_adoption_agency_outer_loop(subject, iteration + 1)
-    end
-  end
-
-  defp locate_formatting_element(%{af: af, stack: stack} = state, subject) do
-    with {:ok, af_idx, {fe_ref, fe_tag, fe_attrs}} <- find_formatting_entry_result(af, subject),
-         {:ok, stack_idx} <- find_in_stack_result(stack, fe_ref, af_idx),
-         :ok <- check_in_scope(state, stack_idx) do
-      case find_furthest_block(state, stack_idx) do
-        nil -> {:no_furthest_block, af_idx, stack_idx}
-        fb_idx -> {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx}
-      end
-    end
-  end
-
-  defp find_formatting_entry_result(af, subject) do
-    case find_formatting_entry(af, subject) do
-      nil -> :not_in_af
-      {af_idx, entry} -> {:ok, af_idx, entry}
-    end
-  end
-
-  defp find_in_stack_result(stack, fe_ref, af_idx) do
-    case find_in_stack_by_ref(stack, fe_ref) do
-      nil -> {:not_in_stack, af_idx}
-      stack_idx -> {:ok, stack_idx}
-    end
-  end
-
-  defp check_in_scope(stack, stack_idx) do
-    if element_in_scope?(stack, stack_idx), do: :ok, else: :not_in_scope
-  end
-
-  defp element_in_scope?(%{stack: stack, elements: elements}, target_idx) do
-    do_element_in_scope?(stack, elements, target_idx)
-  end
-
-  defp do_element_in_scope?(_stack, _elements, 0), do: true
-
-  defp do_element_in_scope?([ref | rest], elements, idx) when is_map_key(elements, ref) do
-    %{tag: tag} = elements[ref]
-
-    if is_scope_boundary(tag) do
-      false
-    else
-      do_element_in_scope?(rest, elements, idx - 1)
-    end
-  end
-
-  defp do_element_in_scope?([_ref | rest], elements, idx) do
-    do_element_in_scope?(rest, elements, idx)
-  end
-
-  defp do_element_in_scope?([], _elements, _idx), do: false
-
-  defp handle_no_formatting_entry(state, subject, 0) do
-    close_tag_ref(state, subject)
-  end
-
-  defp handle_no_formatting_entry(state, _subject, _iteration), do: state
-
   defp find_formatting_entry(af, tag) do
     af
     |> Enum.with_index()
@@ -1699,305 +1598,5 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       {_, ^tag, _} -> true
       _ -> false
     end)
-  end
-
-  # Find AF entry by ref (for inner loop)
-  defp find_af_entry_by_ref(af, target_ref) do
-    af
-    |> Enum.with_index()
-    |> Enum.find_value(fn
-      {{^target_ref, tag, attrs}, idx} -> {idx, {target_ref, tag, attrs}}
-      _ -> nil
-    end)
-  end
-
-  # Reparent a node to a new parent
-  # Note: children are stored in reverse order (prepended), so we prepend here too
-  defp reparent_node(elements, child_ref, new_parent_ref) do
-    child = elements[child_ref]
-    old_parent_ref = child.parent_ref
-
-    elements
-    |> maybe_remove_from_old_parent(child_ref, old_parent_ref)
-    |> Map.update!(child_ref, &%{&1 | parent_ref: new_parent_ref})
-    |> Map.update!(new_parent_ref, fn p -> %{p | children: [child_ref | p.children]} end)
-  end
-
-  # Reparent node with foster parenting awareness - inserts before any table element
-  defp reparent_node_foster_aware(elements, child_ref, new_parent_ref) do
-    child = elements[child_ref]
-    old_parent_ref = child.parent_ref
-
-    elements = maybe_remove_from_old_parent(elements, child_ref, old_parent_ref)
-    elements = Map.update!(elements, child_ref, &%{&1 | parent_ref: new_parent_ref})
-
-    # Find table in parent's children to insert before it
-    parent = elements[new_parent_ref]
-
-    table_ref =
-      Enum.find(parent.children, fn
-        ref when is_reference(ref) -> elements[ref] && elements[ref].tag == "table"
-        _ -> false
-      end)
-
-    new_children =
-      if table_ref do
-        # Insert after table in stored list (= before table in output)
-        insert_after_in_list(parent.children, child_ref, table_ref)
-      else
-        # No table, just prepend
-        [child_ref | parent.children]
-      end
-
-    Map.update!(elements, new_parent_ref, fn p -> %{p | children: new_children} end)
-  end
-
-  # Insert new_item after target_item in list (because children are reversed)
-  defp insert_after_in_list(list, new_item, target_item) do
-    do_insert_after(list, new_item, target_item, [])
-  end
-
-  defp do_insert_after([], new_item, _target, acc) do
-    Enum.reverse([new_item | acc])
-  end
-
-  defp do_insert_after([target | rest], new_item, target, acc) do
-    Enum.reverse(acc) ++ [target, new_item | rest]
-  end
-
-  defp do_insert_after([item | rest], new_item, target, acc) do
-    do_insert_after(rest, new_item, target, [item | acc])
-  end
-
-  defp maybe_remove_from_old_parent(elements, _child_ref, nil), do: elements
-
-  defp maybe_remove_from_old_parent(elements, child_ref, old_parent_ref) do
-    if Map.has_key?(elements, old_parent_ref) do
-      Map.update!(elements, old_parent_ref, fn p ->
-        %{p | children: List.delete(p.children, child_ref)}
-      end)
-    else
-      elements
-    end
-  end
-
-  # Update parent_ref for multiple children
-  defp update_children_parent_refs(elements, children, new_parent_ref) do
-    Enum.reduce(children, elements, fn
-      child_ref, elems when is_reference(child_ref) ->
-        Map.update!(elems, child_ref, &%{&1 | parent_ref: new_parent_ref})
-
-      _, elems ->
-        elems
-    end)
-  end
-
-  # Inner loop for adoption agency algorithm
-  # Processes each node between furthest block and formatting element
-  defp run_adoption_inner_loop(
-         state,
-         _fe_ref,
-         _node_idx,
-         last_node_ref,
-         _fb_ref,
-         _common_ancestor_ref,
-         bookmark,
-         counter
-       )
-       when counter >= 3 do
-    {state, last_node_ref, bookmark}
-  end
-
-  defp run_adoption_inner_loop(
-         %{stack: stack, af: af, elements: elements} = state,
-         fe_ref,
-         node_idx,
-         last_node_ref,
-         fb_ref,
-         common_ancestor_ref,
-         bookmark,
-         counter
-       ) do
-    # Advance node toward FE (node = element before node in stack)
-    next_node_idx = node_idx + 1
-    node_ref = Enum.at(stack, next_node_idx)
-
-    cond do
-      # Reached the formatting element or past it - done
-      node_ref == fe_ref or node_ref == nil ->
-        {state, last_node_ref, bookmark}
-
-      # Node not in AF - remove from stack, continue (don't increment counter)
-      find_af_entry_by_ref(af, node_ref) == nil ->
-        new_stack = List.delete_at(stack, next_node_idx)
-
-        run_adoption_inner_loop(
-          %{state | stack: new_stack},
-          fe_ref,
-          node_idx,
-          last_node_ref,
-          fb_ref,
-          common_ancestor_ref,
-          bookmark,
-          counter
-        )
-
-      # Node in AF - create new element, replace in AF, reparent
-      true ->
-        {node_af_idx, {_, node_tag, node_attrs}} = find_af_entry_by_ref(af, node_ref)
-
-        # Create new element for node's token
-        new_node = new_element(node_tag, node_attrs, common_ancestor_ref)
-        new_elements = Map.put(elements, new_node.ref, new_node)
-
-        # Replace node in AF with new element
-        new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
-
-        # Replace node in stack with new element
-        new_stack = List.replace_at(stack, next_node_idx, new_node.ref)
-
-        # Update bookmark: if last_node is furthest block, move bookmark after new element
-        new_bookmark = if last_node_ref == fb_ref, do: node_af_idx + 1, else: bookmark
-
-        # Reparent last_node to new_node
-        new_elements = reparent_node(new_elements, last_node_ref, new_node.ref)
-
-        run_adoption_inner_loop(
-          %{state | stack: new_stack, af: new_af, elements: new_elements},
-          fe_ref,
-          next_node_idx,
-          new_node.ref,
-          fb_ref,
-          common_ancestor_ref,
-          new_bookmark,
-          counter + 1
-        )
-    end
-  end
-
-  # Full adoption agency with furthest block - HTML5 spec compliant
-  defp run_adoption_agency_with_furthest_block(
-         %{stack: stack, elements: elements} = state,
-         {af_idx, fe_ref, fe_tag, fe_attrs},
-         fe_stack_idx,
-         fb_idx
-       ) do
-    # Common ancestor = element immediately before FE in stack
-    # BUT: if FE was foster parented, use its actual parent_ref instead
-    common_ancestor_ref =
-      if is_map_key(elements, fe_ref) and
-           is_map_key(elements[fe_ref], :foster_parent_ref) and
-           elements[fe_ref].foster_parent_ref != nil do
-        elements[fe_ref].foster_parent_ref
-      else
-        Enum.at(stack, fe_stack_idx + 1)
-      end
-
-    fb_ref = Enum.at(stack, fb_idx)
-
-    # Run inner loop (processes nodes between FB and FE)
-    {state, last_node_ref, bookmark} =
-      run_adoption_inner_loop(
-        state,
-        fe_ref,
-        fb_idx,
-        fb_ref,
-        fb_ref,
-        common_ancestor_ref,
-        af_idx,
-        0
-      )
-
-    # Insert last_node at common ancestor
-    # For foster parented elements, insert before the table
-    new_elements = reparent_node_foster_aware(state.elements, last_node_ref, common_ancestor_ref)
-
-    # Create new element for formatting element
-    new_fe = new_element(fe_tag, fe_attrs, fb_ref)
-    new_elements = Map.put(new_elements, new_fe.ref, new_fe)
-
-    # Move FB's children to new FE
-    fb_elem = new_elements[fb_ref]
-
-    new_elements =
-      new_elements
-      |> Map.update!(new_fe.ref, &%{&1 | children: fb_elem.children})
-      |> Map.put(fb_ref, %{fb_elem | children: [new_fe.ref]})
-      |> update_children_parent_refs(fb_elem.children, new_fe.ref)
-
-    # Update AF: remove old FE, insert new FE at bookmark
-    adjusted_bookmark = if af_idx < bookmark, do: bookmark - 1, else: bookmark
-
-    new_af =
-      state.af
-      |> List.delete_at(af_idx)
-      |> List.insert_at(adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
-
-    # Update stack: remove FE, insert new FE below FB
-    fe_current_idx = Enum.find_index(state.stack, &(&1 == fe_ref))
-    fb_current_idx = Enum.find_index(state.stack, &(&1 == fb_ref))
-
-    new_stack =
-      if fe_current_idx do
-        state.stack
-        |> List.delete_at(fe_current_idx)
-        |> List.insert_at(fb_current_idx, new_fe.ref)
-      else
-        List.insert_at(state.stack, fb_current_idx + 1, new_fe.ref)
-      end
-
-    # Update current_parent_ref
-    current_parent_ref =
-      case new_stack do
-        [top_ref | _] when is_map_key(new_elements, top_ref) -> new_elements[top_ref].parent_ref
-        _ -> state.current_parent_ref
-      end
-
-    %{
-      state
-      | stack: new_stack,
-        af: new_af,
-        elements: new_elements,
-        current_parent_ref: current_parent_ref
-    }
-  end
-
-  defp find_furthest_block(%{stack: stack, elements: elements}, fe_idx) do
-    stack
-    |> Enum.take(fe_idx)
-    |> Enum.with_index()
-    |> Enum.reverse()
-    |> Enum.find_value(&find_special_element(&1, elements))
-  end
-
-  defp find_special_element({ref, idx}, elements) when is_map_key(elements, ref) do
-    case elements[ref].tag do
-      tag when is_binary(tag) and tag in @special_elements -> idx
-      _ -> nil
-    end
-  end
-
-  defp find_special_element(_, _), do: nil
-
-  defp pop_to_formatting_element_ref(
-         %{stack: stack, af: af, elements: elements} = state,
-         af_idx,
-         stack_idx
-       ) do
-    # Pop stack to the formatting element
-    {_above_fe, [fe_ref | rest]} = Enum.split(stack, stack_idx)
-
-    # Update current parent ref
-    parent_ref =
-      if is_map_key(elements, fe_ref) do
-        elements[fe_ref].parent_ref
-      else
-        state.current_parent_ref
-      end
-
-    # Remove formatting element from af
-    new_af = List.delete_at(af, af_idx)
-
-    %{state | stack: rest, af: new_af, current_parent_ref: parent_ref}
   end
 end
