@@ -2,7 +2,7 @@
 
 **Total: 137 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after scope and foster parenting fixes*
+*Last updated: 2026-01-12 after implementing in_select_in_table (all 21 modes complete)*
 
 ## By Test File
 
@@ -50,11 +50,11 @@
 
 ## Status
 
-Phase 6 of the stack/DOM separation refactoring is complete. The architecture has been migrated to:
+All 21 HTML5 insertion modes are now implemented. The architecture uses:
 - Stack holds only refs: `[ref, ref, ref]`
 - Elements map holds all data: `ref => %{tag, attrs, children, parent_ref}`
 
-The regression in test counts (177 → 423) is expected during this architectural migration. The key improvement is that all failures are now assertion failures (tree structure mismatches) rather than crashes. The architecture is sound and ready for fixing individual algorithm issues.
+All failures are assertion failures (tree structure mismatches) rather than crashes. Remaining work focuses on edge cases in adoption agency, foster parenting, and foreign content handling.
 
 ## By Category
 
@@ -75,6 +75,8 @@ The regression in test counts (177 → 423) is expected during this architectura
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Implement in_select_in_table mode** (2026-01-12): Added the final HTML5 insertion mode. This mode handles select elements opened inside table context. Per spec, table element end tags (caption, table, tbody, tfoot, thead, tr, td, th) close the select and reprocess. Delegates all other processing to InSelect. All 21 HTML5 insertion modes are now complete. No test changes (137 total).
 
 - **Scope and foster parenting fixes** (2026-01-12): Three fixes: (1) `</li>` now only closes if li is in "list item scope" (ul/ol are barriers). Added `close_li_in_list_scope` with proper scope checking. (2) `<head>` in in_body is now properly ignored (parse error per spec). (3) In table context, `</br>` is now foster-parented as `<br>` instead of delegating to InBody. Also fixed `</select>` in table context to not call `pop_mode()` which was incorrectly changing mode to in_body. Fixed 7 tests (144 → 137 total). tests1: 18 → 16. tests15: 3 → 2.
 
@@ -102,7 +104,7 @@ The regression in test counts (177 → 423) is expected during this architectura
 
 - **Stack/DOM separation Phase 5** (2026-01-11): Refactored tree builder architecture to separate parsing context (stack) from DOM structure (elements map). Added `current_parent_ref` to State for O(1) parent tracking. Elements now store explicit `parent_ref` relationships. Foster parenting now uses explicit `foster_parent_ref` markers instead of tag-based heuristics in finalization. Pop operations track element-to-element children in elements map. Replaced heuristic-based `foster_aware_add_child` with `add_to_parent` that uses explicit refs. Fixed 1 test (178 → 177 total).
 
-- **In table text and in head noscript modes** (2026-01-11): Added two new insertion modes. `in_table_text` properly collects and batches character tokens in table context before deciding whether to insert normally (whitespace only) or foster parent (non-whitespace). `in_head_noscript` handles content inside `<noscript>` within `<head>` when scripting is disabled. Also fixed `in_caption` to set mode to `:in_table` when closing caption for reprocessing. Note: `in_select_in_table` mode deferred - requires architectural refactoring to properly intercept InSelect's mode transitions. Fixed 1 test (179 → 178 total). 20 of 21 HTML5 insertion modes now implemented.
+- **In table text and in head noscript modes** (2026-01-11): Added two new insertion modes. `in_table_text` properly collects and batches character tokens in table context before deciding whether to insert normally (whitespace only) or foster parent (non-whitespace). `in_head_noscript` handles content inside `<noscript>` within `<head>` when scripting is disabled. Also fixed `in_caption` to set mode to `:in_table` when closing caption for reprocessing. Fixed 1 test (179 → 178 total).
 
 - **In table mode extraction** (2026-01-11): Extracted `in_table` insertion mode to `lib/pure_html/tree_builder/modes/in_table.ex`. Handles table-specific token processing including foster parenting for non-table elements, table structure elements (caption, colgroup, tbody, thead, tfoot, tr, td, th), and SVG/math foreign content. Key changes: (1) Added foreign content delegation - when top of stack is svg/math, delegates to InBody for proper handling. (2) All foster parenting logic now in InTable instead of scattered in InBody and tree_builder.ex. (3) Fixed InCell's cell-closing end tags to check if target tag is in table scope before closing cell. (4) Fixed input handling - non-hidden inputs are now foster-parented. Some tests improved (tests7: 11→7), some regressed (tests19: 11→14). Net +1 regression (178 → 179 total).
 
