@@ -1589,7 +1589,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   defp reconstruct_active_formatting(%{stack: stack, af: af} = state) do
-    get_entries_to_reconstruct(af, stack)
+    af
+    |> get_entries_to_reconstruct(stack)
     |> reconstruct_entries(state)
   end
 
