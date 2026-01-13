@@ -227,35 +227,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   # --------------------------------------------------------------------------
-  # Legacy Stack Operations (for compatibility during migration)
-  # --------------------------------------------------------------------------
-
-  @doc """
-  Low-level: adds a child to the first element in the stack.
-  LEGACY - used by modes that haven't been migrated yet.
-  """
-  def add_child([%{children: children} = parent | rest], child) do
-    [%{parent | children: [child | children]} | rest]
-  end
-
-  def add_child([], child), do: [child]
-
-  @doc """
-  Low-level: adds text to the first element in the stack, merging adjacent text.
-  LEGACY - used by modes that haven't been migrated yet.
-  """
-  def add_text([%{children: [prev_text | rest_children]} = parent | rest], text)
-      when is_binary(prev_text) do
-    [%{parent | children: [prev_text <> text | rest_children]} | rest]
-  end
-
-  def add_text([%{children: children} = parent | rest], text) do
-    [%{parent | children: [text | children]} | rest]
-  end
-
-  def add_text([], _text), do: []
-
-  # --------------------------------------------------------------------------
   # Mode Switching
   # --------------------------------------------------------------------------
 
@@ -310,38 +281,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def current_element(%{stack: []}), do: nil
 
   @doc """
-  Returns the current element's ref.
-  """
-  def current_ref(%{stack: [ref | _]}), do: ref
-  def current_ref(%{stack: []}), do: nil
-
-  @doc """
-  Checks if a tag is in the stack.
-  """
-  def has_element_in_stack?(%{stack: stack, elements: elements}, tag) do
-    Enum.any?(stack, fn ref ->
-      is_map_key(elements, ref) and elements[ref].tag == tag
-    end)
-  end
-
-  @doc """
   Checks if a template element is in the stack.
   """
   def has_template?(%{stack: stack, elements: elements}) do
     Enum.any?(stack, fn ref -> elements[ref].tag == "template" end)
-  end
-
-  @doc """
-  Gets an element from the elements map by ref.
-  """
-  def get_element(%{elements: elements}, ref), do: elements[ref]
-
-  @doc """
-  Updates an element in the elements map.
-  """
-  def update_element(%{elements: elements} = state, ref, updates) do
-    new_elements = Map.update!(elements, ref, fn elem -> Map.merge(elem, updates) end)
-    %{state | elements: new_elements}
   end
 
   # --------------------------------------------------------------------------
@@ -349,32 +292,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # --------------------------------------------------------------------------
 
   # Scope boundaries for different scope types
-  @default_scope_boundaries ~w(applet caption html marquee object table td template th)
-  @list_scope_boundaries @default_scope_boundaries ++ ~w(ol ul)
-  @button_scope_boundaries @default_scope_boundaries ++ ["button"]
   @table_scope_boundaries ~w(html table template)
   @select_scope_boundaries ~w(optgroup option)
-
-  @doc """
-  Checks if an element is in scope (default scope).
-  """
-  def in_scope?(%{stack: stack, elements: elements}, tag) do
-    do_in_scope?(stack, tag, @default_scope_boundaries, elements)
-  end
-
-  @doc """
-  Checks if an element is in list item scope.
-  """
-  def in_list_scope?(%{stack: stack, elements: elements}, tag) do
-    do_in_scope?(stack, tag, @list_scope_boundaries, elements)
-  end
-
-  @doc """
-  Checks if an element is in button scope.
-  """
-  def in_button_scope?(%{stack: stack, elements: elements}, tag) do
-    do_in_scope?(stack, tag, @button_scope_boundaries, elements)
-  end
 
   @doc """
   Checks if an element is in table scope.
@@ -480,52 +399,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   # --------------------------------------------------------------------------
-  # Implied End Tags
-  # --------------------------------------------------------------------------
-
-  @implied_end_tags ~w(dd dt li optgroup option p rb rp rt rtc)
-
-  @doc """
-  Generates implied end tags (pops elements with implied end tags).
-  """
-  def generate_implied_end_tags(%{stack: stack, elements: elements} = state) do
-    {new_stack, parent_ref} = do_generate_implied_end_tags(stack, elements)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
-  end
-
-  @doc """
-  Generates implied end tags except for the given tag.
-  """
-  def generate_implied_end_tags_except(%{stack: stack, elements: elements} = state, except_tag) do
-    {new_stack, parent_ref} = do_generate_implied_end_tags_except(stack, except_tag, elements)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
-  end
-
-  defp do_generate_implied_end_tags([], _elements), do: {[], nil}
-
-  defp do_generate_implied_end_tags([ref | rest] = stack, elements) do
-    elem = elements[ref]
-
-    if elem.tag in @implied_end_tags do
-      do_generate_implied_end_tags(rest, elements)
-    else
-      {stack, elem.parent_ref}
-    end
-  end
-
-  defp do_generate_implied_end_tags_except([], _except, _elements), do: {[], nil}
-
-  defp do_generate_implied_end_tags_except([ref | rest] = stack, except, elements) do
-    %{tag: tag, parent_ref: parent_ref} = elements[ref]
-
-    if tag in @implied_end_tags and tag != except do
-      do_generate_implied_end_tags_except(rest, except, elements)
-    else
-      {stack, parent_ref}
-    end
-  end
-
-  # --------------------------------------------------------------------------
   # Foster Parenting (ref-only stack)
   # --------------------------------------------------------------------------
 
@@ -572,15 +445,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
       do_find_foster_parent(rest, elements)
     end
   end
-
-  @doc """
-  Checks if we're currently in a foster parenting context.
-  """
-  def in_foster_parent_context?(%{stack: [ref | _], elements: elements}) do
-    elements[ref].tag in @foster_parent_context
-  end
-
-  def in_foster_parent_context?(_state), do: false
 
   @doc """
   Unified foster parenting function.
@@ -683,11 +547,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # --------------------------------------------------------------------------
   # Utility
   # --------------------------------------------------------------------------
-
-  @doc """
-  Rebuilds a stack by reversing an accumulator onto it.
-  """
-  def rebuild_stack(acc, stack), do: Enum.reverse(acc, stack)
 
   @doc """
   Corrects certain tag names (e.g., "image" -> "img").

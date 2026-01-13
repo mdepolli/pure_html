@@ -38,7 +38,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       set_mode: 2,
       push_af_marker: 1,
       add_child_to_stack: 2,
-      current_tag: 1,
       in_table_scope?: 2,
       has_template?: 1,
       foster_parent: 2,
@@ -53,15 +52,17 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @impl true
   # If top of stack is foreign content (svg/math), delegate to in_body
   # which has proper foreign content handling
-  def process(token, state) do
-    case current_tag(state) do
-      {ns, _} when ns in [:svg, :math] ->
-        InBody.process(token, state)
-
-      _ ->
-        process_dispatch(token, state)
-    end
+  def process(token, %{stack: [ref | _], elements: elements} = state) do
+    do_process(elements[ref], token, state)
   end
+
+  def process(token, state), do: process_dispatch(token, state)
+
+  defp do_process(%{tag: {ns, _}}, token, state) when ns in [:svg, :math] do
+    InBody.process(token, state)
+  end
+
+  defp do_process(_, token, state), do: process_dispatch(token, state)
 
   defp process_dispatch(token, %{template_mode_stack: [:in_table | _]} = state) do
     # Template pushed :in_table mode (e.g., after seeing <tbody> in template)
@@ -74,22 +75,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Character tokens in table context elements: switch to in_table_text mode
-  defp process_in_table({:character, text}, state) do
-    tag = current_tag(state)
+  defp process_in_table({:character, text}, %{stack: [ref | _], elements: elements} = state) do
+    do_process_character(elements[ref], text, state)
+  end
 
-    if tag in @table_context do
-      # Switch to in_table_text mode to collect character tokens
-      {:ok,
-       %{
-         state
-         | mode: :in_table_text,
-           original_mode: :in_table,
-           pending_table_text: text
-       }}
-    else
-      # Character tokens not in table context: delegate to in_body
-      InBody.process({:character, text}, state)
-    end
+  defp process_in_table({:character, text}, state) do
+    InBody.process({:character, text}, state)
   end
 
   # Comments: insert
@@ -289,6 +280,22 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------
 
+  defp do_process_character(%{tag: tag}, text, state) when tag in @table_context do
+    # Switch to in_table_text mode to collect character tokens
+    {:ok,
+     %{
+       state
+       | mode: :in_table_text,
+         original_mode: :in_table,
+         pending_table_text: text
+     }}
+  end
+
+  defp do_process_character(_, text, state) do
+    # Character tokens not in table context: delegate to in_body
+    InBody.process({:character, text}, state)
+  end
+
   defp foster_foreign_element(state, ns, tag, attrs, self_closing) do
     case foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing}) do
       {new_state, _ref} -> new_state
@@ -317,21 +324,25 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
-  defp ensure_colgroup(state) do
-    case current_tag(state) do
-      "colgroup" -> state
-      "table" -> push_element(state, "colgroup", %{})
-      _ -> state
-    end
+  defp ensure_colgroup(%{stack: [ref | _], elements: elements} = state) do
+    do_ensure_colgroup(elements[ref], state)
   end
 
-  defp ensure_tbody(state) do
-    case current_tag(state) do
-      tag when tag in @table_sections -> state
-      "table" -> push_element(state, "tbody", %{})
-      _ -> state
-    end
+  defp ensure_colgroup(state), do: state
+
+  defp do_ensure_colgroup(%{tag: "colgroup"}, state), do: state
+  defp do_ensure_colgroup(%{tag: "table"}, state), do: push_element(state, "colgroup", %{})
+  defp do_ensure_colgroup(_, state), do: state
+
+  defp ensure_tbody(%{stack: [ref | _], elements: elements} = state) do
+    do_ensure_tbody(elements[ref], state)
   end
+
+  defp ensure_tbody(state), do: state
+
+  defp do_ensure_tbody(%{tag: tag}, state) when tag in @table_sections, do: state
+  defp do_ensure_tbody(%{tag: "table"}, state), do: push_element(state, "tbody", %{})
+  defp do_ensure_tbody(_, state), do: state
 
   defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
     {new_stack, closed_refs, parent_ref} = do_close_table(stack, [], elements)
