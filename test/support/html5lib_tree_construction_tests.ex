@@ -82,26 +82,16 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   @doc """
   Serializes a document to the html5lib tree format for comparison.
 
-  Document format: `{doctype, nodes}` where:
-  - doctype: `{name, public_id, system_id}` or nil
-  - nodes: list of top-level nodes (comments and html element)
+  Document format: list of nodes where:
+  - `{:doctype, name, public_id, system_id}` - DOCTYPE (if present, first)
+  - `{:comment, text}` - comment
+  - `{tag, attrs, children}` - element
   """
-  def serialize_document({doctype, nodes}) when is_list(nodes) do
-    doctype_str = serialize_doctype(doctype)
-    nodes_str = Enum.map_join(nodes, "", &serialize_node(&1, 0))
-    doctype_str <> nodes_str
+  def serialize_document(nodes) when is_list(nodes) do
+    Enum.map_join(nodes, "", &serialize_node(&1, 0))
   end
 
-  # Legacy support for single node (shouldn't be needed but just in case)
-  def serialize_document({doctype, tree}) when is_tuple(tree) do
-    doctype_str = serialize_doctype(doctype)
-    tree_str = serialize_node(tree, 0)
-    doctype_str <> tree_str
-  end
-
-  defp serialize_doctype(nil), do: ""
-
-  defp serialize_doctype({name, public_id, system_id}) do
+  defp serialize_node({:doctype, name, public_id, system_id}, _depth) do
     if (public_id == "" or public_id == nil) and (system_id == "" or system_id == nil) do
       "| <!DOCTYPE #{name}>\n"
     else

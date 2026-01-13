@@ -6,16 +6,21 @@ defmodule PureHTML do
   alias PureHTML.{Tokenizer, TreeBuilder}
 
   @doc """
-  Parses an HTML string into a document tree.
+  Parses an HTML string into a list of nodes.
 
-  Returns `{doctype, nodes}` where:
-  - `doctype` is `nil` or a doctype tuple
-  - `nodes` is a list of `{tag, attrs, children}` tuples
+  Returns a list of nodes where each node is one of:
+  - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration (if present, always first)
+  - `{:comment, text}` - HTML comment
+  - `{tag, attrs, children}` - Element with tag name, attributes map, and child nodes
+  - `text` - Text content (binary)
 
   ## Examples
 
       iex> PureHTML.parse("<p>Hello</p>")
-      {nil, [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{}, ["Hello"]}]}]}]}
+      [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{}, ["Hello"]}]}]}]
+
+      iex> PureHTML.parse("<!DOCTYPE html><html></html>")
+      [{:doctype, "html", nil, nil}, {"html", %{}, [{"head", %{}, []}, {"body", %{}, []}]}]
 
   """
   def parse(html) when is_binary(html) do

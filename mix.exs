@@ -29,7 +29,8 @@ defmodule PureHTML.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4", only: [:dev, :test]},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:stream_data, "~> 1.0", only: [:test]}
     ]
   end
 end
