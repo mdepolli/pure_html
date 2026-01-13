@@ -202,12 +202,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:ok, foster_foreign_element(state, :math, "math", attrs, self_closing)}
   end
 
-  # Select: foster parent and push in_select mode
-  # Note: HTML5 spec has in_select_in_table mode, but it requires architectural
-  # changes to properly intercept InSelect's mode transitions. For now, use in_select.
+  # Select: foster parent and push in_select_in_table mode
   defp process_in_table({:start_tag, "select", attrs, _}, state) do
     {new_state, _ref} = foster_parent(state, {:push, "select", attrs})
-    {:ok, set_mode(new_state, :in_select)}
+    {:ok, set_mode(new_state, :in_select_in_table)}
   end
 
   # Frameset/frame: parse error, ignore (table sets frameset_ok to false)

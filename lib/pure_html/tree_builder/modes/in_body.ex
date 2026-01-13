@@ -327,7 +327,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Template in body/table/select modes
   defp do_process_html_start_tag("template", attrs, _, %{mode: mode} = state)
-       when mode in [:in_body, :in_table, :in_select] do
+       when mode in [:in_body, :in_table, :in_select, :in_select_in_table] do
     if has_tag?(state, "body") do
       state
       |> reconstruct_active_formatting()
@@ -341,7 +341,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Head elements in body modes
   defp do_process_html_start_tag(tag, attrs, self_closing, %{mode: mode} = state)
-       when tag in @head_elements and mode in [:in_template, :in_body, :in_table, :in_select] do
+       when tag in @head_elements and
+              mode in [:in_template, :in_body, :in_table, :in_select, :in_select_in_table] do
     if has_tag?(state, "body") or mode == :in_template do
       process_start_tag(state, tag, attrs, self_closing)
     else
@@ -423,15 +424,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Hr in select
-  defp do_process_html_start_tag("hr", attrs, _, %{mode: :in_select} = state) do
+  defp do_process_html_start_tag("hr", attrs, _, %{mode: mode} = state)
+       when mode in [:in_select, :in_select_in_table] do
     state
     |> close_option_optgroup_in_select()
     |> add_child_to_stack({"hr", attrs, []})
   end
 
   # Input/keygen/textarea in select
-  defp do_process_html_start_tag(tag, attrs, self_closing, %{mode: :in_select} = state)
-       when tag in ["input", "keygen", "textarea"] do
+  defp do_process_html_start_tag(tag, attrs, self_closing, %{mode: mode} = state)
+       when tag in ["input", "keygen", "textarea"] and mode in [:in_select, :in_select_in_table] do
     state
     |> close_select()
     |> then(&do_process_html_start_tag(tag, attrs, self_closing, &1))
@@ -868,6 +870,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @body_modes [
     :in_body,
     :in_select,
+    :in_select_in_table,
     :in_table,
     :in_template,
     :in_cell,

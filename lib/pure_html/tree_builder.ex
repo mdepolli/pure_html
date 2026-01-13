@@ -222,6 +222,7 @@ defmodule PureHTML.TreeBuilder do
     in_row: Modes.InRow,
     in_cell: Modes.InCell,
     in_select: Modes.InSelect,
+    in_select_in_table: Modes.InSelectInTable,
     in_template: Modes.InTemplate,
     after_body: Modes.AfterBody,
     in_frameset: Modes.InFrameset,
@@ -235,16 +236,21 @@ defmodule PureHTML.TreeBuilder do
   @doc """
   Builds a document from a tokenizer.
 
-  Returns `{doctype, nodes}` where nodes is a list of top-level nodes.
+  Returns a list of top-level nodes. If a doctype is present, it appears first
+  as `{:doctype, name, public_id, system_id}`.
   """
-  @spec build(Tokenizer.t()) :: {doctype(), [document_node()]}
+  @spec build(Tokenizer.t()) :: [document_node()]
   def build(%Tokenizer{} = tokenizer) do
     {doctype, state, pre_html_comments} =
       build_loop(tokenizer, {nil, %State{}, []})
 
     html_node = finalize(state)
-    nodes = Enum.reverse(pre_html_comments) ++ [html_node]
-    {doctype, nodes}
+    comments = Enum.reverse(pre_html_comments)
+
+    case doctype do
+      nil -> comments ++ [html_node]
+      {name, public, system} -> [{:doctype, name, public, system} | comments] ++ [html_node]
+    end
   end
 
   defp build_loop(tokenizer, acc) do
