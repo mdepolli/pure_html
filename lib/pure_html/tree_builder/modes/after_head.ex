@@ -26,12 +26,12 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   import PureHTML.TreeBuilder.Helpers,
     only: [
-      add_child_to_stack: 2,
-      add_text_to_stack: 2,
       push_element: 3,
       set_mode: 2,
       set_frameset_ok: 2
     ]
+
+  alias PureHTML.TreeBuilder.Modes.InHead
 
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
 
@@ -39,8 +39,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   def process({:character, text}, state) do
     case String.trim(text) do
       "" ->
-        # Whitespace: insert directly as child of current element (html)
-        {:ok, add_text_to_stack(state, text)}
+        # Whitespace: insert directly as child of html
+        # Use top of stack to handle case where current_parent_ref may be stale
+        {:ok, add_text_to_top_of_stack(state, text)}
 
       _ ->
         # Non-whitespace: insert implied body, switch to in_body, reprocess
@@ -50,7 +51,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:comment, text}, state) do
     # Insert comment as child of current element (html)
-    {:ok, add_child_to_stack(state, {:comment, text})}
+    # Use top of stack to handle case where current_parent_ref may be stale
+    {:ok, add_child_to_top_of_stack(state, {:comment, text})}
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
@@ -85,11 +87,21 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     {:ok, state}
   end
 
-  def process({:start_tag, tag, _attrs, _self_closing}, state) when tag in @head_elements do
+  def process({:start_tag, tag, _attrs, _self_closing} = token, state)
+      when tag in @head_elements do
     # Parse error, but process using "in head" rules
-    # Per spec: push head onto stack, process in in_head, then head is automatically
-    # popped when in_head closes (or style/script processing ends)
-    {:reprocess, reopen_head(state)}
+    # Per spec: push head onto stack, process in in_head, then remove head from stack
+    state = push_head_onto_stack(state)
+    {result, state} = InHead.process(token, state)
+    state = remove_head_from_stack(state)
+
+    # If we switched to text mode (style/script), set original_mode to after_head
+    state =
+      if state.mode == :text,
+        do: %{state | original_mode: :after_head},
+        else: state
+
+    {result, state}
   end
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
@@ -118,22 +130,65 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   end
 
   # Insert an implied body element and switch to :in_body mode
-  defp insert_implied_body(state) do
-    state
+  # First reset current_parent_ref to top of stack in case it's stale
+  defp insert_implied_body(%{stack: [top_ref | _]} = state) do
+    %{state | current_parent_ref: top_ref}
     |> push_element("body", %{})
     |> set_mode(:in_body)
   end
 
-  # Reopen head element: push it back onto the stack and switch to in_head mode
-  # Per HTML5 spec: "Push the node pointed to by the head element pointer onto
-  # the stack of open elements. Process the token using the rules for the
-  # 'in head' insertion mode."
-  defp reopen_head(%{head_element: head_ref, stack: stack} = state) when not is_nil(head_ref) do
-    %{state | stack: [head_ref | stack], current_parent_ref: head_ref, mode: :in_head}
+  defp insert_implied_body(state), do: set_mode(state, :in_body)
+
+  # Push head element onto stack (for processing head elements in after_head)
+  defp push_head_onto_stack(%{head_element: head_ref, stack: stack} = state)
+       when not is_nil(head_ref) do
+    %{state | stack: [head_ref | stack], current_parent_ref: head_ref}
   end
 
-  defp reopen_head(state) do
-    # No head element pointer, just switch mode
-    %{state | mode: :in_head}
+  defp push_head_onto_stack(state), do: state
+
+  # Remove head element from stack (wherever it is)
+  defp remove_head_from_stack(%{head_element: head_ref, stack: stack} = state)
+       when not is_nil(head_ref) do
+    new_stack = List.delete(stack, head_ref)
+
+    new_parent_ref =
+      case new_stack do
+        [ref | _] -> ref
+        [] -> nil
+      end
+
+    %{state | stack: new_stack, current_parent_ref: new_parent_ref}
   end
+
+  defp remove_head_from_stack(state), do: state
+
+  # Add child using top of stack as parent (ignores current_parent_ref)
+  # This is needed when current_parent_ref may be stale (e.g., after returning from text mode)
+  defp add_child_to_top_of_stack(%{stack: [parent_ref | _], elements: elements} = state, child) do
+    new_elements =
+      Map.update!(elements, parent_ref, fn parent ->
+        %{parent | children: [child | parent.children]}
+      end)
+
+    %{state | elements: new_elements}
+  end
+
+  defp add_child_to_top_of_stack(%{stack: []} = state, _child), do: state
+
+  # Add text using top of stack as parent, merging adjacent text
+  defp add_text_to_top_of_stack(%{stack: [parent_ref | _], elements: elements} = state, text) do
+    new_elements =
+      Map.update!(elements, parent_ref, fn
+        %{children: [prev_text | rest]} = parent when is_binary(prev_text) ->
+          %{parent | children: [prev_text <> text | rest]}
+
+        parent ->
+          %{parent | children: [text | parent.children]}
+      end)
+
+    %{state | elements: new_elements}
+  end
+
+  defp add_text_to_top_of_stack(%{stack: []} = state, _text), do: state
 end

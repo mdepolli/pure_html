@@ -1,6 +1,6 @@
 # Test Failures Analysis
 
-**Total: 87 failures out of 1476 tests**
+**Total: 86 failures out of 1476 tests**
 
 *Last updated: 2026-01-13*
 
@@ -21,7 +21,7 @@
 | quirks01 | 3 | 3 | 3 |
 | tests7 | 7 | 15 | 2 |
 | tests6 | 3 | 13 | 2 |
-| tests3 | 10 | 12 | 2 |
+| tests3 | 10 | 12 | 1 |
 | tests20 | 4 | 7 | 2 |
 | tests2 | 2 | 10 | 2 |
 | tests16 | 3 | 3 | 2 |
@@ -46,7 +46,7 @@
 | menuitem-element | 2 | 2 | 0 |
 | search-element | 1 | 2 | 0 |
 | pending-spec-changes | 1 | 2 | 0 |
-| **Total** | **177** | **423** | **87** |
+| **Total** | **177** | **423** | **86** |
 
 ## Status
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **After head mode handling for head elements** (2026-01-13): Fixed processing of head elements (style, script, etc.) after `</head>`. Per HTML5 spec, these elements must: (1) push head onto stack, (2) process in in_head mode, (3) remove head from stack. Previously used `:reprocess` which left head on stack. Now calls `InHead.process` directly and removes head afterward. Also fixed `current_parent_ref` staleness issues by using top of stack for insertions in after_head mode (comments, whitespace, implied body). Fixed 1 test (87 → 86 total). tests3: 2 → 1.
 
 - **Select element table context detection** (2026-01-13): Fixed `<select>` to use `in_select_in_table` mode when opened inside table context. Previously, select always used `in_select` mode regardless of table ancestry. Added `has_table_ancestor?` check when processing select start tag to determine correct mode. This ensures table elements like `<td>`, `<th>`, `<tr>` properly close the select and reprocess when inside table context. Fixed 7 tests (94 → 87 total). tests17: 3 → 0. template: 13 → 9.
 
