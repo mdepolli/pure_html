@@ -64,9 +64,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
         state
 
       ref ->
-        # Add comment to html element's children
+        # Add comment to html element's children (prepend since children are reversed)
         html_elem = elements[ref]
-        updated_html = %{html_elem | children: html_elem.children ++ [comment]}
+        updated_html = %{html_elem | children: [comment | html_elem.children]}
         %{state | elements: Map.put(elements, ref, updated_html)}
     end
   end

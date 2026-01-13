@@ -30,6 +30,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
+  alias PureHTML.TreeBuilder.AdoptionAgency
   alias PureHTML.TreeBuilder.Modes.InBody
 
   import PureHTML.TreeBuilder.Helpers,
@@ -216,6 +217,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Other start tags: foster parent directly
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
+  @adopt_on_duplicate ~w(a nobr)
 
   defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
     cond do
@@ -223,8 +225,16 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
         {:ok, foster_parent(state, {:element, {tag, attrs, []}})}
 
       tag in @formatting_elements ->
+        # For <a> and <nobr>, run adoption agency if duplicate
+        state =
+          if tag in @adopt_on_duplicate and has_formatting_entry?(af, tag) do
+            AdoptionAgency.run(state, tag)
+          else
+            state
+          end
+
         {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
-        new_af = [{new_ref, tag, attrs} | af]
+        new_af = [{new_ref, tag, attrs} | new_state.af]
         {:ok, %{new_state | af: new_af}}
 
       true ->
@@ -361,14 +371,17 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp do_close_table([], closed_refs, _elements), do: {[], closed_refs, nil}
 
   defp do_close_table([ref | rest], closed_refs, elements) do
-    %{tag: tag, parent_ref: parent_ref} = elements[ref]
-
-    case tag do
-      "table" ->
+    case elements[ref] do
+      %{tag: "table", parent_ref: parent_ref} ->
         {rest, [ref | closed_refs], parent_ref}
 
-      boundary when boundary in ["template", "html"] ->
+      %{tag: boundary} when boundary in ["template", "html"] ->
         {[ref | rest], closed_refs, ref}
+
+      # Skip foster-parented elements - they're outside the table
+      # and should stay in AF for reconstruction
+      %{foster_parent_ref: fpr} when not is_nil(fpr) ->
+        do_close_table(rest, closed_refs, elements)
 
       _ ->
         do_close_table(rest, [ref | closed_refs], elements)
@@ -395,5 +408,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       %{tag: tag} when tag in @select_scope_barriers -> :not_found
       _ -> find_select_in_scope(rest, elements)
     end
+  end
+
+  defp has_formatting_entry?(af, tag) do
+    Enum.any?(af, fn
+      {_, ^tag, _} -> true
+      _ -> false
+    end)
   end
 end
