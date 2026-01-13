@@ -168,10 +168,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   def process({:end_tag, "optgroup"}, state) do
     case {current_tag(state), get_parent_tag(state)} do
       {"option", "optgroup"} ->
-        state
-        |> pop_element()
-        |> pop_element()
-        |> then(&{:ok, &1})
+        {:ok, state |> pop_element() |> pop_element()}
 
       {"optgroup", _} ->
         {:ok, pop_element(state)}
