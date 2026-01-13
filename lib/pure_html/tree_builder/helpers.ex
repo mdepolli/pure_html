@@ -252,6 +252,24 @@ defmodule PureHTML.TreeBuilder.Helpers do
     %{state | mode: :in_body}
   end
 
+  @doc """
+  Closes the select element by popping elements until select is found,
+  then pops the insertion mode from the template mode stack.
+  """
+  def close_select(%{stack: stack, elements: elements} = state) do
+    {new_stack, parent_ref} = do_close_to_select(stack, elements)
+    pop_mode(%{state | stack: new_stack, current_parent_ref: parent_ref})
+  end
+
+  defp do_close_to_select([ref | rest], elements) do
+    case elements[ref].tag do
+      "select" -> {rest, elements[ref].parent_ref}
+      _ -> do_close_to_select(rest, elements)
+    end
+  end
+
+  defp do_close_to_select([], _elements), do: {[], nil}
+
   # --------------------------------------------------------------------------
   # Active Formatting Elements
   # --------------------------------------------------------------------------

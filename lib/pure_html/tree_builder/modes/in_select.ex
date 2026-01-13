@@ -35,7 +35,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       add_child_to_stack: 2,
       add_text_to_stack: 2,
       pop_element: 1,
-      pop_mode: 1,
+      close_select: 1,
       current_tag: 1,
       in_select_scope?: 2
     ]
@@ -251,19 +251,4 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   defp close_if_current_tag(state, tag) do
     if current_tag(state) == tag, do: pop_element(state), else: state
   end
-
-  # Close select and pop mode
-  defp close_select(%{stack: stack, elements: elements} = state) do
-    {new_stack, parent_ref} = do_close_to_select(stack, elements)
-    pop_mode(%{state | stack: new_stack, current_parent_ref: parent_ref})
-  end
-
-  defp do_close_to_select([ref | rest], elements) do
-    case elements[ref].tag do
-      "select" -> {rest, elements[ref].parent_ref}
-      _ -> do_close_to_select(rest, elements)
-    end
-  end
-
-  defp do_close_to_select([], _elements), do: {[], nil}
 end
