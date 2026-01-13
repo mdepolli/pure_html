@@ -32,7 +32,8 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
       add_text_to_stack: 2,
       push_element: 3,
       pop_element: 1,
-      current_tag: 1
+      current_tag: 1,
+      split_whitespace: 1
     ]
 
   @void_head_elements ~w(base basefont bgsound link meta)
@@ -40,14 +41,19 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   @impl true
   def process({:character, text}, state) do
-    case String.trim(text) do
-      "" ->
-        # Whitespace: insert as child of head
+    case split_whitespace(text) do
+      {"", _non_ws} ->
+        # Starts with non-whitespace: close head, switch to after_head, reprocess
+        {:reprocess, close_head(state)}
+
+      {^text, ""} ->
+        # All whitespace: insert as child of head
         {:ok, add_text_to_stack(state, text)}
 
-      _ ->
-        # Non-whitespace: close head, switch to after_head, reprocess
-        {:reprocess, close_head(state)}
+      {ws, non_ws} ->
+        # Mixed: insert whitespace in head, then close head and reprocess rest
+        state = add_text_to_stack(state, ws)
+        {:reprocess_with, close_head(state), {:character, non_ws}}
     end
   end
 
@@ -86,10 +92,13 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   def process({:start_tag, tag, attrs, _self_closing}, state)
       when tag in @raw_text_elements do
     # Insert element, switch to text mode (RAWTEXT)
+    # Preserve original_mode if already set (e.g., from table context)
     state =
       state
       |> push_element(tag, attrs)
-      |> Map.put(:original_mode, :in_head)
+      |> then(fn s ->
+        if s.original_mode, do: s, else: %{s | original_mode: :in_head}
+      end)
       |> Map.put(:mode, :text)
 
     {:ok, state}
@@ -97,10 +106,13 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   def process({:start_tag, "script", attrs, _self_closing}, state) do
     # Insert script element, switch to text mode
+    # Preserve original_mode if already set (e.g., from table context)
     state =
       state
       |> push_element("script", attrs)
-      |> Map.put(:original_mode, :in_head)
+      |> then(fn s ->
+        if s.original_mode, do: s, else: %{s | original_mode: :in_head}
+      end)
       |> Map.put(:mode, :text)
 
     {:ok, state}

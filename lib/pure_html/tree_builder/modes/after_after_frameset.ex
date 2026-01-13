@@ -1,17 +1,18 @@
-defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
+defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
   @moduledoc """
-  HTML5 "after after body" insertion mode.
+  HTML5 "after after frameset" insertion mode.
 
-  This mode is entered after the closing </html> tag.
+  This mode is entered after the closing </html> tag in a frameset document.
 
   Per HTML5 spec:
   - Comment: Insert as last child of the Document object
   - DOCTYPE: Parse error, ignore
   - Whitespace: Process using "in body" rules
   - <html> start tag: Process using "in body" rules
-  - Anything else: Parse error, switch to "in body", reprocess
+  - <noframes> start tag: Process using "in head" rules
+  - Anything else: Parse error, ignore
 
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-body-insertion-mode
+  See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-frameset-insertion-mode
   """
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
@@ -32,11 +33,11 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
   def process({:character, text}, state) do
     case extract_whitespace(text) do
       "" ->
-        # Non-whitespace: parse error, switch to in_body, reprocess
-        {:reprocess, %{state | mode: :in_body}}
+        # Non-whitespace: parse error, ignore
+        {:ok, state}
 
       ^text ->
-        # All whitespace: insert directly (staying in after_after_body mode)
+        # All whitespace: process using "in body" rules (insert to body)
         {:ok, add_text_to_stack(state, text)}
     end
   end
@@ -46,8 +47,13 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
     {:reprocess, %{state | mode: :in_body}}
   end
 
+  def process({:start_tag, "noframes", _attrs, _self_closing}, state) do
+    # Process using "in head" rules, preserve original mode to return here after text mode
+    {:reprocess, %{state | original_mode: :after_after_frameset, mode: :in_head}}
+  end
+
   def process(_token, state) do
-    # Anything else: parse error, switch to "in body", reprocess
-    {:reprocess, %{state | mode: :in_body}}
+    # Anything else: parse error, ignore
+    {:ok, state}
   end
 end

@@ -472,10 +472,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_element(tag, attrs)
   end
 
-  # Col in template
+  # Col in template - switch to in_column_group and add col void element
   defp do_process_html_start_tag("col", attrs, _, %{mode: :in_template} = state) do
     state
-    |> switch_template_mode(:in_table)
+    |> switch_template_mode(:in_column_group)
     |> add_child_to_stack({"col", attrs, []})
   end
 
@@ -607,7 +607,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_close_same(tag)
     |> maybe_close_current_heading(tag)
     |> push_element(tag, attrs)
-    |> reconstruct_active_formatting()
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
@@ -677,6 +676,68 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @mathml_attr_case_adjustments %{"definitionurl" => "definitionURL"}
 
+  # SVG attributes that need case adjustment (per HTML5 spec)
+  @svg_attr_case_adjustments %{
+    "attributename" => "attributeName",
+    "attributetype" => "attributeType",
+    "basefrequency" => "baseFrequency",
+    "baseprofile" => "baseProfile",
+    "calcmode" => "calcMode",
+    "clippathunits" => "clipPathUnits",
+    "diffuseconstant" => "diffuseConstant",
+    "edgemode" => "edgeMode",
+    "filterunits" => "filterUnits",
+    "glyphref" => "glyphRef",
+    "gradienttransform" => "gradientTransform",
+    "gradientunits" => "gradientUnits",
+    "kernelmatrix" => "kernelMatrix",
+    "kernelunitlength" => "kernelUnitLength",
+    "keypoints" => "keyPoints",
+    "keysplines" => "keySplines",
+    "keytimes" => "keyTimes",
+    "lengthadjust" => "lengthAdjust",
+    "limitingconeangle" => "limitingConeAngle",
+    "markerheight" => "markerHeight",
+    "markerunits" => "markerUnits",
+    "markerwidth" => "markerWidth",
+    "maskcontentunits" => "maskContentUnits",
+    "maskunits" => "maskUnits",
+    "numoctaves" => "numOctaves",
+    "pathlength" => "pathLength",
+    "patterncontentunits" => "patternContentUnits",
+    "patterntransform" => "patternTransform",
+    "patternunits" => "patternUnits",
+    "pointsatx" => "pointsAtX",
+    "pointsaty" => "pointsAtY",
+    "pointsatz" => "pointsAtZ",
+    "preservealpha" => "preserveAlpha",
+    "preserveaspectratio" => "preserveAspectRatio",
+    "primitiveunits" => "primitiveUnits",
+    "refx" => "refX",
+    "refy" => "refY",
+    "repeatcount" => "repeatCount",
+    "repeatdur" => "repeatDur",
+    "requiredextensions" => "requiredExtensions",
+    "requiredfeatures" => "requiredFeatures",
+    "specularconstant" => "specularConstant",
+    "specularexponent" => "specularExponent",
+    "spreadmethod" => "spreadMethod",
+    "startoffset" => "startOffset",
+    "stddeviation" => "stdDeviation",
+    "stitchtiles" => "stitchTiles",
+    "surfacescale" => "surfaceScale",
+    "systemlanguage" => "systemLanguage",
+    "tablevalues" => "tableValues",
+    "targetx" => "targetX",
+    "targety" => "targetY",
+    "textlength" => "textLength",
+    "viewbox" => "viewBox",
+    "viewtarget" => "viewTarget",
+    "xchannelselector" => "xChannelSelector",
+    "ychannelselector" => "yChannelSelector",
+    "zoomandpan" => "zoomAndPan"
+  }
+
   defp adjust_foreign_attributes(ns, attrs) do
     Map.new(attrs, fn {key, value} ->
       {adjust_attr_key(ns, key), value}
@@ -689,6 +750,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp adjust_attr_key(:math, key) when is_map_key(@mathml_attr_case_adjustments, key) do
     @mathml_attr_case_adjustments[key]
+  end
+
+  defp adjust_attr_key(:svg, key) when is_map_key(@svg_attr_case_adjustments, key) do
+    @svg_attr_case_adjustments[key]
   end
 
   defp adjust_attr_key(_ns, key), do: key

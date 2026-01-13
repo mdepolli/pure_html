@@ -160,8 +160,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
-  # Start tags: style, script, template - process using in_head rules
-  defp process_in_table({:start_tag, tag, _, _}, state) when tag in ~w(style script template) do
+  # Start tags: style, script - process using in_head rules
+  # Set original_mode first so we return to table context after text mode
+  defp process_in_table({:start_tag, tag, _, _}, state) when tag in ~w(style script) do
+    {:reprocess, %{state | original_mode: state.mode, mode: :in_head}}
+  end
+
+  # Start tag: template - process using in_head rules (no original_mode needed)
+  defp process_in_table({:start_tag, "template", _, _}, state) do
     {:reprocess, %{state | mode: :in_head}}
   end
 

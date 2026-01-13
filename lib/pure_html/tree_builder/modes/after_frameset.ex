@@ -49,13 +49,13 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
   end
 
   def process({:start_tag, "noframes", _attrs, _self_closing}, state) do
-    # Process using "in head" rules
-    {:reprocess, %{state | mode: :in_head}}
+    # Process using "in head" rules, preserve original mode to return here after text mode
+    {:reprocess, %{state | original_mode: :after_frameset, mode: :in_head}}
   end
 
   def process({:end_tag, "html"}, state) do
-    # Switch to "after after frameset" - we just stay in after_frameset
-    {:ok, state}
+    # Switch to "after after frameset"
+    {:ok, %{state | mode: :after_after_frameset}}
   end
 
   def process(_token, state) do

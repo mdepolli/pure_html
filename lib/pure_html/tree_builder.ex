@@ -118,6 +118,7 @@ defmodule PureHTML.TreeBuilder do
             | :after_after_body
             | :in_frameset
             | :after_frameset
+            | :after_after_frameset
 
     @typedoc """
     Active formatting element entry.
@@ -208,7 +209,8 @@ defmodule PureHTML.TreeBuilder do
     after_body: Modes.AfterBody,
     after_after_body: Modes.AfterAfterBody,
     in_frameset: Modes.InFrameset,
-    after_frameset: Modes.AfterFrameset
+    after_frameset: Modes.AfterFrameset,
+    after_after_frameset: Modes.AfterAfterFrameset
   }
 
   # --------------------------------------------------------------------------
@@ -314,6 +316,9 @@ defmodule PureHTML.TreeBuilder do
 
       {:reprocess, new_state} ->
         dispatch(token, new_state)
+
+      {:reprocess_with, new_state, new_token} ->
+        dispatch(new_token, new_state)
     end
   end
 

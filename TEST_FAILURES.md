@@ -1,56 +1,56 @@
 # Test Failures Analysis
 
-**Total: 120 failures out of 1476 tests**
+**Total: 103 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after body-in-template fix*
+*Last updated: 2026-01-13*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| tests1 | 23 | 41 | 15 |
-| webkit01 | 16 | 23 | 10 |
+| tests1 | 23 | 41 | 13 |
 | webkit02 | 13 | 23 | 11 |
 | tests10 | 20 | 33 | 9 |
-| template | 12 | 45 | 11 |
-| tests19 | 13 | 31 | 8 |
-| tests18 | 8 | 17 | 7 |
-| tests7 | 7 | 15 | 5 |
-| tests5 | 4 | 4 | 4 |
+| template | 12 | 45 | 9 |
+| webkit01 | 16 | 23 | 8 |
+| tests19 | 13 | 31 | 7 |
 | tricky01 | 4 | 9 | 4 |
-| tests20 | 4 | 7 | 2 |
-| tests26 | 3 | 18 | 3 |
 | tests9 | 3 | 14 | 3 |
-| tests6 | 3 | 13 | 2 |
-| tests2 | 2 | 10 | 2 |
+| tests26 | 3 | 18 | 3 |
 | tests17 | 3 | 6 | 3 |
 | tests16 | 3 | 3 | 3 |
-| tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
+| tests7 | 7 | 15 | 2 |
+| tests6 | 3 | 13 | 2 |
 | tests3 | 10 | 12 | 2 |
-| tests15 | 3 | 11 | 1 |
+| tests20 | 4 | 7 | 2 |
+| tests2 | 2 | 10 | 2 |
 | tables01 | 2 | 17 | 2 |
 | menuitem-element | 2 | 2 | 2 |
+| tests5 | 4 | 4 | 1 |
+| tests18 | 8 | 17 | 1 |
 | ruby | 1 | 16 | 1 |
 | tests8 | 2 | 6 | 1 |
 | tests24 | 1 | 1 | 1 |
 | tests23 | 1 | 5 | 1 |
 | tests22 | 1 | 5 | 1 |
+| tests15 | 3 | 11 | 1 |
 | tests14 | 1 | 1 | 1 |
 | search-element | 1 | 2 | 1 |
 | pending-spec-changes | 1 | 2 | 1 |
 | namespace-sensitivity | 1 | 1 | 1 |
 | doctype01 | 1 | 1 | 1 |
+| tests11 | 3 | 3 | 0 |
 | adoption01 | 2 | 16 | 0 |
 | adoption02 | 0 | 2 | 0 |
 | html5test-com | 1 | 2 | 0 |
 | main-element | 0 | 1 | 0 |
 | tests12 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **125** |
+| **Total** | **177** | **423** | **103** |
 
 ## Status
 
-All 22 HTML5 insertion modes are now implemented (including after_after_body). The architecture uses:
+All 23 HTML5 insertion modes are now implemented (including after_after_body and after_after_frameset). The architecture uses:
 - Stack holds only refs: `[ref, ref, ref]`
 - Elements map holds all data: `ref => %{tag, attrs, children, parent_ref}`
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Multiple tree builder fixes** (2026-01-13): (1) Original mode preservation: style/script in table context now preserves `original_mode` to return to table context after text mode. Applied to in_select for script, after_frameset/after_after_frameset for noframes. (2) Added after_after_frameset insertion mode (23rd mode). (3) Fixed col in template to use in_column_group mode. (4) Added SVG attribute case adjustments. (5) Fixed in_head whitespace handling to split mixed whitespace/non-whitespace and insert whitespace before closing head. (6) Added `:reprocess_with` dispatch for reprocessing with a different token. (7) Removed incorrect `reconstruct_active_formatting()` call from generic start tag handler - AF should not be reconstructed for block-level elements. Fixed 17 tests (120 → 103 total). tests11: 3 → 0. tests18: 7 → 1. template: 11 → 9. tests5: 4 → 1. tests1: 15 → 13.
 
 - **Body/form/after-html fixes** (2026-01-12): Three fixes: (1) Second `<body>` now merges missing attributes onto existing body element (per HTML5 spec, attrs not already on body are added). (2) Nested `<form>` is now ignored when form_element pointer is set and no template on stack. (3) Added `after_after_body` insertion mode for proper handling of content after `</html>` - comments after closing html tag are now placed as siblings of html at document root level. Added `post_html_nodes` to State to track these. Fixed 9 tests (134 → 125 total). webkit01: 15 → 10. tests6: 3 → 2. tests20: 4 → 2.
 

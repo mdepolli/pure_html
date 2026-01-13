@@ -102,8 +102,13 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     end
   end
 
-  # Start tag: script, template - process using in_head rules
-  def process({:start_tag, tag, _, _}, state) when tag in ["script", "template"] do
+  # Start tag: script - process using in_head rules, preserve original mode
+  def process({:start_tag, "script", _, _}, state) do
+    {:reprocess, %{state | original_mode: state.mode, mode: :in_head}}
+  end
+
+  # Start tag: template - process using in_head rules
+  def process({:start_tag, "template", _, _}, state) do
     {:reprocess, %{state | mode: :in_head}}
   end
 
