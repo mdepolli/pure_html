@@ -63,25 +63,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # Script: push element, switch to text mode with original_mode: :in_template
   def process({:start_tag, "script", attrs, _}, state) do
-    state =
-      state
-      |> push_element("script", attrs)
-      |> Map.put(:original_mode, :in_template)
-      |> Map.put(:mode, :text)
-
-    {:ok, state}
+    {:ok, push_and_enter_text_mode(state, "script", attrs)}
   end
 
   # Raw text elements: push element, switch to text mode
   def process({:start_tag, tag, attrs, _}, state)
       when tag in @raw_text_elements do
-    state =
-      state
-      |> push_element(tag, attrs)
-      |> Map.put(:original_mode, :in_template)
-      |> Map.put(:mode, :text)
-
-    {:ok, state}
+    {:ok, push_and_enter_text_mode(state, tag, attrs)}
   end
 
   # Nested template: push element and push mode onto template_mode_stack
@@ -136,4 +124,15 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # Error tokens: ignore
   def process({:error, _}, state), do: {:ok, state}
+
+  # --------------------------------------------------------------------------
+  # Helpers
+  # --------------------------------------------------------------------------
+
+  defp push_and_enter_text_mode(state, tag, attrs) do
+    state
+    |> push_element(tag, attrs)
+    |> Map.put(:original_mode, :in_template)
+    |> Map.put(:mode, :text)
+  end
 end
