@@ -44,9 +44,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @table_row_context ~w(tr tbody thead tfoot)
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
 
+  # Use shared special_elements from Helpers
+  @special_elements PureHTML.TreeBuilder.Helpers.special_elements()
+
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
-               hr li listing main menu nav ol p plaintext pre rb rp rt rtc section summary table ul)
+               hr li listing main menu nav ol p plaintext pre rb rp rt rtc search section summary table ul)
+
+  # Block-level end tags per HTML5 spec (generate implied end tags, then pop until match)
+  # These do NOT use the "special element stops traversal" rule
+  @block_end_tags ~w(address article aside blockquote button center details dialog dir div
+                     dl fieldset figcaption figure footer form header hgroup listing main
+                     menu nav ol pre search section summary ul)
 
   @implicit_closes %{
     "li" => [],
@@ -64,8 +73,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     "rp" => ["rb", "rt"]
   }
 
+  # Note: input is handled specially - only non-hidden inputs disable frameset
   @frameset_disabling_elements ~w(pre listing form textarea xmp iframe noembed noframes select embed
-                                  keygen applet marquee object table button img input hr br wbr area
+                                  keygen applet marquee object table button img hr br wbr area
                                   dd dt li plaintext rb rtc)
 
   @adopt_on_duplicate_elements ~w(a nobr)
@@ -229,6 +239,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_dd_dt_in_scope(state, tag)}
   end
 
+  # Block-level end tags: generate implied end tags, then pop until match
+  # Per HTML5 spec, these do NOT use the "special element stops traversal" rule
+  def process({:end_tag, tag}, state) when tag in @block_end_tags do
+    {:ok, close_block_end_tag(state, tag)}
+  end
+
+  # Any other end tag: check special elements per HTML5 spec
   def process({:end_tag, tag}, state) do
     {:ok, close_tag_ref(state, tag)}
   end
@@ -468,6 +485,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> then(&do_process_html_start_tag(tag, attrs, self_closing, &1))
   end
 
+  # Input element - only non-hidden inputs disable frameset
+  defp do_process_html_start_tag("input", attrs, _, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> add_child_to_stack({"input", attrs, []})
+    |> maybe_set_frameset_not_ok_for_input(attrs)
+  end
+
   # Void elements
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
     state
@@ -620,13 +646,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
-  # Generic
-  defp do_process_html_start_tag(tag, attrs, _, state) do
+  # Generic - block-level elements close p, inline elements reconstruct AF
+  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @closes_p do
     state
     |> in_body()
     |> maybe_close_p(tag)
     |> maybe_close_same(tag)
     |> maybe_close_current_heading(tag)
+    |> push_element(tag, attrs)
+    |> maybe_set_frameset_not_ok_for_element(tag)
+  end
+
+  defp do_process_html_start_tag(tag, attrs, _, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> maybe_close_same(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
@@ -1230,6 +1265,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp maybe_set_frameset_not_ok_for_element(state, _tag), do: state
 
+  # Per HTML5 spec: only set frameset-ok to "not ok" if input is NOT type="hidden"
+  defp maybe_set_frameset_not_ok_for_input(state, attrs) do
+    if hidden_input?(attrs) do
+      state
+    else
+      set_frameset_not_ok(state)
+    end
+  end
+
+  defp hidden_input?(attrs) do
+    Enum.any?(attrs, fn
+      {"type", value} -> String.downcase(value) == "hidden"
+      _ -> false
+    end)
+  end
+
   # --------------------------------------------------------------------------
   # Scope helpers
   # --------------------------------------------------------------------------
@@ -1478,7 +1529,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Close tag
   # --------------------------------------------------------------------------
 
-  # Close tag using ref-only stack architecture
+  # Tags that are implicitly closed (popped) when generating implied end tags
+  @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
+
+  # Close tag using ref-only stack architecture (respects special element stops)
   defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
     case pop_until_tag_ref(stack, elements, tag) do
       {:found, new_stack, parent_ref} ->
@@ -1488,6 +1542,39 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         state
     end
   end
+
+  # Close block-level end tag: generate implied end tags, then pop until match
+  # Does NOT use special element stops - only template is a barrier
+  defp close_block_end_tag(state, tag) do
+    state
+    |> generate_implied_end_tags()
+    |> do_close_block_end_tag(tag)
+  end
+
+  defp do_close_block_end_tag(%{stack: stack, elements: elements} = state, tag) do
+    case pop_until_tag_ref_block(stack, elements, tag) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  # Generate implied end tags per HTML5 spec
+  defp generate_implied_end_tags(%{stack: [ref | rest], elements: elements} = state)
+       when is_map_key(elements, ref) do
+    case elements[ref] do
+      %{tag: tag} when tag in @implied_end_tag_tags ->
+        parent_ref = elements[ref].parent_ref
+        generate_implied_end_tags(%{state | stack: rest, current_parent_ref: parent_ref})
+
+      _ ->
+        state
+    end
+  end
+
+  defp generate_implied_end_tags(state), do: state
 
   # Close any heading element (h1-h6) per HTML5 spec
   # Any heading end tag closes any open heading element
@@ -1577,16 +1664,46 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
     case tag do
-      ^target -> {:found, rest, parent_ref}
-      {:svg, ^target} -> {:found, rest, parent_ref}
-      {:math, ^target} -> {:found, rest, parent_ref}
-      "template" -> :not_found
-      _ -> do_pop_until_tag_ref(rest, elements, target)
+      ^target ->
+        {:found, rest, parent_ref}
+
+      {:svg, ^target} ->
+        {:found, rest, parent_ref}
+
+      {:math, ^target} ->
+        {:found, rest, parent_ref}
+
+      # Per HTML5 spec: if node is in special category, stop (parse error)
+      special when is_binary(special) and special in @special_elements ->
+        :not_found
+
+      _ ->
+        do_pop_until_tag_ref(rest, elements, target)
     end
   end
 
   defp do_pop_until_tag_ref([_ref | rest], elements, target) do
     do_pop_until_tag_ref(rest, elements, target)
+  end
+
+  # Pop until tag for block-level end tags - only template is a barrier
+  defp pop_until_tag_ref_block([], _elements, _target), do: :not_found
+
+  defp pop_until_tag_ref_block([ref | rest], elements, target)
+       when is_map_key(elements, ref) do
+    %{tag: tag, parent_ref: parent_ref} = elements[ref]
+
+    case tag do
+      ^target -> {:found, rest, parent_ref}
+      {:svg, ^target} -> {:found, rest, parent_ref}
+      {:math, ^target} -> {:found, rest, parent_ref}
+      "template" -> :not_found
+      _ -> pop_until_tag_ref_block(rest, elements, target)
+    end
+  end
+
+  defp pop_until_tag_ref_block([_ref | rest], elements, target) do
+    pop_until_tag_ref_block(rest, elements, target)
   end
 
   # --------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Test Failures Analysis
 
-**Total: 103 failures out of 1476 tests**
+**Total: 94 failures out of 1476 tests**
 
 *Last updated: 2026-01-13*
 
@@ -8,25 +8,24 @@
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| tests1 | 23 | 41 | 13 |
-| webkit02 | 13 | 23 | 11 |
+| template | 12 | 45 | 13 |
+| webkit02 | 13 | 23 | 10 |
+| tests1 | 23 | 41 | 10 |
 | tests10 | 20 | 33 | 9 |
-| template | 12 | 45 | 9 |
-| webkit01 | 16 | 23 | 8 |
 | tests19 | 13 | 31 | 7 |
-| tricky01 | 4 | 9 | 4 |
+| webkit01 | 16 | 23 | 5 |
+| tricky01 | 4 | 9 | 3 |
 | tests9 | 3 | 14 | 3 |
 | tests26 | 3 | 18 | 3 |
 | tests17 | 3 | 6 | 3 |
-| tests16 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
 | tests7 | 7 | 15 | 2 |
 | tests6 | 3 | 13 | 2 |
 | tests3 | 10 | 12 | 2 |
 | tests20 | 4 | 7 | 2 |
 | tests2 | 2 | 10 | 2 |
+| tests16 | 3 | 3 | 2 |
 | tables01 | 2 | 17 | 2 |
-| menuitem-element | 2 | 2 | 2 |
 | tests5 | 4 | 4 | 1 |
 | tests18 | 8 | 17 | 1 |
 | ruby | 1 | 16 | 1 |
@@ -36,8 +35,6 @@
 | tests22 | 1 | 5 | 1 |
 | tests15 | 3 | 11 | 1 |
 | tests14 | 1 | 1 | 1 |
-| search-element | 1 | 2 | 1 |
-| pending-spec-changes | 1 | 2 | 1 |
 | namespace-sensitivity | 1 | 1 | 1 |
 | doctype01 | 1 | 1 | 1 |
 | tests11 | 3 | 3 | 0 |
@@ -46,7 +43,10 @@
 | html5test-com | 1 | 2 | 0 |
 | main-element | 0 | 1 | 0 |
 | tests12 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **103** |
+| menuitem-element | 2 | 2 | 0 |
+| search-element | 1 | 2 | 0 |
+| pending-spec-changes | 1 | 2 | 0 |
+| **Total** | **177** | **423** | **94** |
 
 ## Status
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **End tag special elements and input fixes** (2026-01-13): Four fixes: (1) Added `<search>` to `@closes_p` list - search element now properly closes open p elements. (2) Split generic start tag handler to reconstruct active formatting for inline elements but not for block-level elements (in `@closes_p`). (3) Fixed "any other end tag" to check for special category elements per HTML5 spec - end tags now stop at special elements instead of popping through them. Added separate `close_block_end_tag` for block-level end tags that generates implied end tags first. (4) Hidden inputs no longer set frameset_ok to false, allowing frameset to still replace body. Consolidated `@special_elements` into Helpers module. Fixed 9 tests (103 → 94 total). menuitem-element: 2 → 0. search-element: 1 → 0. pending-spec-changes: 1 → 0. tests1: 13 → 10. webkit01: 8 → 5.
 
 - **Multiple tree builder fixes** (2026-01-13): (1) Original mode preservation: style/script in table context now preserves `original_mode` to return to table context after text mode. Applied to in_select for script, after_frameset/after_after_frameset for noframes. (2) Added after_after_frameset insertion mode (23rd mode). (3) Fixed col in template to use in_column_group mode. (4) Added SVG attribute case adjustments. (5) Fixed in_head whitespace handling to split mixed whitespace/non-whitespace and insert whitespace before closing head. (6) Added `:reprocess_with` dispatch for reprocessing with a different token. (7) Removed incorrect `reconstruct_active_formatting()` call from generic start tag handler - AF should not be reconstructed for block-level elements. Fixed 17 tests (120 → 103 total). tests11: 3 → 0. tests18: 7 → 1. template: 11 → 9. tests5: 4 → 1. tests1: 15 → 13.
 
