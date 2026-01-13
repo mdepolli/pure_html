@@ -270,6 +270,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   defp do_close_to_select([], _elements), do: {[], nil}
 
+  @doc """
+  Switches the current template insertion mode.
+  Replaces the top of template_mode_stack with new_mode (or pushes if empty).
+  """
+  def switch_template_mode(%{template_mode_stack: [_ | rest]} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [new_mode | rest]}
+  end
+
+  def switch_template_mode(%{template_mode_stack: []} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [new_mode]}
+  end
+
   # --------------------------------------------------------------------------
   # Active Formatting Elements
   # --------------------------------------------------------------------------

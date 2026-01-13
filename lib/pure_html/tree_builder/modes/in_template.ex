@@ -28,7 +28,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   alias PureHTML.TreeBuilder.Modes.InBody
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_child_to_stack: 2, push_element: 3, push_af_marker: 1]
+    only: [add_child_to_stack: 2, push_element: 3, push_af_marker: 1, switch_template_mode: 2]
 
   # Void head elements that can just be added directly
   @void_head_elements ~w(base basefont bgsound link meta)
@@ -136,18 +136,4 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # Error tokens: ignore
   def process({:error, _}, state), do: {:ok, state}
-
-  # --------------------------------------------------------------------------
-  # Helpers
-  # --------------------------------------------------------------------------
-
-  defp switch_template_mode(%{template_mode_stack: tms} = state, new_mode) do
-    new_tms =
-      case tms do
-        [_ | rest] -> [new_mode | rest]
-        [] -> [new_mode]
-      end
-
-    %{state | mode: new_mode, template_mode_stack: new_tms}
-  end
 end
