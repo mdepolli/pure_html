@@ -26,7 +26,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       current_element: 1,
       pop_element: 1,
       pop_until_one_of: 2,
-      foster_parent: 2
+      foster_parent: 2,
+      has_tag?: 2
     ]
 
   # --------------------------------------------------------------------------
@@ -885,11 +886,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       _ ->
         state
     end
-  end
-
-  # Check if stack contains a tag (uses elements map lookup)
-  defp has_tag?(%{stack: stack, elements: elements}, tag) do
-    Enum.any?(stack, fn ref -> elements[ref].tag == tag end)
   end
 
   defp has_body_content?(%{stack: stack, elements: elements}) do

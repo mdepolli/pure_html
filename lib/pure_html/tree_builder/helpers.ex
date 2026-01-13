@@ -281,10 +281,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def current_element(%{stack: []}), do: nil
 
   @doc """
-  Checks if a template element is in the stack.
+  Checks if an element with the given tag is in the stack.
   """
-  def has_template?(%{stack: stack, elements: elements}) do
-    Enum.any?(stack, fn ref -> elements[ref].tag == "template" end)
+  def has_tag?(%{stack: stack, elements: elements}, tag) do
+    Enum.any?(stack, fn ref -> elements[ref].tag == tag end)
   end
 
   # --------------------------------------------------------------------------
