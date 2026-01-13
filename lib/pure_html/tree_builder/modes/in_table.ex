@@ -188,11 +188,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Start tag: form - special handling
   defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
     # Only if no form element pointer and no template in stack
-    if not has_tag?(state, "template") do
+    if has_tag?(state, "template") do
+      {:ok, state}
+    else
       form = new_element("form", attrs)
       {:ok, %{state | form_element: form} |> add_child_to_stack(form)}
-    else
-      {:ok, state}
     end
   end
 

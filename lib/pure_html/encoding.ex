@@ -169,17 +169,25 @@ defmodule PureHTML.Encoding do
 
       # Start of attribute
       _ ->
-        {attr_name, attr_value, new_pos, new_seen} = parse_attribute(bytes, pos, seen)
+        parse_meta_attribute(bytes, pos, seen, charset, http_equiv, content)
+    end
+  end
 
-        {charset, http_equiv, content} =
-          case String.downcase(attr_name) do
-            "charset" -> {attr_value, http_equiv, content}
-            "http-equiv" -> {charset, attr_value, content}
-            "content" -> {charset, http_equiv, attr_value}
-            _ -> {charset, http_equiv, content}
-          end
+  defp parse_meta_attribute(bytes, pos, seen, charset, http_equiv, content) do
+    {attr_name, attr_value, new_pos, new_seen} = parse_attribute(bytes, pos, seen)
 
-        parse_meta_attrs(bytes, new_pos, new_seen, charset, http_equiv, content, false)
+    {charset, http_equiv, content} =
+      update_meta_attrs(attr_name, attr_value, charset, http_equiv, content)
+
+    parse_meta_attrs(bytes, new_pos, new_seen, charset, http_equiv, content, false)
+  end
+
+  defp update_meta_attrs(attr_name, attr_value, charset, http_equiv, content) do
+    case String.downcase(attr_name) do
+      "charset" -> {attr_value, http_equiv, content}
+      "http-equiv" -> {charset, attr_value, content}
+      "content" -> {charset, http_equiv, attr_value}
+      _ -> {charset, http_equiv, content}
     end
   end
 

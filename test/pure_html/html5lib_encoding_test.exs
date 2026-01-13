@@ -1,8 +1,8 @@
 defmodule PureHTML.Html5libEncodingTest do
   use ExUnit.Case, async: true
 
-  alias PureHTML.Test.Html5libEncodingTests, as: H5
   alias PureHTML.Encoding
+  alias PureHTML.Test.Html5libEncodingTests, as: H5
 
   for path <- H5.list_test_files() do
     filename = Path.basename(path, ".dat")

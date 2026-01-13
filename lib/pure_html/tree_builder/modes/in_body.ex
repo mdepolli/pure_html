@@ -73,6 +73,24 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @ruby_elements ~w(rb rt rtc rp)
   @newline_skipping_elements ~w(pre textarea listing)
 
+  # Map for determining insertion mode from stack element tags
+  @tag_to_mode %{
+    "template" => :in_template,
+    "tbody" => :in_table,
+    "thead" => :in_table,
+    "tfoot" => :in_table,
+    "tr" => :in_table,
+    "td" => :in_body,
+    "th" => :in_body,
+    "caption" => :in_body,
+    "table" => :in_table,
+    "body" => :in_body,
+    "frameset" => :in_frameset,
+    "head" => :in_head,
+    "html" => :before_head,
+    "select" => :in_select
+  }
+
   # Scope boundary guards
   @scope_boundaries ~w(applet caption html table td th marquee object template)
   @button_scope_extras ~w(button)
@@ -1173,19 +1191,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp determine_mode_from_stack([], _elements), do: :in_body
 
   defp determine_mode_from_stack([ref | rest], elements) do
-    case elements[ref].tag do
-      "template" -> :in_template
-      tag when tag in ~w(tbody thead tfoot) -> :in_table
-      "tr" -> :in_table
-      tag when tag in ~w(td th caption) -> :in_body
-      "table" -> :in_table
-      "body" -> :in_body
-      "frameset" -> :in_frameset
-      "head" -> :in_head
-      "html" -> :before_head
-      "select" -> :in_select
-      _ -> determine_mode_from_stack(rest, elements)
-    end
+    tag = elements[ref].tag
+    Map.get(@tag_to_mode, tag) || determine_mode_from_stack(rest, elements)
   end
 
   defp maybe_skip_leading_newline(state, <<?\n, rest::binary>>) do
