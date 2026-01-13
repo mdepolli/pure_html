@@ -1005,14 +1005,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       m when m in @body_modes ->
         state
 
-      m when m in [:initial, :before_html, :before_head, :in_head, :after_head] ->
-        state
-        |> ensure_html()
-        |> ensure_head()
-        |> close_head()
-        |> ensure_body()
-        |> set_mode(:in_body)
-
       m when m in [:in_frameset, :after_frameset] ->
         state
         |> ensure_body()
@@ -1020,12 +1012,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       _ ->
         state
-        |> ensure_html()
-        |> ensure_head()
-        |> close_head()
-        |> ensure_body()
+        |> ensure_body_context()
         |> set_mode(:in_body)
     end
+  end
+
+  defp ensure_body_context(state) do
+    state
+    |> ensure_html()
+    |> ensure_head()
+    |> close_head()
+    |> ensure_body()
   end
 
   defp merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
