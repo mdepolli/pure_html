@@ -234,6 +234,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, state}
   end
 
+  # Body inside template: ignore (per spec)
+  def process({:start_tag, "body", _, _}, %{template_mode_stack: [_ | _]} = state) do
+    {:ok, state}
+  end
+
   def process({:start_tag, "body", attrs, _}, state) do
     state =
       state
