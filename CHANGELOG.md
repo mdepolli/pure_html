@@ -1,0 +1,56 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- All 23 HTML5 insertion modes implemented:
+  - `initial`, `before_html`, `before_head`, `in_head`, `in_head_noscript`
+  - `after_head`, `in_body`, `text`, `in_table`, `in_table_text`
+  - `in_caption`, `in_column_group`, `in_table_body`, `in_row`, `in_cell`
+  - `in_select`, `in_select_in_table`, `in_template`, `after_body`
+  - `in_frameset`, `after_frameset`, `after_after_body`, `after_after_frameset`
+- HTML5lib tree construction test suite integration (1476 tests)
+- Adoption agency algorithm for proper formatting element handling
+- Active formatting elements list reconstruction
+- Foster parenting for misplaced table content
+- Foreign content support (SVG and MathML namespaces)
+- SVG attribute case adjustments (e.g., `viewbox` -> `viewBox`)
+- Template element handling with template mode stack
+- Implicit tag closing per HTML5 specification
+- Leading newline stripping for `pre`, `textarea`, and `listing` elements
+- Ruby element implicit closing (`rb`, `rt`, `rtc`, `rp`)
+- Second `<body>` tag attribute merging
+- Nested `<form>` handling (ignored when form pointer is set)
+- Post-`</html>` content handling (comments as document siblings)
+
+### Changed
+
+- Refactored tree builder to ref-only stack architecture
+  - Stack holds only refs: `[ref, ref, ref]`
+  - Elements map holds all data: `ref => %{tag, attrs, children, parent_ref}`
+- Consolidated foster parenting into unified `foster_parent/2` API with tagged tuples
+- Extracted all insertion modes to separate modules under `lib/pure_html/tree_builder/modes/`
+
+### Fixed
+
+- Original mode preservation for style/script in table context
+- `</li>` now only closes when `li` is in list item scope (ul/ol are barriers)
+- `<head>` in body mode is now properly ignored
+- `</br>` in table context is foster-parented as `<br>`
+- MathML `mglyph`/`malignmark` namespace preservation in text integration points
+- Foreign content breakout for HTML elements inside SVG/MathML
+- Heading nesting (h1-h6 now properly close previous headings)
+- Frameset handling (body removal from DOM when replaced by frameset)
+- `pop_until_one_of` boundary element handling for template context
+
+### Current Status
+
+- 103 test failures remaining out of 1476 tests (93% passing)
+- All failures are assertion failures (tree structure mismatches), no crashes
+- Remaining work: edge cases in adoption agency, foster parenting, and foreign content
