@@ -501,41 +501,51 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def foster_parent(state, content)
 
-  def foster_parent(%{elements: elements} = state, {:text, text}) do
-    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
+  def foster_parent(state, {:text, text}) do
+    with_foster_parent(state, fn elements, parent_ref, insert_before_ref ->
+      insert_text_before_in_elements(elements, parent_ref, text, insert_before_ref)
+    end)
+  end
 
-    if foster_parent_ref == :document do
-      state
-    else
-      new_elements =
-        insert_text_before_in_elements(elements, foster_parent_ref, text, insert_before_ref)
+  def foster_parent(state, {:element, child}) do
+    with_foster_parent(state, fn elements, parent_ref, insert_before_ref ->
+      insert_child_before_in_elements(elements, parent_ref, child, insert_before_ref)
+    end)
+  end
 
-      %{state | elements: new_elements}
+  def foster_parent(state, {:push, tag, attrs}) do
+    foster_push_element(state, new_element(tag, attrs))
+  end
+
+  def foster_parent(state, {:push_foreign, ns, tag, attrs, true = _self_closing}) do
+    foster_parent(state, {:element, {{ns, tag}, attrs, []}})
+  end
+
+  def foster_parent(state, {:push_foreign, ns, tag, attrs, false = _self_closing}) do
+    foster_push_element(state, new_foreign_element(ns, tag, attrs))
+  end
+
+  # Helper for simple foster parent insertions (text, element)
+  defp with_foster_parent(%{elements: elements} = state, insert_fn) do
+    case find_foster_parent(state) do
+      {:document, _} ->
+        state
+
+      {parent_ref, insert_before_ref} ->
+        %{state | elements: insert_fn.(elements, parent_ref, insert_before_ref)}
     end
   end
 
-  def foster_parent(%{elements: elements} = state, {:element, child}) do
-    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
-
-    if foster_parent_ref == :document do
-      state
-    else
-      new_elements =
-        insert_child_before_in_elements(elements, foster_parent_ref, child, insert_before_ref)
-
-      %{state | elements: new_elements}
-    end
-  end
-
-  def foster_parent(%{stack: stack, elements: elements} = state, {:push, tag, attrs}) do
+  # Helper for foster parenting that pushes an element to the stack
+  defp foster_push_element(%{stack: stack, elements: elements} = state, elem) do
     {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
 
     actual_parent_ref =
       if foster_parent_ref == :document, do: nil, else: foster_parent_ref
 
     elem =
-      tag
-      |> new_element(attrs, actual_parent_ref)
+      elem
+      |> Map.put(:parent_ref, actual_parent_ref)
       |> Map.put(:foster_parent_ref, actual_parent_ref)
 
     new_elements = Map.put(elements, elem.ref, elem)
@@ -543,41 +553,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
     new_elements =
       if actual_parent_ref do
         insert_ref_before_in_parent(new_elements, elem.ref, actual_parent_ref, insert_before_ref)
-      else
-        new_elements
-      end
-
-    {%{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref},
-     elem.ref}
-  end
-
-  def foster_parent(state, {:push_foreign, ns, tag, attrs, true = _self_closing}) do
-    foster_parent(state, {:element, {{ns, tag}, attrs, []}})
-  end
-
-  def foster_parent(
-        %{stack: stack, elements: elements} = state,
-        {:push_foreign, ns, tag, attrs, false = _self_closing}
-      ) do
-    {foster_parent_ref, insert_before_ref} = find_foster_parent(state)
-
-    actual_parent_ref =
-      if foster_parent_ref == :document, do: nil, else: foster_parent_ref
-
-    elem =
-      new_foreign_element(ns, tag, attrs, actual_parent_ref)
-      |> Map.put(:foster_parent_ref, actual_parent_ref)
-
-    new_elements = Map.put(elements, elem.ref, elem)
-
-    new_elements =
-      if actual_parent_ref do
-        insert_ref_before_in_parent(
-          new_elements,
-          elem.ref,
-          actual_parent_ref,
-          insert_before_ref
-        )
       else
         new_elements
       end
