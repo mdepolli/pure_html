@@ -40,9 +40,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   end
 
   def process({:end_tag, "html"}, state) do
-    # Switch to "after after body" - we just stay in after_body
-    # since we don't implement after_after_body
-    {:ok, state}
+    # Switch to "after after body" mode
+    {:ok, %{state | mode: :after_after_body}}
   end
 
   def process(_token, state) do

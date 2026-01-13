@@ -87,8 +87,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:start_tag, tag, _attrs, _self_closing}, state) when tag in @head_elements do
     # Parse error, but process using "in head" rules
-    # Delegate to main process/2 which will reopen head properly
-    {:reprocess, %{state | mode: :in_body}}
+    # Per spec: push head onto stack, process in in_head, then head is automatically
+    # popped when in_head closes (or style/script processing ends)
+    {:reprocess, reopen_head(state)}
   end
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
@@ -121,5 +122,18 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     state
     |> push_element("body", %{})
     |> set_mode(:in_body)
+  end
+
+  # Reopen head element: push it back onto the stack and switch to in_head mode
+  # Per HTML5 spec: "Push the node pointed to by the head element pointer onto
+  # the stack of open elements. Process the token using the rules for the
+  # 'in head' insertion mode."
+  defp reopen_head(%{head_element: head_ref, stack: stack} = state) when not is_nil(head_ref) do
+    %{state | stack: [head_ref | stack], current_parent_ref: head_ref, mode: :in_head}
+  end
+
+  defp reopen_head(state) do
+    # No head element pointer, just switch mode
+    %{state | mode: :in_head}
   end
 end

@@ -1,34 +1,34 @@
 # Test Failures Analysis
 
-**Total: 137 failures out of 1476 tests**
+**Total: 121 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after implementing in_select_in_table (all 21 modes complete)*
+*Last updated: 2026-01-12 after fixing head_element pointer and form state bug*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| tests1 | 23 | 41 | 16 |
-| webkit01 | 16 | 23 | 15 |
+| tests1 | 23 | 41 | 15 |
+| webkit01 | 16 | 23 | 10 |
 | webkit02 | 13 | 23 | 11 |
 | tests10 | 20 | 33 | 9 |
-| template | 12 | 45 | 10 |
-| tests19 | 13 | 31 | 9 |
+| template | 12 | 45 | 11 |
+| tests19 | 13 | 31 | 8 |
 | tests18 | 8 | 17 | 7 |
-| tests7 | 7 | 15 | 6 |
+| tests7 | 7 | 15 | 5 |
 | tests5 | 4 | 4 | 4 |
 | tricky01 | 4 | 9 | 4 |
-| tests20 | 4 | 7 | 4 |
+| tests20 | 4 | 7 | 2 |
 | tests26 | 3 | 18 | 3 |
 | tests9 | 3 | 14 | 3 |
-| tests6 | 3 | 13 | 3 |
-| tests2 | 2 | 10 | 3 |
+| tests6 | 3 | 13 | 2 |
+| tests2 | 2 | 10 | 2 |
 | tests17 | 3 | 6 | 3 |
 | tests16 | 3 | 3 | 3 |
 | tests11 | 3 | 3 | 3 |
 | quirks01 | 3 | 3 | 3 |
 | tests3 | 10 | 12 | 2 |
-| tests15 | 3 | 11 | 2 |
+| tests15 | 3 | 11 | 1 |
 | tables01 | 2 | 17 | 2 |
 | menuitem-element | 2 | 2 | 2 |
 | ruby | 1 | 16 | 1 |
@@ -46,11 +46,11 @@
 | html5test-com | 1 | 2 | 0 |
 | main-element | 0 | 1 | 0 |
 | tests12 | 0 | 2 | 0 |
-| **Total** | **177** | **423** | **137** |
+| **Total** | **177** | **423** | **125** |
 
 ## Status
 
-All 21 HTML5 insertion modes are now implemented. The architecture uses:
+All 22 HTML5 insertion modes are now implemented (including after_after_body). The architecture uses:
 - Stack holds only refs: `[ref, ref, ref]`
 - Elements map holds all data: `ref => %{tag, attrs, children, parent_ref}`
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Body/form/after-html fixes** (2026-01-12): Three fixes: (1) Second `<body>` now merges missing attributes onto existing body element (per HTML5 spec, attrs not already on body are added). (2) Nested `<form>` is now ignored when form_element pointer is set and no template on stack. (3) Added `after_after_body` insertion mode for proper handling of content after `</html>` - comments after closing html tag are now placed as siblings of html at document root level. Added `post_html_nodes` to State to track these. Fixed 9 tests (134 → 125 total). webkit01: 15 → 10. tests6: 3 → 2. tests20: 4 → 2.
 
 - **Implement in_select_in_table mode** (2026-01-12): Added the final HTML5 insertion mode. This mode handles select elements opened inside table context. Per spec, table element end tags (caption, table, tbody, tfoot, thead, tr, td, th) close the select and reprocess. Delegates all other processing to InSelect. All 21 HTML5 insertion modes are now complete. No test changes (137 total).
 

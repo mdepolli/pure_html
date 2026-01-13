@@ -115,6 +115,7 @@ defmodule PureHTML.TreeBuilder do
             | :in_select_in_table
             | :in_template
             | :after_body
+            | :after_after_body
             | :in_frameset
             | :after_frameset
 
@@ -142,7 +143,8 @@ defmodule PureHTML.TreeBuilder do
             # DOM Structure
             elements: %{element_ref() => element()},
             current_parent_ref: element_ref() | nil,
-            document_children: [child()]
+            document_children: [child()],
+            post_html_nodes: [child()]
           }
 
     defstruct [
@@ -174,32 +176,11 @@ defmodule PureHTML.TreeBuilder do
       # Current parent element ref (for O(1) parent lookup during insertion)
       current_parent_ref: nil,
       # Top-level document children (comments before <html>)
-      document_children: []
+      document_children: [],
+      # Post-html nodes (comments after </html>)
+      post_html_nodes: []
     ]
   end
-
-  # HTML5 Insertion Modes (full spec)
-  # :initial            - Starting state, before DOCTYPE
-  # :before_html        - Before <html> element
-  # :before_head        - Before <head> element
-  # :in_head            - Inside <head>
-  # :in_head_noscript   - Inside <noscript> in <head>
-  # :after_head         - After </head>, before <body>
-  # :in_body            - Inside <body> (main parsing mode)
-  # :text               - Raw text mode (for script/style content)
-  # :in_table           - Inside <table>
-  # :in_table_text      - Collecting text in table context
-  # :in_caption         - Inside <caption>
-  # :in_column_group    - Inside <colgroup>
-  # :in_table_body      - Inside <tbody>, <thead>, or <tfoot>
-  # :in_row             - Inside <tr>
-  # :in_cell            - Inside <td> or <th>
-  # :in_select          - Inside <select>
-  # :in_select_in_table - Inside <select> that's in a table
-  # :in_template        - Inside <template>
-  # :after_body         - After </body>
-  # :in_frameset        - Inside <frameset>
-  # :after_frameset     - After </frameset>
 
   # --------------------------------------------------------------------------
   # Mode modules
@@ -225,6 +206,7 @@ defmodule PureHTML.TreeBuilder do
     in_select_in_table: Modes.InSelectInTable,
     in_template: Modes.InTemplate,
     after_body: Modes.AfterBody,
+    after_after_body: Modes.AfterAfterBody,
     in_frameset: Modes.InFrameset,
     after_frameset: Modes.AfterFrameset
   }
@@ -245,11 +227,15 @@ defmodule PureHTML.TreeBuilder do
       build_loop(tokenizer, {nil, %State{}, []})
 
     html_node = finalize(state)
-    comments = Enum.reverse(pre_html_comments)
+    pre_comments = Enum.reverse(pre_html_comments)
+    post_nodes = Enum.reverse(state.post_html_nodes)
 
     case doctype do
-      nil -> comments ++ [html_node]
-      {name, public, system} -> [{:doctype, name, public, system} | comments] ++ [html_node]
+      nil ->
+        pre_comments ++ [html_node] ++ post_nodes
+
+      {name, public, system} ->
+        [{:doctype, name, public, system} | pre_comments] ++ [html_node] ++ post_nodes
     end
   end
 

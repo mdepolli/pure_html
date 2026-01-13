@@ -19,7 +19,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, push_element: 3, set_mode: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, push_element: 3]
 
   @impl true
   def process({:character, text}, state) do
@@ -69,10 +69,10 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
     {:reprocess, insert_head(state, %{})}
   end
 
-  # Insert head element and switch to in_head mode
+  # Insert head element, set head_element pointer, and switch to in_head mode
   defp insert_head(state, attrs) do
-    state
-    |> push_element("head", attrs)
-    |> set_mode(:in_head)
+    state = push_element(state, "head", attrs)
+    # Set head_element pointer to the newly created head ref (top of stack)
+    %{state | head_element: hd(state.stack), mode: :in_head}
   end
 end

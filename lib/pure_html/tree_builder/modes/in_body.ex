@@ -248,7 +248,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
           |> set_frameset_not_ok()
 
         s ->
-          set_frameset_not_ok(s)
+          s
+          |> merge_body_attrs(attrs)
+          |> set_frameset_not_ok()
       end)
 
     {:ok, state}
@@ -554,6 +556,31 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_element("table", attrs)
     |> push_mode(:in_table)
     |> set_frameset_not_ok()
+  end
+
+  # Form - ignore if form_element is set and no template on stack
+  defp do_process_html_start_tag(
+         "form",
+         _attrs,
+         _,
+         %{form_element: f, template_mode_stack: []} = state
+       )
+       when not is_nil(f) do
+    state
+  end
+
+  defp do_process_html_start_tag("form", attrs, _, state) do
+    state
+    |> in_body()
+    |> maybe_close_p("form")
+    |> push_element("form", attrs)
+    |> then(fn
+      %{template_mode_stack: [], stack: [form_ref | _]} = new_state ->
+        %{new_state | form_element: form_ref}
+
+      new_state ->
+        new_state
+    end)
   end
 
   # Select
@@ -1003,6 +1030,31 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       _ ->
         find_head_ref_in_children(rest, elements)
+    end
+  end
+
+  # Merge attributes from second <body> onto existing body element
+  # Per HTML5: adds attributes that don't already exist
+  defp merge_body_attrs(%{stack: stack, elements: elements} = state, new_attrs) do
+    case find_body_ref(stack, elements) do
+      nil ->
+        state
+
+      body_ref ->
+        body_elem = elements[body_ref]
+        # Only add attrs that don't already exist on the body
+        merged_attrs = Map.merge(new_attrs, body_elem.attrs)
+        updated_body = %{body_elem | attrs: merged_attrs}
+        %{state | elements: Map.put(elements, body_ref, updated_body)}
+    end
+  end
+
+  defp find_body_ref([], _elements), do: nil
+
+  defp find_body_ref([ref | rest], elements) do
+    case elements[ref] do
+      %{tag: "body"} -> ref
+      _ -> find_body_ref(rest, elements)
     end
   end
 
