@@ -32,6 +32,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       push_element: 3,
+      push_foreign_element: 4,
       add_child_to_stack: 2,
       add_text_to_stack: 2,
       pop_element: 1,
@@ -138,12 +139,20 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # SVG and Math - create namespaced elements
-  def process({:start_tag, "svg", attrs, self_closing}, state) do
-    {:ok, push_foreign_element(state, :svg, "svg", attrs, self_closing)}
+  def process({:start_tag, "svg", attrs, true}, state) do
+    {:ok, add_child_to_stack(state, {{:svg, "svg"}, attrs, []})}
   end
 
-  def process({:start_tag, "math", attrs, self_closing}, state) do
-    {:ok, push_foreign_element(state, :math, "math", attrs, self_closing)}
+  def process({:start_tag, "svg", attrs, false}, state) do
+    {:ok, push_foreign_element(state, :svg, "svg", attrs)}
+  end
+
+  def process({:start_tag, "math", attrs, true}, state) do
+    {:ok, add_child_to_stack(state, {{:math, "math"}, attrs, []})}
+  end
+
+  def process({:start_tag, "math", attrs, false}, state) do
+    {:ok, push_foreign_element(state, :math, "math", attrs)}
   end
 
   # Any other start tag: insert (browsers don't strictly follow spec here)
@@ -213,30 +222,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   defp get_parent_tag(_), do: nil
-
-  defp push_foreign_element(state, ns, tag, attrs, true = _self_closing) do
-    add_child_to_stack(state, {{ns, tag}, attrs, []})
-  end
-
-  defp push_foreign_element(state, ns, tag, attrs, false = _self_closing) do
-    %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state
-    elem = %{ref: make_ref(), tag: {ns, tag}, attrs: attrs, children: [], parent_ref: parent_ref}
-
-    new_elements =
-      elements
-      |> Map.put(elem.ref, elem)
-      |> add_to_parent_children(elem.ref, parent_ref)
-
-    %{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref}
-  end
-
-  defp add_to_parent_children(elements, _child_ref, nil), do: elements
-
-  defp add_to_parent_children(elements, child_ref, parent_ref) do
-    Map.update!(elements, parent_ref, fn parent ->
-      %{parent | children: [child_ref | parent.children]}
-    end)
-  end
 
   # Close current option if on top of stack
   defp close_current_option(state) do
