@@ -49,7 +49,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
-               hr li listing main menu nav ol p plaintext pre rb rp rt rtc search section summary table ul)
+               hr li listing main menu nav ol p plaintext pre rb rp rt rtc search section summary table ul xmp)
 
   # Block-level end tags per HTML5 spec (generate implied end tags, then pop until match)
   # These do NOT use the "special element stops traversal" rule
