@@ -125,17 +125,12 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:ok, state}
   end
 
-  # Table structure elements: close select and reprocess
-  @table_elements ~w(caption table tbody tfoot thead tr td th)
+  # Table elements in in_select: parse error, ignore per HTML5 spec
+  # (in_select_in_table mode handles these differently by closing select)
+  @table_elements_to_ignore ~w(caption table tbody tfoot thead tr td th)
 
-  def process({:start_tag, tag, _, _}, state)
-      when tag in @table_elements do
-    if in_select_scope?(state, "select") do
-      state = close_select(state)
-      {:reprocess, state}
-    else
-      {:ok, state}
-    end
+  def process({:start_tag, tag, _, _}, state) when tag in @table_elements_to_ignore do
+    {:ok, state}
   end
 
   # SVG and Math - create namespaced elements
@@ -155,7 +150,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:ok, push_foreign_element(state, :math, "math", attrs)}
   end
 
-  # Any other start tag: insert (browsers don't strictly follow spec here)
+  # Any other start tag: insert (browsers insert elements for compatibility)
   def process({:start_tag, tag, attrs, self_closing}, state) do
     if self_closing do
       {:ok, add_child_to_stack(state, {tag, attrs, []})}

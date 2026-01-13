@@ -197,7 +197,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   def process({:end_tag, tag}, %{af: af} = state) when tag in @table_cells do
-    new_state = close_tag_ref(state, tag)
+    new_state = close_tag_ref_forced(state, tag)
     new_af = clear_af_to_marker(af)
     {:ok, %{new_state | af: new_af}}
   end
@@ -206,21 +206,21 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     closed_refs = get_refs_to_close_for_table(state)
     new_af = reject_refs_from_af(af, closed_refs)
     state = clear_to_table_context(state)
-    {:ok, close_tag_ref(%{state | af: new_af}, "table") |> pop_mode()}
+    {:ok, close_tag_ref_forced(%{state | af: new_af}, "table") |> pop_mode()}
   end
 
   def process({:end_tag, "select"}, state) do
-    {:ok, close_tag_ref(state, "select") |> pop_mode()}
+    {:ok, close_tag_ref_forced(state, "select") |> pop_mode()}
   end
 
   def process({:end_tag, "template"}, %{af: af} = state) do
-    new_state = close_tag_ref(state, "template")
+    new_state = close_tag_ref_forced(state, "template")
     new_af = clear_af_to_marker(af)
     {:ok, %{new_state | af: new_af} |> reset_insertion_mode()}
   end
 
   def process({:end_tag, "frameset"}, state) do
-    {:ok, close_tag_ref(state, "frameset") |> Map.put(:mode, :after_frameset)}
+    {:ok, close_tag_ref_forced(state, "frameset") |> Map.put(:mode, :after_frameset)}
   end
 
   # Heading end tags: close ANY open heading element per spec
@@ -636,13 +636,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
-  # Select
+  # Select - use in_select_in_table if there's a table ancestor
   defp do_process_html_start_tag("select", attrs, _, state) do
+    state = state |> in_body() |> reconstruct_active_formatting() |> push_element("select", attrs)
+
+    mode =
+      if has_table_ancestor?(state.stack, state.elements),
+        do: :in_select_in_table,
+        else: :in_select
+
     state
-    |> in_body()
-    |> reconstruct_active_formatting()
-    |> push_element("select", attrs)
-    |> push_mode(:in_select)
+    |> push_mode(mode)
     |> set_frameset_not_ok()
   end
 
@@ -1227,7 +1231,32 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp determine_mode_from_stack([ref | rest], elements) do
     tag = elements[ref].tag
-    Map.get(@tag_to_mode, tag) || determine_mode_from_stack(rest, elements)
+
+    case Map.get(@tag_to_mode, tag) do
+      nil ->
+        determine_mode_from_stack(rest, elements)
+
+      # Per HTML5 spec: if select and table ancestor exists, use in_select_in_table
+      :in_select ->
+        if has_table_ancestor?(rest, elements) do
+          :in_select_in_table
+        else
+          :in_select
+        end
+
+      mode ->
+        mode
+    end
+  end
+
+  defp has_table_ancestor?([], _elements), do: false
+
+  defp has_table_ancestor?([ref | rest], elements) do
+    case elements[ref].tag do
+      "table" -> true
+      "template" -> false
+      _ -> has_table_ancestor?(rest, elements)
+    end
   end
 
   defp maybe_skip_leading_newline(state, <<?\n, rest::binary>>) do
@@ -1533,8 +1562,21 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
 
   # Close tag using ref-only stack architecture (respects special element stops)
+  # Used for "any other end tag" per HTML5 spec
   defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
     case pop_until_tag_ref(stack, elements, tag) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  # Close tag for specifically-handled end tags (template, table, select, frameset)
+  # Does NOT respect special element stops - only template is a barrier
+  defp close_tag_ref_forced(%{stack: stack, elements: elements} = state, tag) do
+    case pop_until_tag_ref_block(stack, elements, tag) do
       {:found, new_stack, parent_ref} ->
         %{state | stack: new_stack, current_parent_ref: parent_ref}
 

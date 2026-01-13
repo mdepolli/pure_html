@@ -30,6 +30,16 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
   @table_elements ~w(caption table tbody tfoot thead tr td th)
 
   @impl true
+  # Start tags for table elements: close select and reprocess
+  def process({:start_tag, tag, _, _}, state) when tag in @table_elements do
+    if in_select_scope?(state, "select") do
+      state = close_select(state)
+      {:reprocess, state}
+    else
+      {:ok, state}
+    end
+  end
+
   # End tags for table elements: close select and reprocess if in table scope
   def process({:end_tag, tag}, state) when tag in @table_elements do
     if in_table_scope?(state, tag) and in_select_scope?(state, "select") do

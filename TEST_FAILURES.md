@@ -1,6 +1,6 @@
 # Test Failures Analysis
 
-**Total: 94 failures out of 1476 tests**
+**Total: 87 failures out of 1476 tests**
 
 *Last updated: 2026-01-13*
 
@@ -8,7 +8,7 @@
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| template | 12 | 45 | 13 |
+| template | 12 | 45 | 9 |
 | webkit02 | 13 | 23 | 10 |
 | tests1 | 23 | 41 | 10 |
 | tests10 | 20 | 33 | 9 |
@@ -17,7 +17,7 @@
 | tricky01 | 4 | 9 | 3 |
 | tests9 | 3 | 14 | 3 |
 | tests26 | 3 | 18 | 3 |
-| tests17 | 3 | 6 | 3 |
+| tests17 | 3 | 6 | 0 |
 | quirks01 | 3 | 3 | 3 |
 | tests7 | 7 | 15 | 2 |
 | tests6 | 3 | 13 | 2 |
@@ -46,7 +46,7 @@
 | menuitem-element | 2 | 2 | 0 |
 | search-element | 1 | 2 | 0 |
 | pending-spec-changes | 1 | 2 | 0 |
-| **Total** | **177** | **423** | **94** |
+| **Total** | **177** | **423** | **87** |
 
 ## Status
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Select element table context detection** (2026-01-13): Fixed `<select>` to use `in_select_in_table` mode when opened inside table context. Previously, select always used `in_select` mode regardless of table ancestry. Added `has_table_ancestor?` check when processing select start tag to determine correct mode. This ensures table elements like `<td>`, `<th>`, `<tr>` properly close the select and reprocess when inside table context. Fixed 7 tests (94 → 87 total). tests17: 3 → 0. template: 13 → 9.
 
 - **End tag special elements and input fixes** (2026-01-13): Four fixes: (1) Added `<search>` to `@closes_p` list - search element now properly closes open p elements. (2) Split generic start tag handler to reconstruct active formatting for inline elements but not for block-level elements (in `@closes_p`). (3) Fixed "any other end tag" to check for special category elements per HTML5 spec - end tags now stop at special elements instead of popping through them. Added separate `close_block_end_tag` for block-level end tags that generates implied end tags first. (4) Hidden inputs no longer set frameset_ok to false, allowing frameset to still replace body. Consolidated `@special_elements` into Helpers module. Fixed 9 tests (103 → 94 total). menuitem-element: 2 → 0. search-element: 1 → 0. pending-spec-changes: 1 → 0. tests1: 13 → 10. webkit01: 8 → 5.
 
