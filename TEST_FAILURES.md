@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 121 failures out of 1476 tests**
+**Total: 120 failures out of 1476 tests**
 
-*Last updated: 2026-01-12 after fixing head_element pointer and form state bug*
+*Last updated: 2026-01-12 after body-in-template fix*
 
 ## By Test File
 
