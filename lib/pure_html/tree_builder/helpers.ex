@@ -240,6 +240,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def set_frameset_ok(state, value), do: %{state | frameset_ok: value}
 
+  @doc """
+  Pops the insertion mode from the template mode stack.
+  Returns to the previous mode, or :in_body if stack is empty.
+  """
+  def pop_mode(%{template_mode_stack: [prev_mode | rest]} = state) do
+    %{state | mode: prev_mode, template_mode_stack: rest}
+  end
+
+  def pop_mode(%{template_mode_stack: []} = state) do
+    %{state | mode: :in_body}
+  end
+
   # --------------------------------------------------------------------------
   # Active Formatting Elements
   # --------------------------------------------------------------------------

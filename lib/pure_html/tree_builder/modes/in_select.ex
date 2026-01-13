@@ -35,6 +35,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       add_child_to_stack: 2,
       add_text_to_stack: 2,
       pop_element: 1,
+      pop_mode: 1,
       current_tag: 1,
       in_select_scope?: 2
     ]
@@ -265,13 +266,4 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   defp do_close_to_select([], _elements), do: {[], nil}
-
-  # Pop mode from template mode stack
-  defp pop_mode(%{template_mode_stack: [prev_mode | rest]} = state) do
-    %{state | mode: prev_mode, template_mode_stack: rest}
-  end
-
-  defp pop_mode(%{template_mode_stack: []} = state) do
-    %{state | mode: :in_body}
-  end
 end

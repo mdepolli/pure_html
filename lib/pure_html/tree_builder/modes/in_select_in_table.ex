@@ -23,7 +23,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       in_table_scope?: 2,
-      in_select_scope?: 2
+      in_select_scope?: 2,
+      pop_mode: 1
     ]
 
   @table_elements ~w(caption table tbody tfoot thead tr td th)
@@ -45,10 +46,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
     InSelect.process(token, state)
   end
 
-  # Close select and reset mode to previous
+  # Close select and pop mode to previous
   defp close_select(%{stack: stack, elements: elements} = state) do
     {new_stack, parent_ref} = do_close_to_select(stack, elements)
-    reset_mode(%{state | stack: new_stack, current_parent_ref: parent_ref})
+    pop_mode(%{state | stack: new_stack, current_parent_ref: parent_ref})
   end
 
   defp do_close_to_select([ref | rest], elements) do
@@ -59,13 +60,4 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
   end
 
   defp do_close_to_select([], _elements), do: {[], nil}
-
-  # Reset mode from template mode stack
-  defp reset_mode(%{template_mode_stack: [prev_mode | rest]} = state) do
-    %{state | mode: prev_mode, template_mode_stack: rest}
-  end
-
-  defp reset_mode(%{template_mode_stack: []} = state) do
-    %{state | mode: :in_body}
-  end
 end

@@ -20,6 +20,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       add_child_to_stack: 2,
       add_text_to_stack: 2,
       set_mode: 2,
+      pop_mode: 1,
       push_af_marker: 1,
       correct_tag: 1,
       current_tag: 1,
@@ -1161,14 +1162,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
     %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
-  end
-
-  defp pop_mode(%{template_mode_stack: [prev_mode | rest]} = state) do
-    %{state | mode: prev_mode, template_mode_stack: rest}
-  end
-
-  defp pop_mode(%{template_mode_stack: []} = state) do
-    %{state | mode: :in_body}
   end
 
   defp switch_template_mode(%{template_mode_stack: [_ | rest]} = state, new_mode) do
