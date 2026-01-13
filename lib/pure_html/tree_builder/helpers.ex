@@ -491,26 +491,33 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Unified foster parenting function.
   Inserts content before the table element per HTML5 spec.
+  Always returns `{state, ref}` where ref is nil for text/element insertions.
 
   ## Content types:
-  - `{:text, text}` - insert text, returns `state`
-  - `{:element, {tag, attrs, children}}` - insert complete element tuple, returns `state`
-  - `{:push, tag, attrs}` - create element, insert, push to stack, returns `{state, ref}`
+  - `{:text, text}` - insert text, returns `{state, nil}`
+  - `{:element, {tag, attrs, children}}` - insert complete element, returns `{state, nil}`
+  - `{:push, tag, attrs}` - create element, push to stack, returns `{state, ref}`
   - `{:push_foreign, ns, tag, attrs, self_closing}` - create foreign element,
-     returns `state` for self-closing, `{state, ref}` otherwise
+     returns `{state, nil}` for self-closing, `{state, ref}` otherwise
   """
   def foster_parent(state, content)
 
   def foster_parent(state, {:text, text}) do
-    with_foster_parent(state, fn elements, parent_ref, insert_before_ref ->
-      insert_text_before_in_elements(elements, parent_ref, text, insert_before_ref)
-    end)
+    new_state =
+      with_foster_parent(state, fn elements, parent_ref, insert_before_ref ->
+        insert_text_before_in_elements(elements, parent_ref, text, insert_before_ref)
+      end)
+
+    {new_state, nil}
   end
 
   def foster_parent(state, {:element, child}) do
-    with_foster_parent(state, fn elements, parent_ref, insert_before_ref ->
-      insert_child_before_in_elements(elements, parent_ref, child, insert_before_ref)
-    end)
+    new_state =
+      with_foster_parent(state, fn elements, parent_ref, insert_before_ref ->
+        insert_child_before_in_elements(elements, parent_ref, child, insert_before_ref)
+      end)
+
+    {new_state, nil}
   end
 
   def foster_parent(state, {:push, tag, attrs}) do
@@ -518,7 +525,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   def foster_parent(state, {:push_foreign, ns, tag, attrs, true = _self_closing}) do
-    foster_parent(state, {:element, {{ns, tag}, attrs, []}})
+    {new_state, _} = foster_parent(state, {:element, {{ns, tag}, attrs, []}})
+    {new_state, nil}
   end
 
   def foster_parent(state, {:push_foreign, ns, tag, attrs, false = _self_closing}) do

@@ -180,7 +180,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       {:ok, add_child_to_stack(state, {"input", attrs, []})}
     else
       # Foster parent
-      {:ok, foster_parent(state, {:element, {"input", attrs, []}})}
+      {new_state, _} = foster_parent(state, {:element, {"input", attrs, []}})
+      {:ok, new_state}
     end
   end
 
@@ -228,7 +229,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
     cond do
       self_closing or tag in @void_elements ->
-        {:ok, foster_parent(state, {:element, {tag, attrs, []}})}
+        {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
+        {:ok, new_state}
 
       tag in @formatting_elements ->
         # For <a> and <nobr>, run adoption agency if duplicate
@@ -270,7 +272,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # </br> special case: foster parent a <br> element (per HTML5 spec, </br> is treated as <br>)
   defp process_in_table({:end_tag, "br"}, state) do
-    {:ok, foster_parent(state, {:element, {"br", %{}, []}})}
+    {new_state, _} = foster_parent(state, {:element, {"br", %{}, []}})
+    {:ok, new_state}
   end
 
   # </select> special case: close select if in scope, but don't change mode
@@ -311,10 +314,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp foster_foreign_element(state, ns, tag, attrs, self_closing) do
-    case foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing}) do
-      {new_state, _ref} -> new_state
-      new_state -> new_state
-    end
+    {new_state, _} = foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing})
+    new_state
   end
 
   # Clear stack to table context (table, template, html)

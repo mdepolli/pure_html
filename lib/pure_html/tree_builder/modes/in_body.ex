@@ -105,7 +105,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         if String.trim(text) == "" do
           {:ok, add_text_to_stack(state, text)}
         else
-          {:ok, foster_parent(state, {:text, text})}
+          {new_state, _} = foster_parent(state, {:text, text})
+          {:ok, new_state}
         end
 
       true ->

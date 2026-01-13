@@ -26,6 +26,8 @@ defmodule PureHTML.TreeBuilder do
   alias PureHTML.Tokenizer
   alias PureHTML.TreeBuilder.{Helpers, Modes}
 
+  import Helpers, only: [add_text_to_stack: 2, foster_parent: 2]
+
   # --------------------------------------------------------------------------
   # Type Definitions
   # --------------------------------------------------------------------------
@@ -265,10 +267,11 @@ defmodule PureHTML.TreeBuilder do
     new_state =
       if String.trim(text) == "" do
         # Whitespace only: insert normally
-        Helpers.add_text_to_stack(state, text)
+        add_text_to_stack(state, text)
       else
         # Contains non-whitespace: foster parent
-        Helpers.foster_parent(state, {:text, text})
+        {state_with_text, _} = foster_parent(state, {:text, text})
+        state_with_text
       end
 
     {doctype, %{new_state | pending_table_text: ""}, comments}

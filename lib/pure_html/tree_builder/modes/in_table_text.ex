@@ -71,7 +71,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
     if entries_to_reconstruct == [] do
       # No formatting to reconstruct - just foster parent the text
-      foster_parent(state, {:text, text})
+      {new_state, _} = foster_parent(state, {:text, text})
+      new_state
     else
       # Reconstruct formatting elements (they'll be foster parented)
       # Then add text to the reconstructed element (not foster parented)
