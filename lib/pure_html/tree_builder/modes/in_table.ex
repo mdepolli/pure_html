@@ -30,9 +30,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.AdoptionAgency
-  alias PureHTML.TreeBuilder.Modes.InBody
-
   import PureHTML.TreeBuilder.Helpers,
     only: [
       push_element: 3,
@@ -45,6 +42,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       new_element: 2,
       reject_refs_from_af: 2
     ]
+
+  alias PureHTML.TreeBuilder.AdoptionAgency
+  alias PureHTML.TreeBuilder.Modes.InBody
 
   @table_sections ~w(tbody thead tfoot)
   @table_context ~w(table tbody thead tfoot tr)

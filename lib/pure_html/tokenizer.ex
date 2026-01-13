@@ -24,6 +24,16 @@ defmodule PureHTML.Tokenizer do
 
   alias PureHTML.Entities
 
+  @type t :: %__MODULE__{}
+
+  @type token ::
+          {:doctype, String.t() | nil, String.t() | nil, String.t() | nil, boolean()}
+          | {:start_tag, String.t(), map(), boolean()}
+          | {:end_tag, String.t()}
+          | {:comment, String.t()}
+          | {:character, String.t()}
+          | {:error, atom()}
+
   # The tokenizer state struct
   defstruct [
     # remaining input binary
@@ -53,16 +63,6 @@ defmodule PureHTML.Tokenizer do
     # When false (default), <![CDATA[ is treated as bogus comment
     adjusted_current_node_not_in_html_namespace: false
   ]
-
-  @type t :: %__MODULE__{}
-
-  @type token ::
-          {:doctype, String.t() | nil, String.t() | nil, String.t() | nil, boolean()}
-          | {:start_tag, String.t(), map(), boolean()}
-          | {:end_tag, String.t()}
-          | {:comment, String.t()}
-          | {:character, String.t()}
-          | {:error, atom()}
 
   # Guards
   defguardp is_ascii_alpha(c) when c in ?a..?z or c in ?A..?Z

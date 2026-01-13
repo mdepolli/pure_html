@@ -23,10 +23,10 @@ defmodule PureHTML.TreeBuilder do
   Final output: {tag, attrs, children} tuples (attrs are maps, not lists like Floki)
   """
 
-  alias PureHTML.Tokenizer
-  alias PureHTML.TreeBuilder.{Helpers, Modes}
+  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, foster_parent: 2]
 
-  import Helpers, only: [add_text_to_stack: 2, foster_parent: 2]
+  alias PureHTML.Tokenizer
+  alias PureHTML.TreeBuilder.Modes
 
   # --------------------------------------------------------------------------
   # Type Definitions

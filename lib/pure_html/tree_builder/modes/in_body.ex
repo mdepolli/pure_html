@@ -9,8 +9,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.AdoptionAgency
-
   import PureHTML.TreeBuilder.Helpers,
     only: [
       new_element: 2,
@@ -31,6 +29,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       foster_parent: 2,
       has_tag?: 2
     ]
+
+  alias PureHTML.TreeBuilder.AdoptionAgency
 
   # --------------------------------------------------------------------------
   # Element categories

@@ -22,10 +22,10 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.Modes.InBody
-
   import PureHTML.TreeBuilder.Helpers,
     only: [in_table_scope?: 2, pop_until_tag: 2, clear_af_to_marker: 1]
+
+  alias PureHTML.TreeBuilder.Modes.InBody
 
   # Start tags that close the cell
   @cell_closing_start_tags ~w(caption col colgroup tbody td tfoot th thead tr)

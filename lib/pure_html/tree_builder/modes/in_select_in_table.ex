@@ -18,14 +18,14 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.Modes.InSelect
-
   import PureHTML.TreeBuilder.Helpers,
     only: [
       in_table_scope?: 2,
       in_select_scope?: 2,
       close_select: 1
     ]
+
+  alias PureHTML.TreeBuilder.Modes.InSelect
 
   @table_elements ~w(caption table tbody tfoot thead tr td th)
 

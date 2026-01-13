@@ -22,9 +22,9 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.Modes.InBody
-
   import PureHTML.TreeBuilder.Helpers, only: [in_table_scope?: 2, pop_until_tag: 2]
+
+  alias PureHTML.TreeBuilder.Modes.InBody
 
   # Table-related start tags that close the caption
   @table_tags ~w(caption col colgroup tbody td tfoot th thead tr)

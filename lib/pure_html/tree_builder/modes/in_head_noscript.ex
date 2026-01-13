@@ -24,10 +24,10 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.Modes.InHead
-  alias PureHTML.TreeBuilder.Modes.InBody
-
   import PureHTML.TreeBuilder.Helpers, only: [pop_element: 1, current_tag: 1]
+
+  alias PureHTML.TreeBuilder.Modes.InBody
+  alias PureHTML.TreeBuilder.Modes.InHead
 
   # Start tags processed using "in head" rules
   @in_head_start_tags ~w(basefont bgsound link meta noframes style)

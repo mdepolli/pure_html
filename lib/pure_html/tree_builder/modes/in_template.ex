@@ -25,10 +25,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  alias PureHTML.TreeBuilder.Modes.InBody
-
   import PureHTML.TreeBuilder.Helpers,
     only: [add_child_to_stack: 2, push_element: 3, push_af_marker: 1, switch_template_mode: 2]
+
+  alias PureHTML.TreeBuilder.Modes.InBody
 
   # Void head elements that can just be added directly
   @void_head_elements ~w(base basefont bgsound link meta)
