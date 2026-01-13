@@ -27,6 +27,20 @@ defmodule PureHTML.TreeBuilder do
   alias PureHTML.TreeBuilder.{Helpers, Modes}
 
   # --------------------------------------------------------------------------
+  # Type Definitions
+  # --------------------------------------------------------------------------
+
+  @typedoc "DOCTYPE information: {name, public_id, system_id} or nil if absent."
+  @type doctype :: {String.t() | nil, String.t() | nil, String.t() | nil} | nil
+
+  @typedoc "Document node: element tuple, comment, or text."
+  @type document_node ::
+          {State.tag_name(), %{String.t() => String.t()}, [document_node()]}
+          | {:comment, String.t()}
+          | {:content, [document_node()]}
+          | String.t()
+
+  # --------------------------------------------------------------------------
   # State and Element structures
   # --------------------------------------------------------------------------
 
@@ -37,6 +51,99 @@ defmodule PureHTML.TreeBuilder do
     Architecture: Stack tracks "open elements" for parsing context, while DOM
     structure is built via explicit parent_ref relationships in the elements map.
     """
+
+    # --------------------------------------------------------------------------
+    # Type Definitions
+    # --------------------------------------------------------------------------
+
+    @typedoc "Reference to an element in the elements map."
+    @type element_ref :: reference()
+
+    @typedoc "HTML tag name (string) or foreign element tag ({namespace, name})."
+    @type tag_name :: String.t() | {namespace(), String.t()}
+
+    @typedoc "Namespace for foreign elements (SVG or MathML)."
+    @type namespace :: :svg | :math
+
+    @typedoc """
+    Internal element representation stored in the elements map.
+
+    Fields:
+    - `ref` - unique reference for this element
+    - `tag` - tag name (string or {namespace, name} tuple)
+    - `attrs` - element attributes as a map
+    - `children` - list of children (refs, text strings, comments, or tuples)
+    - `parent_ref` - reference to parent element (nil for root)
+    """
+    @type element :: %{
+            ref: element_ref(),
+            tag: tag_name(),
+            attrs: %{String.t() => String.t()},
+            children: [child()],
+            parent_ref: element_ref() | nil
+          }
+
+    @typedoc "Child content: element ref, text, comment, or pre-built tuple."
+    @type child :: element_ref() | String.t() | {:comment, String.t()} | output_node()
+
+    @typedoc "Output node format: {tag, attrs, children} tuple."
+    @type output_node :: {tag_name(), %{String.t() => String.t()}, [output_node() | String.t()]}
+
+    @typedoc """
+    HTML5 insertion mode.
+
+    The tree builder uses insertion modes to handle tokens differently based on
+    the current parsing context (e.g., inside head vs inside body vs inside table).
+    """
+    @type insertion_mode ::
+            :initial
+            | :before_html
+            | :before_head
+            | :in_head
+            | :in_head_noscript
+            | :after_head
+            | :in_body
+            | :text
+            | :in_table
+            | :in_table_text
+            | :in_caption
+            | :in_column_group
+            | :in_table_body
+            | :in_row
+            | :in_cell
+            | :in_select
+            | :in_select_in_table
+            | :in_template
+            | :after_body
+            | :in_frameset
+            | :after_frameset
+
+    @typedoc """
+    Active formatting element entry.
+
+    Either a marker (for scope boundaries like applet, object, etc.) or a tuple
+    containing the element ref, tag name, and attributes for reconstruction.
+    """
+    @type af_entry :: :marker | {element_ref(), String.t(), %{String.t() => String.t()}}
+
+    @typedoc "The tree builder state."
+    @type t :: %__MODULE__{
+            # Parsing Context
+            stack: [element_ref()],
+            af: [af_entry()],
+            mode: insertion_mode(),
+            template_mode_stack: [insertion_mode()],
+            original_mode: insertion_mode() | nil,
+            pending_table_text: String.t(),
+            frameset_ok: boolean(),
+            head_element: element_ref() | nil,
+            form_element: element_ref() | nil,
+            scripting: boolean(),
+            # DOM Structure
+            elements: %{element_ref() => element()},
+            current_parent_ref: element_ref() | nil,
+            document_children: [child()]
+          }
 
     defstruct [
       # === Parsing Context ===
@@ -130,6 +237,7 @@ defmodule PureHTML.TreeBuilder do
 
   Returns `{doctype, nodes}` where nodes is a list of top-level nodes.
   """
+  @spec build(Tokenizer.t()) :: {doctype(), [document_node()]}
   def build(%Tokenizer{} = tokenizer) do
     {doctype, state, pre_html_comments} =
       build_loop(tokenizer, {nil, %State{}, []})
