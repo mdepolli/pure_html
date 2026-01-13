@@ -40,11 +40,11 @@ end
 ```elixir
 # Parse HTML into a document tree
 PureHTML.parse("<p class='intro'>Hello!</p>")
-# => {nil, [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{"class" => "intro"}, ["Hello!"]}]}]}]}
+# => [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{"class" => "intro"}, ["Hello!"]}]}]}]
 
 # Works with malformed HTML just like browsers do
 PureHTML.parse("<p>One<p>Two")
-# => {nil, [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{}, ["One"]}, {"p", %{}, ["Two"]}]}]}]}
+# => [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{}, ["One"]}, {"p", %{}, ["Two"]}]}]}]
 ```
 
 ## License
