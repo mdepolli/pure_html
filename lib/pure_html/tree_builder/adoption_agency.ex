@@ -248,12 +248,12 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
 
   # --------------------------------------------------------------------------
   # Inner loop
+  # Per HTML5 spec:
+  # 13.4 Increment counter at START of each iteration
+  # 13.5 If counter > 3 and node in AF, remove from AF
+  # 13.6 If node not in AF, remove from stack and continue
+  # 13.7+ Otherwise create new element and reparent
   # --------------------------------------------------------------------------
-
-  defp inner_loop(state, _fe_ref, _node_idx, last_node_ref, _fb_ref, _ca_ref, bookmark, counter)
-       when counter >= 3 do
-    {state, last_node_ref, bookmark}
-  end
 
   defp inner_loop(
          %{stack: stack, af: af, elements: elements} = state,
@@ -265,6 +265,8 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
          bookmark,
          counter
        ) do
+    # 13.4: Increment counter at start of each iteration
+    counter = counter + 1
     next_node_idx = node_idx + 1
     node_ref = Enum.at(stack, next_node_idx)
 
@@ -273,45 +275,57 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
       node_ref == fe_ref or node_ref == nil ->
         {state, last_node_ref, bookmark}
 
-      # Node not in AF - remove from stack, continue (don't increment counter)
-      find_af_entry_by_ref(af, node_ref) == nil ->
-        new_stack = List.delete_at(stack, next_node_idx)
-
-        inner_loop(
-          %{state | stack: new_stack},
-          fe_ref,
-          node_idx,
-          last_node_ref,
-          fb_ref,
-          common_ancestor_ref,
-          bookmark,
-          counter
-        )
-
-      # Node in AF - create new element, replace in AF, reparent
       true ->
-        {node_af_idx, {_, node_tag, node_attrs}} = find_af_entry_by_ref(af, node_ref)
+        af_entry = find_af_entry_by_ref(af, node_ref)
 
-        new_node = new_element(node_tag, node_attrs, common_ancestor_ref)
-        new_elements = Map.put(elements, new_node.ref, new_node)
+        # 13.5: If counter > 3 and node in AF, remove from AF
+        {af, af_entry} =
+          if counter > 3 and af_entry != nil do
+            {node_af_idx, _} = af_entry
+            {List.delete_at(af, node_af_idx), nil}
+          else
+            {af, af_entry}
+          end
 
-        new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
-        new_stack = List.replace_at(stack, next_node_idx, new_node.ref)
+        # 13.6: If node not in AF, remove from stack and continue
+        if af_entry == nil do
+          new_stack = List.delete_at(stack, next_node_idx)
 
-        new_bookmark = if last_node_ref == fb_ref, do: node_af_idx + 1, else: bookmark
+          inner_loop(
+            %{state | stack: new_stack, af: af},
+            fe_ref,
+            node_idx,
+            last_node_ref,
+            fb_ref,
+            common_ancestor_ref,
+            bookmark,
+            counter
+          )
+        else
+          # 13.7+: Node in AF - create new element, replace in AF, reparent
+          {node_af_idx, {_, node_tag, node_attrs}} = af_entry
 
-        new_elements = reparent_node(new_elements, last_node_ref, new_node.ref)
+          new_node = new_element(node_tag, node_attrs, common_ancestor_ref)
+          new_elements = Map.put(elements, new_node.ref, new_node)
 
-        inner_loop(
-          %{state | stack: new_stack, af: new_af, elements: new_elements},
-          fe_ref,
-          next_node_idx,
-          new_node.ref,
-          fb_ref,
-          common_ancestor_ref,
-          new_bookmark,
-          counter + 1
-        )
+          new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
+          new_stack = List.replace_at(stack, next_node_idx, new_node.ref)
+
+          new_bookmark = if last_node_ref == fb_ref, do: node_af_idx + 1, else: bookmark
+
+          new_elements = reparent_node(new_elements, last_node_ref, new_node.ref)
+
+          inner_loop(
+            %{state | stack: new_stack, af: new_af, elements: new_elements},
+            fe_ref,
+            next_node_idx,
+            new_node.ref,
+            fb_ref,
+            common_ancestor_ref,
+            new_bookmark,
+            counter
+          )
+        end
     end
   end
 

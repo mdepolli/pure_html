@@ -27,7 +27,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       pop_element: 1,
       pop_until_one_of: 2,
       foster_parent: 2,
-      has_tag?: 2
+      has_tag?: 2,
+      in_table_scope?: 2
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -203,10 +204,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   def process({:end_tag, "table"}, %{af: af} = state) do
-    closed_refs = get_refs_to_close_for_table(state)
-    new_af = reject_refs_from_af(af, closed_refs)
-    state = clear_to_table_context(state)
-    {:ok, close_tag_ref_forced(%{state | af: new_af}, "table") |> pop_mode()}
+    # Per HTML5 spec: ignore if table not in table scope
+    if in_table_scope?(state, "table") do
+      closed_refs = get_refs_to_close_for_table(state)
+      new_af = reject_refs_from_af(af, closed_refs)
+      state = clear_to_table_context(state)
+      {:ok, close_tag_ref_forced(%{state | af: new_af}, "table") |> pop_mode()}
+    else
+      {:ok, state}
+    end
   end
 
   def process({:end_tag, "select"}, state) do
@@ -571,13 +577,21 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Tr
-  defp do_process_html_start_tag("tr", attrs, _, state) do
-    state
-    |> in_body()
-    |> clear_to_table_body_context()
-    |> ensure_tbody()
-    |> push_element("tr", attrs)
+  # Tr - requires table context
+  # In :in_body mode without table, this is a parse error - ignore
+  # In table-related modes (:in_table, etc.) or with table on stack, create tr
+  @table_related_modes [:in_table, :in_table_body, :in_row, :in_cell, :in_caption]
+  defp do_process_html_start_tag("tr", attrs, _, %{mode: mode} = state) do
+    if has_tag?(state, "table") or mode in @table_related_modes do
+      state
+      |> in_body()
+      |> clear_to_table_body_context()
+      |> ensure_tbody()
+      |> push_element("tr", attrs)
+    else
+      # Parse error, ignore - no table context and not in table mode
+      state
+    end
   end
 
   # Adopt-on-duplicate formatting elements
@@ -602,10 +616,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Table
-  defp do_process_html_start_tag("table", attrs, _, state) do
+  # Per HTML5 spec: only close p if NOT in quirks mode
+  defp do_process_html_start_tag("table", attrs, _, %{quirks_mode: quirks_mode} = state) do
+    state =
+      state
+      |> in_body()
+      |> then(fn s -> if quirks_mode, do: s, else: maybe_close_p(s, "table") end)
+
     state
-    |> in_body()
-    |> maybe_close_p("table")
     |> push_element("table", attrs)
     |> push_mode(:in_table)
     |> set_frameset_not_ok()

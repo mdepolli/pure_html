@@ -18,15 +18,15 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
   @impl true
   def process({:character, text}, state) do
     # Whitespace is ignored in initial mode
-    # Non-whitespace triggers mode switch and reprocess
+    # Non-whitespace triggers mode switch and reprocess (quirks mode)
     case String.trim(text) do
       "" ->
         # All whitespace - ignore
         {:ok, state}
 
       _ ->
-        # Has non-whitespace - switch to before_html and reprocess
-        {:reprocess, %{state | mode: :before_html}}
+        # Has non-whitespace - no DOCTYPE seen, set quirks mode
+        {:reprocess, %{state | mode: :before_html, quirks_mode: true}}
     end
   end
 
@@ -39,12 +39,12 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # DOCTYPE handling is done at process_token level
-    # Switch to before_html mode
+    # Valid DOCTYPE -> not quirks mode (quirks_mode stays false)
     {:ok, %{state | mode: :before_html}}
   end
 
   def process(_token, state) do
-    # Any other token: switch to before_html and reprocess
-    {:reprocess, %{state | mode: :before_html}}
+    # Any other token without DOCTYPE: set quirks mode
+    {:reprocess, %{state | mode: :before_html, quirks_mode: true}}
   end
 end

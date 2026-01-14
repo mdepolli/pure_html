@@ -1,6 +1,6 @@
 # Test Failures Analysis
 
-**Total: 86 failures out of 1476 tests**
+**Total: 81 failures out of 1476 tests**
 
 *Last updated: 2026-01-13*
 
@@ -9,8 +9,8 @@
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
 | template | 12 | 45 | 9 |
-| webkit02 | 13 | 23 | 10 |
-| tests1 | 23 | 41 | 10 |
+| webkit02 | 13 | 23 | 8 |
+| tests1 | 23 | 41 | 9 |
 | tests10 | 20 | 33 | 9 |
 | tests19 | 13 | 31 | 7 |
 | webkit01 | 16 | 23 | 5 |
@@ -21,7 +21,7 @@
 | quirks01 | 3 | 3 | 3 |
 | tests7 | 7 | 15 | 2 |
 | tests6 | 3 | 13 | 2 |
-| tests3 | 10 | 12 | 1 |
+| tests3 | 10 | 12 | 0 |
 | tests20 | 4 | 7 | 2 |
 | tests2 | 2 | 10 | 2 |
 | tests16 | 3 | 3 | 2 |
@@ -46,7 +46,7 @@
 | menuitem-element | 2 | 2 | 0 |
 | search-element | 1 | 2 | 0 |
 | pending-spec-changes | 1 | 2 | 0 |
-| **Total** | **177** | **423** | **86** |
+| **Total** | **177** | **423** | **81** |
 
 ## Status
 
@@ -75,6 +75,14 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Table end tag scope check** (2026-01-13): Fixed `</table>` end tag handling to check if table is in table scope before processing. Per HTML5 spec, if table is not in table scope, the end tag should be ignored (parse error). Previously, `</table>` would unconditionally call `clear_to_table_context()` which could corrupt the stack by popping until html. Fixed tests1 #109 (caused by stray `</table>` in end tag sequence), but broke template #55 (table structure in template content). Net zero change (81 → 81 total). tests1: 10 → 9. template: 8 → 9.
+
+- **Quirks mode table/p handling** (2026-01-13): Added `quirks_mode` flag to parser state. Per HTML5 spec, `<table>` only closes an open `<p>` element when NOT in quirks mode. No DOCTYPE = quirks mode. Documents with valid DOCTYPE stay in standards mode. Fixed DOCTYPE handling in process_token to properly transition mode to before_html, preventing subsequent tokens from incorrectly triggering quirks mode. Fixed 1 test (82 → 81 total). tests3: 1 → 0.
+
+- **Adoption agency inner loop counter fix** (2026-01-13): Fixed counter increment timing in adoption agency inner loop. Per HTML5 spec step 13.4, counter must increment at the START of each iteration, not just when processing AF nodes. When counter > 3 and node is in AF, node is removed from AF (step 13.5) and then from stack since it's no longer in AF (step 13.6). Previously counter only incremented for AF nodes, causing formatting elements to be incorrectly recreated. Fixed 2 tests (84 → 82 total). webkit02: 10 → 8.
+
+- **Table row/cell elements ignored outside table context** (2026-01-13): Fixed `<tr>`, `<td>`, `<th>` handling when no table exists on stack. Per HTML5 spec, these elements are parse errors and should be ignored when there's no table context. Previously they were being created. Added check for table-related modes (`:in_table`, `:in_table_body`, `:in_row`, `:in_cell`, `:in_caption`) OR actual table on stack - elements are only created when one of these conditions is met. Fixed template #56 (`<body><template><div><tr></tr></div></template>`) where tr inside div in template should be ignored. Fixed 1 test (85 → 84 total). template: 9 → 8.
 
 - **After head mode handling for head elements** (2026-01-13): Fixed processing of head elements (style, script, etc.) after `</head>`. Per HTML5 spec, these elements must: (1) push head onto stack, (2) process in in_head mode, (3) remove head from stack. Previously used `:reprocess` which left head on stack. Now calls `InHead.process` directly and removes head afterward. Also fixed `current_parent_ref` staleness issues by using top of stack for insertions in after_head mode (comments, whitespace, implied body). Fixed 1 test (87 → 86 total). tests3: 2 → 1.
 

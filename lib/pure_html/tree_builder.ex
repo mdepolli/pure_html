@@ -172,6 +172,8 @@ defmodule PureHTML.TreeBuilder do
       form_element: nil,
       # Scripting flag (we assume scripting enabled)
       scripting: true,
+      # Quirks mode flag (affects table/p interaction)
+      quirks_mode: false,
 
       # === DOM Structure ===
       # Element storage: ref => %{ref, tag, attrs, parent_ref, children}
@@ -296,7 +298,8 @@ defmodule PureHTML.TreeBuilder do
          {:doctype, name, public_id, system_id, _},
          {_, %State{mode: :initial} = state, comments}
        ) do
-    {{name, public_id, system_id}, state, comments}
+    # Update mode to before_html after seeing DOCTYPE (quirks_mode stays false)
+    {{name, public_id, system_id}, %{state | mode: :before_html}, comments}
   end
 
   defp process_token({:doctype, _, _, _, _}, acc), do: acc
