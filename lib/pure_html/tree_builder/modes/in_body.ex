@@ -509,14 +509,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  # Self-closing
-  defp do_process_html_start_tag(tag, attrs, true, state) do
-    state
-    |> in_body()
-    |> maybe_close_p(tag)
-    |> add_child_to_stack({tag, attrs, []})
-  end
-
   # Table structure in template
   defp do_process_html_start_tag(tag, attrs, _, %{mode: :in_template} = state)
        when tag in @table_structure_elements do
@@ -712,12 +704,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_af_marker()
   end
 
-  defp process_start_tag(state, tag, attrs, self_closing) do
-    if self_closing or tag in @void_elements do
-      add_child_to_stack(state, {tag, attrs, []})
-    else
-      push_element(state, tag, attrs)
-    end
+  defp process_start_tag(state, tag, attrs, _self_closing) when tag in @void_elements do
+    add_child_to_stack(state, {tag, attrs, []})
+  end
+
+  defp process_start_tag(state, tag, attrs, _self_closing) do
+    push_element(state, tag, attrs)
   end
 
   # --------------------------------------------------------------------------

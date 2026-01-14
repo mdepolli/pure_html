@@ -15,13 +15,19 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterbody
   """
 
+  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2]
+
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   @impl true
-  # Any character token: process using "in body" rules
-  # (whitespace is processed normally, non-whitespace is a parse error but same handling)
-  def process({:character, _}, state) do
-    {:reprocess, %{state | mode: :in_body}}
+  # Whitespace: process using "in body" rules but stay in after_body mode
+  def process({:character, text}, state) do
+    if String.match?(text, ~r/^[\t\n\f\r ]*$/) do
+      {:ok, add_text_to_stack(state, text)}
+    else
+      # Non-whitespace: parse error, switch to in_body and reprocess
+      {:reprocess, %{state | mode: :in_body}}
+    end
   end
 
   def process({:comment, text}, state) do

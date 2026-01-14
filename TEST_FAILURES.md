@@ -1,8 +1,8 @@
 # Test Failures Analysis
 
-**Total: 81 failures out of 1476 tests**
+**Total: 77 failures out of 1476 tests**
 
-*Last updated: 2026-01-13*
+*Last updated: 2026-01-14*
 
 ## By Test File
 
@@ -12,8 +12,8 @@
 | webkit02 | 13 | 23 | 8 |
 | tests1 | 23 | 41 | 9 |
 | tests10 | 20 | 33 | 9 |
-| tests19 | 13 | 31 | 7 |
-| webkit01 | 16 | 23 | 5 |
+| tests19 | 13 | 31 | 6 |
+| webkit01 | 16 | 23 | 3 |
 | tricky01 | 4 | 9 | 3 |
 | tests9 | 3 | 14 | 3 |
 | tests26 | 3 | 18 | 3 |
@@ -23,7 +23,7 @@
 | tests6 | 3 | 13 | 2 |
 | tests3 | 10 | 12 | 0 |
 | tests20 | 4 | 7 | 2 |
-| tests2 | 2 | 10 | 2 |
+| tests2 | 2 | 10 | 1 |
 | tests16 | 3 | 3 | 2 |
 | tables01 | 2 | 17 | 2 |
 | tests5 | 4 | 4 | 1 |
@@ -46,7 +46,7 @@
 | menuitem-element | 2 | 2 | 0 |
 | search-element | 1 | 2 | 0 |
 | pending-spec-changes | 1 | 2 | 0 |
-| **Total** | **177** | **423** | **81** |
+| **Total** | **177** | **423** | **77** |
 
 ## Status
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Multiple fixes** (2026-01-14): Four fixes: (1) Removed incorrect self-closing flag handling for HTML elements - per HTML5 spec, self-closing flag should only be acknowledged for foreign content (SVG/MathML), not HTML elements. `<div/>` should open a div that stays open. (2) Fixed after_body mode to stay in after_body for whitespace characters instead of permanently switching to in_body. Now only non-whitespace triggers mode switch. (3) Fixed ensure_head to insert head element after any leading comments instead of unconditionally prepending - comments processed in before_head mode should appear before head in html's children. (4) Fixed tokenizer buffer leak where buffer wasn't cleared when starting a new attribute, causing stale end tag names to leak into attribute names (e.g., "titlename" instead of "name" after `</title>`). Fixed 4 tests (81 → 77 total). webkit01: 5 → 3. tests19: 7 → 6. tests2: 2 → 1.
 
 - **Table end tag scope check** (2026-01-13): Fixed `</table>` end tag handling to check if table is in table scope before processing. Per HTML5 spec, if table is not in table scope, the end tag should be ignored (parse error). Previously, `</table>` would unconditionally call `clear_to_table_context()` which could corrupt the stack by popping until html. Fixed tests1 #109 (caused by stray `</table>` in end tag sequence), but broke template #55 (table structure in template content). Net zero change (81 → 81 total). tests1: 10 → 9. template: 8 → 9.
 

@@ -2207,7 +2207,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp start_new_attribute(%{token: {:start_tag, _, _, _}} = state, initial_char) do
-    %{state | attr_name: initial_char, attr_value: ""}
+    %{state | attr_name: initial_char, attr_value: "", buffer: ""}
   end
 
   defp start_new_attribute(state, _), do: state
