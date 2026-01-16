@@ -23,7 +23,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [in_table_scope?: 2, pop_until_tag: 2, clear_af_to_marker: 1]
+    only: [in_scope?: 3, pop_until_tag: 2, clear_af_to_marker: 1]
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -88,7 +88,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # Cell-closing end tags: close cell if TARGET tag is in table scope, reprocess
   def process({:end_tag, tag}, state) when tag in @cell_closing_end_tags do
     # Per spec: only close cell if the end tag's target is in table scope
-    if in_table_scope?(state, tag) do
+    if in_scope?(state, tag, :table) do
       case close_cell(state) do
         {:ok, new_state} ->
           {:reprocess, new_state}
@@ -118,7 +118,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   @cell_tags ~w(td th)
 
   defp close_cell(state) do
-    case Enum.find(@cell_tags, &in_table_scope?(state, &1)) do
+    case Enum.find(@cell_tags, &in_scope?(state, &1, :table)) do
       nil -> :not_found
       tag -> close_cell_for_tag(state, tag)
     end
@@ -126,16 +126,11 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   # Close specific cell tag if in table scope
   defp close_cell_for_tag(state, tag) do
-    if in_table_scope?(state, tag) do
-      case pop_until_tag(state, tag) do
-        {:ok, new_state} ->
-          {:ok, clear_af_to_marker(%{new_state | mode: :in_row})}
-
-        {:not_found, _} ->
-          :not_found
-      end
+    with true <- in_scope?(state, tag, :table),
+         {:ok, new_state} <- pop_until_tag(state, tag) do
+      {:ok, clear_af_to_marker(%{new_state | mode: :in_row})}
     else
-      :not_found
+      _ -> :not_found
     end
   end
 end

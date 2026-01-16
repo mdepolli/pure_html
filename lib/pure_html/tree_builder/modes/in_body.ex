@@ -26,8 +26,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       pop_element: 1,
       pop_until_one_of: 2,
       foster_parent: 2,
-      has_tag?: 2,
-      in_table_scope?: 2
+      find_ref: 2,
+      in_scope?: 3
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -204,7 +204,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   def process({:end_tag, "table"}, %{af: af} = state) do
     # Per HTML5 spec: ignore if table not in table scope
-    if in_table_scope?(state, "table") do
+    if in_scope?(state, "table", :table) do
       closed_refs = get_refs_to_close_for_table(state)
       new_af = reject_refs_from_af(af, closed_refs)
       state = clear_to_table_context(state)
@@ -387,7 +387,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Template in body/table/select modes
   defp do_process_html_start_tag("template", attrs, _, %{mode: mode} = state)
        when mode in [:in_body, :in_table, :in_select, :in_select_in_table] do
-    if has_tag?(state, "body") do
+    if find_ref(state, "body") do
       state
       |> reconstruct_active_formatting()
       |> push_element("template", attrs)
@@ -402,7 +402,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_process_html_start_tag(tag, attrs, self_closing, %{mode: mode} = state)
        when tag in @head_elements and
               mode in [:in_template, :in_body, :in_table, :in_select, :in_select_in_table] do
-    if has_tag?(state, "body") or mode == :in_template do
+    if find_ref(state, "body") || mode == :in_template do
       process_start_tag(state, tag, attrs, self_closing)
     else
       state
@@ -415,7 +415,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Template in other contexts
   defp do_process_html_start_tag("template", attrs, _, state) do
-    if has_tag?(state, "body") do
+    if find_ref(state, "body") do
       process_start_tag(state, "template", attrs, false)
     else
       do_process_html_start_tag_head_context("template", attrs, state)
@@ -425,7 +425,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Other head elements
   defp do_process_html_start_tag(tag, attrs, self_closing, state)
        when tag in @head_elements do
-    if has_tag?(state, "body") do
+    if find_ref(state, "body") do
       process_start_tag(state, tag, attrs, self_closing)
     else
       state
@@ -444,7 +444,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
          _,
          %{mode: :in_body, frameset_ok: true} = state
        ) do
-    if has_tag?(state, "template") do
+    if find_ref(state, "template") do
       state
     else
       state
@@ -457,7 +457,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_process_html_start_tag("frameset", _, _, %{mode: :in_body} = state), do: state
 
   defp do_process_html_start_tag("frameset", attrs, _, state) do
-    if has_tag?(state, "body") or has_body_content?(state) do
+    if find_ref(state, "body") || has_body_content?(state) do
       state
     else
       state
@@ -480,7 +480,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Col in table mode
   defp do_process_html_start_tag("col", attrs, _, %{mode: :in_table} = state) do
-    if has_tag?(state, "table") do
+    if find_ref(state, "table") do
       state |> ensure_colgroup() |> add_child_to_stack({"col", attrs, []})
     else
       add_child_to_stack(state, {"col", attrs, []})
@@ -543,7 +543,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Table structure in table mode
   defp do_process_html_start_tag(tag, attrs, _, %{mode: :in_table} = state)
        when tag in @table_structure_elements do
-    if has_tag?(state, "table") do
+    if find_ref(state, "table") do
       state
       |> clear_to_table_context()
       |> push_element(tag, attrs)
@@ -557,7 +557,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # In table-related modes (:in_table, etc.) or with table on stack, create tr
   @table_related_modes [:in_table, :in_table_body, :in_row, :in_cell, :in_caption]
   defp do_process_html_start_tag("tr", attrs, _, %{mode: mode} = state) do
-    if has_tag?(state, "table") or mode in @table_related_modes do
+    if find_ref(state, "table") || mode in @table_related_modes do
       state
       |> in_body()
       |> clear_to_table_body_context()
@@ -955,7 +955,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       "html" ->
         html_elem = current_element(state)
 
-        if has_tag_in_children?(state, html_elem.children, "head") do
+        if find_ref_in_children(html_elem.children, state.elements, "head") do
           state
         else
           state
@@ -968,8 +968,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  defp has_tag_in_children?(%{elements: elements}, children, tag) do
-    Enum.any?(children, fn
+  defp find_ref_in_children(children, elements, tag) do
+    Enum.find(children, fn
       ref when is_reference(ref) -> elements[ref].tag == tag
       _ -> false
     end)
@@ -993,7 +993,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       "html" ->
         html_elem = current_element(state)
 
-        if has_tag_in_children?(state, html_elem.children, "frameset") do
+        if find_ref_in_children(html_elem.children, state.elements, "frameset") do
           state
         else
           state
@@ -1078,26 +1078,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
 
-  defp merge_html_attrs(%{stack: stack, elements: elements} = state, new_attrs) do
-    # Find html element ref and merge attrs
-    case find_html_ref(stack, elements) do
+  defp merge_html_attrs(%{elements: elements} = state, new_attrs) do
+    case find_ref(state, "html") do
       nil ->
         state
 
       html_ref ->
         html_elem = elements[html_ref]
         merged = Map.merge(new_attrs, html_elem.attrs)
-        new_elements = Map.put(elements, html_ref, %{html_elem | attrs: merged})
-        %{state | elements: new_elements}
-    end
-  end
-
-  defp find_html_ref([], _elements), do: nil
-
-  defp find_html_ref([ref | rest], elements) do
-    case elements[ref].tag do
-      "html" -> ref
-      _ -> find_html_ref(rest, elements)
+        %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
     end
   end
 
@@ -1111,66 +1100,26 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp do_reopen_head(%{stack: stack, elements: elements} = state) do
-    # Find html element in stack
-    case find_html_ref(stack, elements) do
-      nil ->
-        # No html, just push a new head
-        push_element(state, "head", %{})
-
-      html_ref ->
-        html_elem = elements[html_ref]
-
-        # Find head ref in html's children
-        case find_head_ref_in_children(html_elem.children, elements) do
-          nil ->
-            # No head exists, push new one
-            push_element(state, "head", %{})
-
-          head_ref ->
-            # Reopen existing head by pushing it to stack
-            %{state | stack: [head_ref | stack], current_parent_ref: head_ref}
-        end
-    end
-  end
-
-  defp find_head_ref_in_children([], _elements), do: nil
-
-  defp find_head_ref_in_children([child | rest], elements) do
-    case child do
-      ref when is_reference(ref) ->
-        if elements[ref].tag == "head" do
-          ref
-        else
-          find_head_ref_in_children(rest, elements)
-        end
-
-      _ ->
-        find_head_ref_in_children(rest, elements)
+    with html_ref when html_ref != nil <- find_ref(state, "html"),
+         head_ref when head_ref != nil <-
+           find_ref_in_children(elements[html_ref].children, elements, "head") do
+      %{state | stack: [head_ref | stack], current_parent_ref: head_ref}
+    else
+      _ -> push_element(state, "head", %{})
     end
   end
 
   # Merge attributes from second <body> onto existing body element
   # Per HTML5: adds attributes that don't already exist
-  defp merge_body_attrs(%{stack: stack, elements: elements} = state, new_attrs) do
-    case find_body_ref(stack, elements) do
+  defp merge_body_attrs(%{elements: elements} = state, new_attrs) do
+    case find_ref(state, "body") do
       nil ->
         state
 
       body_ref ->
         body_elem = elements[body_ref]
-        # Only add attrs that don't already exist on the body
         merged_attrs = Map.merge(new_attrs, body_elem.attrs)
-        updated_body = %{body_elem | attrs: merged_attrs}
-        %{state | elements: Map.put(elements, body_ref, updated_body)}
-    end
-  end
-
-  defp find_body_ref([], _elements), do: nil
-
-  defp find_body_ref([ref | rest], elements) do
-    case elements[ref] do
-      %{tag: "body"} -> ref
-      _ -> find_body_ref(rest, elements)
+        %{state | elements: Map.put(elements, body_ref, %{body_elem | attrs: merged_attrs})}
     end
   end
 
@@ -1492,27 +1441,20 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp maybe_close_same(%{stack: stack, elements: elements} = state, tag) do
-    case get_implicit_close_config(tag) do
-      nil ->
-        state
-
-      {closes, boundaries, close_all?} ->
-        result =
-          if close_all? do
-            pop_to_implicit_close_all_ref(stack, elements, closes, boundaries)
-          else
-            pop_to_implicit_close_ref(stack, elements, closes, boundaries)
-          end
-
-        case result do
-          {:ok, new_stack, parent_ref} ->
-            %{state | stack: new_stack, current_parent_ref: parent_ref}
-
-          :not_found ->
-            state
-        end
+    with {closes, boundaries, close_all?} <- get_implicit_close_config(tag),
+         {:ok, new_stack, parent_ref} <-
+           pop_implicit_close(stack, elements, closes, boundaries, close_all?) do
+      %{state | stack: new_stack, current_parent_ref: parent_ref}
+    else
+      _ -> state
     end
   end
+
+  defp pop_implicit_close(stack, elements, closes, boundaries, true = _close_all?),
+    do: pop_to_implicit_close_all_ref(stack, elements, closes, boundaries)
+
+  defp pop_implicit_close(stack, elements, closes, boundaries, false = _close_all?),
+    do: pop_to_implicit_close_ref(stack, elements, closes, boundaries)
 
   defp get_implicit_close_config("li"), do: {["li"], @li_scope_boundaries, false}
 

@@ -15,7 +15,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterbody
   """
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, find_ref: 2]
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
@@ -56,33 +56,15 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   end
 
   # Add comment as last child of html element.
-  # In the ref-only architecture, we find the html ref and add the comment to its children.
-  defp add_comment_to_html(%{stack: stack, elements: elements} = state, text) do
-    comment = {:comment, text}
-
-    # Find the html ref in the stack (should be at the bottom)
-    html_ref = find_html_ref(stack, elements)
-
-    case html_ref do
+  defp add_comment_to_html(%{elements: elements} = state, text) do
+    case find_ref(state, "html") do
       nil ->
-        # No html element found, just ignore
         state
 
       ref ->
-        # Add comment to html element's children (prepend since children are reversed)
         html_elem = elements[ref]
-        updated_html = %{html_elem | children: [comment | html_elem.children]}
+        updated_html = %{html_elem | children: [{:comment, text} | html_elem.children]}
         %{state | elements: Map.put(elements, ref, updated_html)}
     end
-  end
-
-  # Find the html element ref in the stack
-  defp find_html_ref(stack, elements) do
-    Enum.find(stack, fn ref ->
-      case elements[ref] do
-        %{tag: "html"} -> true
-        _ -> false
-      end
-    end)
   end
 end

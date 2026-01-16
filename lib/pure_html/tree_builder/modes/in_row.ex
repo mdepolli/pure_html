@@ -29,7 +29,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       push_element: 3,
       set_mode: 2,
       push_af_marker: 1,
-      in_table_scope?: 2,
+      in_scope?: 3,
       pop_until_tag: 2,
       pop_until_one_of: 2,
       foster_parent: 2,
@@ -146,16 +146,11 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # Table body end tags: close row if in scope, reprocess
   def process({:end_tag, tag}, state) when tag in @table_body_end_tags do
-    if in_table_scope?(state, tag) do
-      case close_row(state) do
-        {:ok, new_state} ->
-          {:reprocess, new_state}
-
-        :not_found ->
-          {:ok, state}
-      end
+    with true <- in_scope?(state, tag, :table),
+         {:ok, new_state} <- close_row(state) do
+      {:reprocess, new_state}
     else
-      {:ok, state}
+      _ -> {:ok, state}
     end
   end
 
@@ -183,16 +178,11 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # Close the current row (tr) if in table scope
   defp close_row(state) do
-    if in_table_scope?(state, "tr") do
-      case pop_until_tag(state, "tr") do
-        {:ok, new_state} ->
-          {:ok, %{new_state | mode: :in_table_body}}
-
-        {:not_found, _} ->
-          :not_found
-      end
+    with true <- in_scope?(state, "tr", :table),
+         {:ok, new_state} <- pop_until_tag(state, "tr") do
+      {:ok, %{new_state | mode: :in_table_body}}
     else
-      :not_found
+      _ -> :not_found
     end
   end
 

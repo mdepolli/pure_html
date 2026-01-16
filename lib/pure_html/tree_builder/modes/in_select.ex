@@ -38,8 +38,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       pop_element: 1,
       close_select: 1,
       current_tag: 1,
-      in_select_scope?: 2,
-      has_tag?: 2
+      in_scope?: 3,
+      find_ref: 2
     ]
 
   @impl true
@@ -89,22 +89,27 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Per html5lib tests, nested <select> closes outer select even if option is on stack
   # (despite spec's select scope boundaries)
   def process({:start_tag, "select", _, _}, state) do
-    if has_tag?(state, "select") do
+    if find_ref(state, "select") do
       {:ok, close_select(state)}
     else
       {:ok, state}
     end
   end
 
-  # Start tag: input, keygen, textarea - close select, reprocess
+  # Start tag: input, textarea - close select, reprocess
   def process({:start_tag, tag, _, _}, state)
-      when tag in ["input", "keygen", "textarea"] do
-    if in_select_scope?(state, "select") do
+      when tag in ["input", "textarea"] do
+    if in_scope?(state, "select", :select) do
       state = close_select(state)
       {:reprocess, state}
     else
       {:ok, state}
     end
+  end
+
+  # Start tag: keygen - insert as child of select (deprecated element)
+  def process({:start_tag, "keygen", attrs, _}, state) do
+    {:ok, add_child_to_stack(state, {"keygen", attrs, []})}
   end
 
   # Start tag: script - process using in_head rules, preserve original mode
@@ -163,8 +168,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # End tag: optgroup
-  def process({:end_tag, "optgroup"}, state) do
-    case {current_tag(state), get_parent_tag(state)} do
+  def process({:end_tag, "optgroup"}, %{stack: [_, parent_ref | _], elements: elements} = state) do
+    case {current_tag(state), elements[parent_ref].tag} do
       {"option", "optgroup"} ->
         {:ok, state |> pop_element() |> pop_element()}
 
@@ -174,6 +179,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       _ ->
         {:ok, state}
     end
+  end
+
+  def process({:end_tag, "optgroup"}, state) do
+    if current_tag(state) == "optgroup", do: {:ok, pop_element(state)}, else: {:ok, state}
   end
 
   # End tag: option
@@ -187,7 +196,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # End tag: select
   def process({:end_tag, "select"}, state) do
-    if in_select_scope?(state, "select") do
+    if in_scope?(state, "select", :select) do
       {:ok, close_select(state)}
     else
       {:ok, state}
@@ -210,13 +219,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
-
-  # Get tag of parent element (second in stack)
-  defp get_parent_tag(%{stack: [_, parent_ref | _], elements: elements}) do
-    elements[parent_ref].tag
-  end
-
-  defp get_parent_tag(_), do: nil
 
   # Close current option if on top of stack
   defp close_current_option(state) do

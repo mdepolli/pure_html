@@ -28,7 +28,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
     only: [
       push_element: 3,
       set_mode: 2,
-      in_table_scope?: 2,
+      in_scope?: 3,
       pop_until_tag: 2,
       pop_until_one_of: 2
     ]
@@ -101,16 +101,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # End tag: tbody, tfoot, thead - close if in scope
   def process({:end_tag, tag}, state) when tag in @table_body_tags do
-    if in_table_scope?(state, tag) do
-      case pop_until_tag(state, tag) do
-        {:ok, new_state} ->
-          {:ok, %{new_state | mode: :in_table}}
-
-        {:not_found, _} ->
-          {:ok, state}
-      end
+    with true <- in_scope?(state, tag, :table),
+         {:ok, new_state} <- pop_until_tag(state, tag) do
+      {:ok, %{new_state | mode: :in_table}}
     else
-      {:ok, state}
+      _ -> {:ok, state}
     end
   end
 
@@ -149,18 +144,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # Close the current table body if in table scope
   defp close_table_body(state) do
-    tag_to_close =
-      Enum.find(@table_body_tags, fn tag -> in_table_scope?(state, tag) end)
-
-    case tag_to_close do
-      nil ->
-        :not_found
-
-      tag ->
-        case pop_until_tag(state, tag) do
-          {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
-          {:not_found, _} -> :not_found
-        end
+    with tag when tag != nil <- Enum.find(@table_body_tags, &in_scope?(state, &1, :table)),
+         {:ok, new_state} <- pop_until_tag(state, tag) do
+      {:ok, %{new_state | mode: :in_table}}
+    else
+      _ -> :not_found
     end
   end
 end

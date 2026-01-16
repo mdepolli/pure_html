@@ -22,7 +22,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [in_table_scope?: 2, pop_until_tag: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [in_scope?: 3, pop_until_tag: 2]
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -106,16 +106,11 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # Close caption if in table scope
   defp close_caption(state) do
-    if in_table_scope?(state, "caption") do
-      case pop_until_tag(state, "caption") do
-        {:ok, new_state} ->
-          {:ok, %{new_state | mode: :in_table}}
-
-        {:not_found, _} ->
-          :not_found
-      end
+    with true <- in_scope?(state, "caption", :table),
+         {:ok, new_state} <- pop_until_tag(state, "caption") do
+      {:ok, %{new_state | mode: :in_table}}
     else
-      :not_found
+      _ -> :not_found
     end
   end
 end

@@ -340,40 +340,29 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def current_element(%{stack: []}), do: nil
 
   @doc """
-  Checks if an element with the given tag is in the stack.
+  Finds the ref of an element with the given tag in the stack.
+  Returns the ref or nil if not found.
   """
-  def has_tag?(%{stack: stack, elements: elements}, tag) do
-    Enum.any?(stack, fn ref -> elements[ref].tag == tag end)
+  def find_ref(%{stack: stack, elements: elements}, tag) do
+    Enum.find(stack, fn ref -> elements[ref].tag == tag end)
   end
 
   # --------------------------------------------------------------------------
   # Scope Checking (ref-only stack + elements map)
   # --------------------------------------------------------------------------
 
-  # Scope boundaries for different scope types
-  @table_scope_boundaries ~w(html table template)
-  @select_scope_boundaries ~w(optgroup option)
-  @button_scope_boundaries ~w(applet caption html table td th marquee object template button)
+  @scope_boundaries %{
+    table: ~w(html table template),
+    select: ~w(optgroup option),
+    button: ~w(applet caption html table td th marquee object template button)
+  }
 
   @doc """
-  Checks if an element is in table scope.
+  Checks if an element with the given tag is in the specified scope.
+  Scope types: :table, :select, :button
   """
-  def in_table_scope?(%{stack: stack, elements: elements}, tag) do
-    do_in_scope?(stack, tag, @table_scope_boundaries, elements)
-  end
-
-  @doc """
-  Checks if an element is in select scope.
-  """
-  def in_select_scope?(%{stack: stack, elements: elements}, tag) do
-    do_in_scope?(stack, tag, @select_scope_boundaries, elements)
-  end
-
-  @doc """
-  Checks if an element is in button scope.
-  """
-  def in_button_scope?(%{stack: stack, elements: elements}, tag) do
-    do_in_scope?(stack, tag, @button_scope_boundaries, elements)
+  def in_scope?(%{stack: stack, elements: elements}, tag, scope_type) do
+    do_in_scope?(stack, tag, @scope_boundaries[scope_type], elements)
   end
 
   defp do_in_scope?([], _tag, _boundaries, _elements), do: false

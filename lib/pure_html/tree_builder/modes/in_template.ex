@@ -26,7 +26,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_child_to_stack: 2, push_element: 3, push_af_marker: 1, switch_template_mode: 2]
+    only: [
+      add_child_to_stack: 2,
+      push_element: 3,
+      push_af_marker: 1,
+      switch_template_mode: 2,
+      find_ref: 2
+    ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -175,23 +181,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # Check if the current template element already has non-table content
   # (div, span, text, etc.) that would make tr "bogus"
-  defp template_has_non_table_content?(%{stack: stack, elements: elements}) do
-    # Find the template element on the stack
-    template_ref =
-      Enum.find(stack, fn ref ->
-        case elements[ref] do
-          %{tag: "template"} -> true
-          _ -> false
-        end
-      end)
-
-    case template_ref do
-      nil ->
-        false
-
-      ref ->
-        template = elements[ref]
-        has_non_table_children?(template.children, elements)
+  defp template_has_non_table_content?(%{elements: elements} = state) do
+    case find_ref(state, "template") do
+      nil -> false
+      ref -> has_non_table_children?(elements[ref].children, elements)
     end
   end
 

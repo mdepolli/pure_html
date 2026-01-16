@@ -36,9 +36,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       set_mode: 2,
       push_af_marker: 1,
       add_child_to_stack: 2,
-      in_table_scope?: 2,
-      in_button_scope?: 2,
-      has_tag?: 2,
+      in_scope?: 3,
+      find_ref: 2,
       foster_parent: 2,
       new_element: 2,
       reject_refs_from_af: 2
@@ -166,7 +165,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Start tag: nested table - close current table, reprocess
   defp process_in_table({:start_tag, "table", _, _}, state) do
-    if in_table_scope?(state, "table") do
+    if in_scope?(state, "table", :table) do
       state = close_table(state)
       {:reprocess, state}
     else
@@ -202,7 +201,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Start tag: form - special handling
   defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
     # Only if no form element pointer and no template in stack
-    if has_tag?(state, "template") do
+    if find_ref(state, "template") do
       {:ok, state}
     else
       form = new_element("form", attrs)
@@ -301,7 +300,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # End tag: table
   defp process_in_table({:end_tag, "table"}, state) do
-    if in_table_scope?(state, "table") do
+    if in_scope?(state, "table", :table) do
       {:ok, close_table(state)}
     else
       {:ok, state}
@@ -337,7 +336,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # If p is in scope (possibly above table due to foster parenting), close it
   # Otherwise, foster parent an empty p element
   defp process_in_table({:end_tag, "p"}, state) do
-    if in_button_scope?(state, "p") do
+    if in_scope?(state, "p", :button) do
       # Let in_body handle closing the p
       InBody.process({:end_tag, "p"}, state)
     else
