@@ -3,7 +3,7 @@ defmodule PureHTML do
   HTML parsing library.
   """
 
-  alias PureHTML.{Tokenizer, TreeBuilder}
+  alias PureHTML.{Serializer, Tokenizer, TreeBuilder}
 
   @doc """
   Parses an HTML string into a list of nodes.
@@ -27,5 +27,22 @@ defmodule PureHTML do
     html
     |> Tokenizer.new()
     |> TreeBuilder.build()
+  end
+
+  @doc """
+  Converts parsed HTML nodes back to an HTML string.
+
+  ## Examples
+
+      iex> PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
+      "<html><head></head><body><p>Hello</p></body></html>"
+
+      iex> PureHTML.to_html([{"div", %{"class" => "foo"}, ["text"]}])
+      "<div class=foo>text</div>"
+
+  """
+  @spec to_html([term()]) :: String.t()
+  def to_html(nodes) when is_list(nodes) do
+    Serializer.serialize(nodes)
   end
 end
