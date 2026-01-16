@@ -319,6 +319,16 @@ defmodule PureHTML.TreeBuilder.Helpers do
   defp do_clear_af_to_marker([:marker | rest]), do: rest
   defp do_clear_af_to_marker([_ | rest]), do: do_clear_af_to_marker(rest)
 
+  @doc """
+  Updates an entry in the active formatting elements list by ref.
+  """
+  def update_af_entry(af, old_ref, new_entry) do
+    Enum.map(af, fn
+      {^old_ref, _, _} -> new_entry
+      entry -> entry
+    end)
+  end
+
   # --------------------------------------------------------------------------
   # Stack Queries (ref-only stack + elements map)
   # --------------------------------------------------------------------------
@@ -457,26 +467,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # --------------------------------------------------------------------------
   # Foster Parenting (ref-only stack)
   # --------------------------------------------------------------------------
-
-  # Tags that trigger foster parenting context
-  @foster_parent_context ~w(table tbody thead tfoot tr)
-
-  @doc """
-  Determines the appropriate insertion location for a new element.
-  """
-  def appropriate_insertion_location(%{stack: []} = _state) do
-    {:document, nil}
-  end
-
-  def appropriate_insertion_location(%{stack: [ref | _], elements: elements} = state) do
-    elem = elements[ref]
-
-    if elem.tag in @foster_parent_context do
-      find_foster_parent(state)
-    else
-      {ref, nil}
-    end
-  end
 
   @doc """
   Finds the foster parent for foster parenting.
@@ -645,4 +635,38 @@ defmodule PureHTML.TreeBuilder.Helpers do
     |> Enum.split_while(&(&1 in @whitespace_chars))
     |> then(fn {ws, rest} -> {Enum.join(ws), Enum.join(rest)} end)
   end
+
+  @doc """
+  Merges new attributes into the html element, preserving existing attrs.
+  Used when processing <html> start tags in various modes.
+  """
+  def merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
+
+  def merge_html_attrs(%{elements: elements} = state, new_attrs) do
+    case find_ref(state, "html") do
+      nil ->
+        state
+
+      html_ref ->
+        html_elem = elements[html_ref]
+        merged = Map.merge(new_attrs, html_elem.attrs)
+        %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
+    end
+  end
+
+  # Tags that trigger foster parenting context
+  @foster_parent_tags ~w(table tbody thead tfoot tr)
+
+  @doc """
+  Checks if the current element requires foster parenting.
+  Returns true if current node is a table structure element.
+  """
+  def needs_foster_parenting?(%{stack: [ref | _], elements: elements}) do
+    case elements[ref] do
+      %{tag: tag} -> tag in @foster_parent_tags
+      _ -> true
+    end
+  end
+
+  def needs_foster_parenting?(_), do: true
 end

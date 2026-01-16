@@ -20,7 +20,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, foster_parent: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3]
 
   @impl true
   # Character tokens: collect into pending list
@@ -109,12 +110,5 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
     new_state = %{new_state | af: new_af}
 
     reconstruct_entries_foster(rest, new_state)
-  end
-
-  defp update_af_entry(af, old_ref, new_entry) do
-    Enum.map(af, fn
-      {^old_ref, _, _} -> new_entry
-      entry -> entry
-    end)
   end
 end

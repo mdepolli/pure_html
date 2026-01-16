@@ -27,7 +27,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       pop_until_one_of: 2,
       foster_parent: 2,
       find_ref: 2,
-      in_scope?: 3
+      in_scope?: 3,
+      merge_html_attrs: 2,
+      update_af_entry: 3
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -1076,20 +1078,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ensure_body()
   end
 
-  defp merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
-
-  defp merge_html_attrs(%{elements: elements} = state, new_attrs) do
-    case find_ref(state, "html") do
-      nil ->
-        state
-
-      html_ref ->
-        html_elem = elements[html_ref]
-        merged = Map.merge(new_attrs, html_elem.attrs)
-        %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
-    end
-  end
-
   # Reopen head element (put it back on the stack)
   defp maybe_reopen_head(state) do
     if current_tag(state) == "head" do
@@ -1804,13 +1792,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         elements: new_elements,
         current_parent_ref: new_elem.ref
     })
-  end
-
-  defp update_af_entry(af, old_ref, new_entry) do
-    Enum.map(af, fn
-      {^old_ref, _, _} -> new_entry
-      entry -> entry
-    end)
   end
 
   defp add_formatting_entry(%{stack: [ref | _], af: af} = state, tag, attrs) do

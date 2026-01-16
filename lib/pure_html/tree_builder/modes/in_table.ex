@@ -40,7 +40,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       find_ref: 2,
       foster_parent: 2,
       new_element: 2,
-      reject_refs_from_af: 2
+      reject_refs_from_af: 2,
+      needs_foster_parenting?: 1
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -489,21 +490,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       _ -> false
     end)
   end
-
-  # Table context elements that require foster parenting
-  @foster_parent_context ~w(table tbody thead tfoot tr)
-
-  # Check if we need foster parenting.
-  # Per HTML5 spec, foster parenting is needed when the current node is a table
-  # structure element (table, tbody, thead, tfoot, tr).
-  defp needs_foster_parenting?(%{stack: [ref | _], elements: elements}) do
-    case elements[ref] do
-      %{tag: tag} -> tag in @foster_parent_context
-      _ -> true
-    end
-  end
-
-  defp needs_foster_parenting?(_), do: true
 
   # Close a foster-parented element of the same tag if it's the current node
   # This handles implicit closing for li, dd, dt in foster parenting context

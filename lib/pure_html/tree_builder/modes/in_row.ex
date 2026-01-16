@@ -33,7 +33,8 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       pop_until_tag: 2,
       pop_until_one_of: 2,
       foster_parent: 2,
-      add_child_to_stack: 2
+      add_child_to_stack: 2,
+      needs_foster_parenting?: 1
     ]
 
   # Start tags that close the row
@@ -100,7 +101,6 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Other start tags: process using in_table rules with foster parenting
   # But stay in in_row mode so tr remains valid for subsequent cells
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
-  @foster_parent_context ~w(table tbody thead tfoot tr)
 
   def process({:start_tag, tag, attrs, self_closing}, state) do
     needs_foster = needs_foster_parenting?(state)
@@ -185,14 +185,4 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       _ -> :not_found
     end
   end
-
-  # Check if the current node is a table context element (needs foster parenting)
-  defp needs_foster_parenting?(%{stack: [ref | _], elements: elements}) do
-    case elements[ref] do
-      %{tag: tag} -> tag in @foster_parent_context
-      _ -> true
-    end
-  end
-
-  defp needs_foster_parenting?(_), do: true
 end

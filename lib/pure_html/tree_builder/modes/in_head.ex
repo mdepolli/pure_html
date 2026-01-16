@@ -34,7 +34,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
       pop_element: 1,
       current_tag: 1,
       split_whitespace: 1,
-      find_ref: 2
+      merge_html_attrs: 2
     ]
 
   @void_head_elements ~w(base basefont bgsound link meta)
@@ -165,20 +165,5 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   defp pop_head_if_current(state) do
     if current_tag(state) == "head", do: pop_element(state), else: state
-  end
-
-  # Merge new attrs into existing html element (per "in body" rules)
-  defp merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
-
-  defp merge_html_attrs(%{elements: elements} = state, new_attrs) do
-    case find_ref(state, "html") do
-      nil ->
-        state
-
-      html_ref ->
-        html_elem = elements[html_ref]
-        merged = Map.merge(new_attrs, html_elem.attrs)
-        %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
-    end
   end
 end
