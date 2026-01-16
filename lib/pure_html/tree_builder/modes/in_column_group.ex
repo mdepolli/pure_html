@@ -66,8 +66,14 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   end
 
   # Start tag: html - process using in_body rules
+  # In template context (no colgroup on stack), just ignore to avoid mode switch
   def process({:start_tag, "html", _, _}, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    if current_tag(state) == "colgroup" do
+      {:reprocess, %{state | mode: :in_body}}
+    else
+      # In template context, ignore (like InBody does for html in template)
+      {:ok, state}
+    end
   end
 
   # Start tag: col - insert void element

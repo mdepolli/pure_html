@@ -96,15 +96,49 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     {:ok, state}
   end
 
-  # Table elements: delegate to InBody which has special handlers for :in_template mode
-  # These handlers check mode: :in_template and do proper template_mode_stack switching
-  @table_elements ~w(caption colgroup tbody tfoot thead col tr td th table)
+  # Table elements: per HTML5 spec, switch template mode and reprocess through dispatch
+  # caption, colgroup, tbody, tfoot, thead: switch to "in table", reprocess
+  @table_section_elements ~w(caption colgroup tbody tfoot thead)
 
-  def process({:start_tag, tag, _, _} = token, state) when tag in @table_elements do
-    InBody.process(token, state)
+  def process({:start_tag, tag, _, _}, state) when tag in @table_section_elements do
+    {:reprocess, switch_template_mode(state, :in_table)}
   end
 
-  # Other start tags: switch to in_body and reprocess
+  # col: switch to "in column group", reprocess
+  def process({:start_tag, "col", _, _}, state) do
+    {:reprocess, switch_template_mode(state, :in_column_group)}
+  end
+
+  # tr: if template_mode_stack has :in_table, switch to :in_table so tr triggers
+  # implicit tbody creation.
+  def process({:start_tag, "tr", _, _}, %{template_mode_stack: [:in_table | _]} = state) do
+    {:reprocess, switch_template_mode(state, :in_table)}
+  end
+
+  # tr: check if template already has non-table content
+  # If so, tr is "bogus" and should be ignored (test #77 scenario)
+  def process({:start_tag, "tr", _, _}, state) do
+    if template_has_non_table_content?(state) do
+      {:ok, state}
+    else
+      {:reprocess, switch_template_mode(state, :in_table_body)}
+    end
+  end
+
+  # td, th: need to create implicit tr if we're in table body context
+  # Per spec says "in row", but if template_mode_stack has :in_table_body,
+  # we need in_table_body to create the implicit tr first
+  def process({:start_tag, tag, _, _}, %{template_mode_stack: [:in_table_body | _]} = state)
+      when tag in ["td", "th"] do
+    {:reprocess, switch_template_mode(state, :in_table_body)}
+  end
+
+  def process({:start_tag, tag, _, _}, state) when tag in ["td", "th"] do
+    {:reprocess, switch_template_mode(state, :in_row)}
+  end
+
+  # Other start tags (including table): switch to in_body and reprocess
+  # Per HTML5 spec, only caption/colgroup/tbody/tfoot/thead switch to :in_table
   # Per spec: "Pop the current template insertion mode off the stack of template insertion modes.
   # Push 'in body' onto the stack of template insertion modes.
   # Switch the insertion mode to 'in body', and reprocess the token."
@@ -135,4 +169,62 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     |> Map.put(:original_mode, :in_template)
     |> Map.put(:mode, :text)
   end
+
+  # Table-related elements that are valid as early template content
+  @table_elements ~w(tr td th tbody thead tfoot caption colgroup col table)
+
+  # Check if the current template element already has non-table content
+  # (div, span, text, etc.) that would make tr "bogus"
+  defp template_has_non_table_content?(%{stack: stack, elements: elements}) do
+    # Find the template element on the stack
+    template_ref =
+      Enum.find(stack, fn ref ->
+        case elements[ref] do
+          %{tag: "template"} -> true
+          _ -> false
+        end
+      end)
+
+    case template_ref do
+      nil ->
+        false
+
+      ref ->
+        template = elements[ref]
+        has_non_table_children?(template.children, elements)
+    end
+  end
+
+  defp has_non_table_children?([], _elements), do: false
+
+  # Text: non-whitespace counts as non-table content
+  defp has_non_table_children?([{:text, text} | rest], elements) do
+    if String.trim(text) != "", do: true, else: has_non_table_children?(rest, elements)
+  end
+
+  # Comments don't count
+  defp has_non_table_children?([{:comment, _} | rest], elements) do
+    has_non_table_children?(rest, elements)
+  end
+
+  # Element reference: check tag
+  defp has_non_table_children?([ref | rest], elements) when is_reference(ref) do
+    check_element_for_non_table_content(elements[ref], rest, elements)
+  end
+
+  # Skip unknown children
+  defp has_non_table_children?([_ | rest], elements) do
+    has_non_table_children?(rest, elements)
+  end
+
+  defp check_element_for_non_table_content(%{tag: tag}, rest, elements)
+       when tag in @table_elements do
+    has_non_table_children?(rest, elements)
+  end
+
+  defp check_element_for_non_table_content(%{tag: "template"}, rest, elements) do
+    has_non_table_children?(rest, elements)
+  end
+
+  defp check_element_for_non_table_content(_, _rest, _elements), do: true
 end

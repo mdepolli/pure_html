@@ -1,14 +1,14 @@
 # Test Failures Analysis
 
-**Total: 77 failures out of 1476 tests**
+**Total: 67 failures out of 1476 tests**
 
-*Last updated: 2026-01-14*
+*Last updated: 2026-01-15*
 
 ## By Test File
 
 | File | Phase 5 | Phase 6 | Current |
 |------|---------|---------|---------|
-| template | 12 | 45 | 9 |
+| template | 12 | 45 | 0 |
 | webkit02 | 13 | 23 | 8 |
 | tests1 | 23 | 41 | 9 |
 | tests10 | 20 | 33 | 9 |
@@ -19,14 +19,14 @@
 | tests26 | 3 | 18 | 3 |
 | tests17 | 3 | 6 | 0 |
 | quirks01 | 3 | 3 | 3 |
-| tests7 | 7 | 15 | 2 |
+| tests7 | 7 | 15 | 1 |
 | tests6 | 3 | 13 | 2 |
 | tests3 | 10 | 12 | 0 |
 | tests20 | 4 | 7 | 2 |
 | tests2 | 2 | 10 | 1 |
 | tests16 | 3 | 3 | 2 |
 | tables01 | 2 | 17 | 2 |
-| tests5 | 4 | 4 | 1 |
+| tests5 | 4 | 4 | 0 |
 | tests18 | 8 | 17 | 1 |
 | ruby | 1 | 16 | 1 |
 | tests8 | 2 | 6 | 1 |
@@ -46,7 +46,7 @@
 | menuitem-element | 2 | 2 | 0 |
 | search-element | 1 | 2 | 0 |
 | pending-spec-changes | 1 | 2 | 0 |
-| **Total** | **177** | **423** | **77** |
+| **Total** | **177** | **423** | **67** |
 
 ## Status
 
@@ -75,6 +75,8 @@ All failures are assertion failures (tree structure mismatches) rather than cras
 4. **Foreign content** (~20) - Integration points, breakout tags
 
 ## Recent Fixes
+
+- **Template mode fixes** (2026-01-15): Multiple template-related fixes: (1) Fixed foster parenting in template context by updating `find_foster_parent` to handle templates per HTML5 spec - templates are now proper foster parent boundaries like tables. (2) Fixed table section elements (thead, tbody, tfoot) in template to use `switch_template_mode` for proper reprocessing through table modes. (3) Fixed `ensure_tbody` to create implicit tbody when template is at top of stack (not just table). (4) Fixed frameset handling in template context to be ignored per HTML5 spec. (5) Fixed `</template>` end tag to only close HTML templates, not foreign (SVG/MathML) templates. (6) Fixed in_row character handling to preserve original_mode for proper return from in_table_text. (7) Added detection of "bogus tr" in template - tr is now ignored if template already has non-table content (like divs or text). Fixed 10 tests (77 → 67 total). template: 9 → 0.
 
 - **Multiple fixes** (2026-01-14): Four fixes: (1) Removed incorrect self-closing flag handling for HTML elements - per HTML5 spec, self-closing flag should only be acknowledged for foreign content (SVG/MathML), not HTML elements. `<div/>` should open a div that stays open. (2) Fixed after_body mode to stay in after_body for whitespace characters instead of permanently switching to in_body. Now only non-whitespace triggers mode switch. (3) Fixed ensure_head to insert head element after any leading comments instead of unconditionally prepending - comments processed in before_head mode should appear before head in html's children. (4) Fixed tokenizer buffer leak where buffer wasn't cleared when starting a new attribute, causing stale end tag names to leak into attribute names (e.g., "titlename" instead of "name" after `</title>`). Fixed 4 tests (81 → 77 total). webkit01: 5 → 3. tests19: 7 → 6. tests2: 2 → 1.
 

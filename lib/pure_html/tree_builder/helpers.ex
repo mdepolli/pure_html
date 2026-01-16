@@ -484,25 +484,54 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Finds the foster parent for foster parenting.
   Returns `{foster_parent_ref, insert_before_ref}`.
+
+  Per HTML5 spec:
+  1. Let last table be the last table element in the stack
+  2. Let last template be the last template element in the stack
+  3. If there is a template AND (no table OR template is closer to stack top than table),
+     then foster parent is the template element itself (no insert_before)
+  4. Otherwise if there is a table, foster parent is table's parent, insert before table
+  5. Otherwise foster parent is the first element (html)
   """
   def find_foster_parent(%{stack: stack, elements: elements}) do
-    do_find_foster_parent(stack, elements)
+    # Find positions of last table and last template (closest to stack top)
+    {table_pos, template_pos} = find_table_and_template_positions(stack, elements, 0, nil, nil)
+
+    cond do
+      # Template exists and is closer to top than table (or no table)
+      template_pos != nil and (table_pos == nil or template_pos < table_pos) ->
+        template_ref = Enum.at(stack, template_pos)
+        {template_ref, nil}
+
+      # Table exists and is closer to top than template (or no template)
+      table_pos != nil ->
+        table_ref = Enum.at(stack, table_pos)
+
+        case Enum.at(stack, table_pos + 1) do
+          nil -> {:document, nil}
+          parent_ref -> {parent_ref, table_ref}
+        end
+
+      # Neither table nor template - use first element (html) as foster parent
+      true ->
+        case List.last(stack) do
+          nil -> {:document, nil}
+          html_ref -> {html_ref, nil}
+        end
+    end
   end
 
-  defp do_find_foster_parent([], _elements), do: {:document, nil}
+  defp find_table_and_template_positions([], _elements, _pos, table_pos, template_pos) do
+    {table_pos, template_pos}
+  end
 
-  defp do_find_foster_parent([ref | rest], elements) do
-    if elements[ref].tag == "table" do
-      table_ref = ref
+  defp find_table_and_template_positions([ref | rest], elements, pos, table_pos, template_pos) do
+    tag = elements[ref].tag
 
-      case rest do
-        # Insert before the table in its parent's children
-        [parent_ref | _] -> {parent_ref, table_ref}
-        [] -> {:document, nil}
-      end
-    else
-      do_find_foster_parent(rest, elements)
-    end
+    new_table_pos = if tag == "table" and table_pos == nil, do: pos, else: table_pos
+    new_template_pos = if tag == "template" and template_pos == nil, do: pos, else: template_pos
+
+    find_table_and_template_positions(rest, elements, pos + 1, new_table_pos, new_template_pos)
   end
 
   @doc """

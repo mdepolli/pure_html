@@ -19,7 +19,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       add_text_to_stack: 2,
       set_mode: 2,
       pop_mode: 1,
-      switch_template_mode: 2,
       push_af_marker: 1,
       correct_tag: 1,
       current_tag: 1,
@@ -220,7 +219,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   def process({:end_tag, "template"}, %{af: af} = state) do
-    new_state = close_tag_ref_forced(state, "template")
+    # Only close HTML templates, not foreign (SVG/MathML) templates
+    new_state = close_html_template(state)
     new_af = clear_af_to_marker(af)
     {:ok, %{new_state | af: new_af} |> reset_insertion_mode()}
   end
@@ -430,16 +430,21 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Frameset in body mode with frameset_ok
+  # Per HTML5 spec: if template on stack, ignore the token
   defp do_process_html_start_tag(
          "frameset",
          attrs,
          _,
          %{mode: :in_body, frameset_ok: true} = state
        ) do
-    state
-    |> close_body_for_frameset()
-    |> push_element("frameset", attrs)
-    |> set_mode(:in_frameset)
+    if has_tag?(state, "template") do
+      state
+    else
+      state
+      |> close_body_for_frameset()
+      |> push_element("frameset", attrs)
+      |> set_mode(:in_frameset)
+    end
   end
 
   defp do_process_html_start_tag("frameset", _, _, %{mode: :in_body} = state), do: state
@@ -509,37 +514,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  # Table structure in template
-  defp do_process_html_start_tag(tag, attrs, _, %{mode: :in_template} = state)
-       when tag in @table_structure_elements do
-    state
-    |> switch_template_mode(:in_table)
-    |> push_element(tag, attrs)
-  end
-
-  # Col in template - switch to in_column_group and add col void element
-  defp do_process_html_start_tag("col", attrs, _, %{mode: :in_template} = state) do
-    state
-    |> switch_template_mode(:in_column_group)
-    |> add_child_to_stack({"col", attrs, []})
-  end
-
-  # Col in other contexts
+  # Col in other contexts - ignored (col only valid inside colgroup)
   defp do_process_html_start_tag("col", _, _, state), do: state
-
-  # Tr in template
-  defp do_process_html_start_tag("tr", attrs, _, %{mode: :in_template} = state) do
-    state
-    |> switch_template_mode(:in_table)
-    |> push_element("tr", attrs)
-  end
-
-  # Td/th in template
-  defp do_process_html_start_tag(tag, attrs, self_closing, %{mode: :in_template} = state)
-       when tag in ["td", "th"] do
-    state = switch_template_mode(state, :in_body)
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
 
   # Table structure in body mode (ignored)
   defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state)
@@ -1593,6 +1569,30 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       :not_found ->
         state
     end
+  end
+
+  # Close HTML template only (not foreign templates like SVG/MathML)
+  defp close_html_template(%{stack: stack, elements: elements} = state) do
+    case pop_until_html_template(stack, elements) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  defp pop_until_html_template([], _elements), do: :not_found
+
+  defp pop_until_html_template([ref | rest], elements) when is_map_key(elements, ref) do
+    case elements[ref].tag do
+      "template" -> {:found, rest, elements[ref].parent_ref}
+      _ -> pop_until_html_template(rest, elements)
+    end
+  end
+
+  defp pop_until_html_template([_ref | rest], elements) do
+    pop_until_html_template(rest, elements)
   end
 
   # Close block-level end tag: generate implied end tags, then pop until match

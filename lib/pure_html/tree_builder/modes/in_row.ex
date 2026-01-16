@@ -50,7 +50,8 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Character tokens: process using in_table rules
   def process({:character, _}, state) do
     # Delegate to in_table mode (handles foster parenting)
-    {:reprocess, %{state | mode: :in_table}}
+    # Set original_mode so in_table_text returns to in_row after text handling
+    {:reprocess, %{state | mode: :in_table, original_mode: :in_row}}
   end
 
   # Comments: process using in_table rules

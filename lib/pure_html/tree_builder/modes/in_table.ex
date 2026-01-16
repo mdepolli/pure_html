@@ -65,9 +65,22 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp do_process(_, token, state), do: process_dispatch(token, state)
 
-  defp process_dispatch(token, %{template_mode_stack: [:in_table | _]} = state) do
-    # Template pushed :in_table mode (e.g., after seeing <tbody> in template)
-    # No real table exists - use body rules
+  # In template context with table-related modes, most tokens go through normal
+  # process_in_table which handles foster parenting correctly.
+  # Only end tags for non-table elements need special handling via InBody.
+  @template_table_modes [
+    :in_table,
+    :in_table_body,
+    :in_row,
+    :in_cell,
+    :in_caption,
+    :in_column_group
+  ]
+
+  # End tags for non-table elements in template table context: use InBody rules
+  # (InBody handles "any other end tag" by traversing stack)
+  defp process_dispatch({:end_tag, _} = token, %{template_mode_stack: [mode | _]} = state)
+       when mode in @template_table_modes do
     InBody.process(token, state)
   end
 
@@ -299,11 +312,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp do_process_character(%{tag: tag}, text, state) when tag in @table_context do
     # Switch to in_table_text mode to collect character tokens
+    # Preserve original_mode if already set (e.g., delegated from in_row)
+    orig_mode = state.original_mode || :in_table
+
     {:ok,
      %{
        state
        | mode: :in_table_text,
-         original_mode: :in_table,
+         original_mode: orig_mode,
          pending_table_text: text
      }}
   end
@@ -357,6 +373,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp do_ensure_tbody(%{tag: tag}, state) when tag in @table_sections, do: state
   defp do_ensure_tbody(%{tag: "table"}, state), do: push_element(state, "tbody", %{})
+  # In template context, template is the table context boundary - create tbody there too
+  defp do_ensure_tbody(%{tag: "template"}, state), do: push_element(state, "tbody", %{})
   defp do_ensure_tbody(_, state), do: state
 
   defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
