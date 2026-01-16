@@ -295,11 +295,12 @@ defmodule PureHTML.TreeBuilder do
   defp current_element_is_foreign?([], _), do: false
 
   defp process_token(
-         {:doctype, name, public_id, system_id, _},
+         {:doctype, name, public_id, system_id, force_quirks},
          {_, %State{mode: :initial} = state, comments}
        ) do
-    # Update mode to before_html after seeing DOCTYPE (quirks_mode stays false)
-    {{name, public_id, system_id}, %{state | mode: :before_html}, comments}
+    # Determine quirks mode per HTML5 spec
+    quirks = should_set_quirks_mode?(name, public_id, system_id, force_quirks)
+    {{name, public_id, system_id}, %{state | mode: :before_html, quirks_mode: quirks}, comments}
   end
 
   defp process_token({:doctype, _, _, _, _}, acc), do: acc
@@ -311,6 +312,49 @@ defmodule PureHTML.TreeBuilder do
   defp process_token(token, {doctype, state, comments}) do
     {doctype, dispatch(token, state), comments}
   end
+
+  # Per HTML5 spec: determine if DOCTYPE should trigger quirks mode
+  # Simplified implementation covering common cases
+
+  # Force quirks from tokenizer
+  defp should_set_quirks_mode?(_name, _public_id, _system_id, true = _force_quirks), do: true
+
+  # Missing or invalid name
+  defp should_set_quirks_mode?(name, _public_id, _system_id, _force_quirks)
+       when not is_binary(name) or name == "",
+       do: true
+
+  # Name must be "html" (case-insensitive)
+  defp should_set_quirks_mode?(name, _public_id, _system_id, _force_quirks)
+       when is_binary(name) and name != "html" and name != "HTML",
+       do: String.downcase(name) != "html"
+
+  # Public ID with system ID - check for limited quirks patterns (NOT full quirks)
+  defp should_set_quirks_mode?(_name, public_id, system_id, _force_quirks)
+       when is_binary(public_id) and public_id != "" and is_binary(system_id) and system_id != "" do
+    # These patterns with system ID are "limited quirks" not "full quirks"
+    not limited_quirks_public_id?(public_id)
+  end
+
+  # Public ID without system ID triggers quirks mode
+  defp should_set_quirks_mode?(_name, public_id, _system_id, _force_quirks)
+       when is_binary(public_id) and public_id != "",
+       do: true
+
+  # System ID without public ID (legacy DOCTYPE)
+  defp should_set_quirks_mode?(_name, _public_id, system_id, _force_quirks)
+       when is_binary(system_id) and system_id != "" and system_id != "about:legacy-compat",
+       do: true
+
+  # Standard HTML5 DOCTYPE
+  defp should_set_quirks_mode?(_name, _public_id, _system_id, _force_quirks), do: false
+
+  # Limited quirks public IDs (with system ID present, these are NOT full quirks)
+  defp limited_quirks_public_id?("-//W3C//DTD XHTML 1.0 Frameset//" <> _), do: true
+  defp limited_quirks_public_id?("-//W3C//DTD XHTML 1.0 Transitional//" <> _), do: true
+  defp limited_quirks_public_id?("-//W3C//DTD HTML 4.01 Frameset//" <> _), do: true
+  defp limited_quirks_public_id?("-//W3C//DTD HTML 4.01 Transitional//" <> _), do: true
+  defp limited_quirks_public_id?(_), do: false
 
   # Dispatch token to the appropriate mode module or fall back to existing process/2
   defp dispatch(token, %State{mode: mode} = state) when is_map_key(@mode_modules, mode) do
