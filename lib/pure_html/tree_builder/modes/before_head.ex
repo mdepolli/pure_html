@@ -21,17 +21,21 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, push_element: 3]
 
-  @impl true
-  def process({:character, text}, state) do
-    case String.trim(text) do
-      "" ->
-        # Whitespace is ignored
-        {:ok, state}
+  # HTML5 ASCII whitespace characters
+  @html5_whitespace ~c[ \t\n\r\f]
 
-      _ ->
-        # Non-whitespace: insert implied head, reprocess
-        {:reprocess, insert_head(state, %{})}
-    end
+  @impl true
+  # Empty string - all whitespace was consumed
+  def process({:character, ""}, state), do: {:ok, state}
+
+  # Leading HTML5 whitespace - strip and reprocess rest
+  def process({:character, <<c, rest::binary>>}, state) when c in @html5_whitespace do
+    process({:character, rest}, state)
+  end
+
+  # Non-whitespace at start - insert head and reprocess
+  def process({:character, text}, state) do
+    {:reprocess_with, insert_head(state, %{}), {:character, text}}
   end
 
   def process({:comment, text}, state) do

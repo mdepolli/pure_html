@@ -20,17 +20,21 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   import PureHTML.TreeBuilder.Helpers, only: [push_element: 3, set_mode: 2]
 
-  @impl true
-  def process({:character, text}, state) do
-    # Whitespace is ignored
-    # Non-whitespace triggers implied <html> and reprocess
-    case String.trim(text) do
-      "" ->
-        {:ok, state}
+  # HTML5 ASCII whitespace characters
+  @html5_whitespace ~c[ \t\n\r\f]
 
-      _ ->
-        {:reprocess, insert_html(state, %{})}
-    end
+  @impl true
+  # Empty string - all whitespace was consumed
+  def process({:character, ""}, state), do: {:ok, state}
+
+  # Leading HTML5 whitespace - strip and reprocess rest
+  def process({:character, <<c, rest::binary>>}, state) when c in @html5_whitespace do
+    process({:character, rest}, state)
+  end
+
+  # Non-whitespace at start - insert html and reprocess
+  def process({:character, text}, state) do
+    {:reprocess_with, insert_html(state, %{}), {:character, text}}
   end
 
   def process({:comment, _text}, state) do

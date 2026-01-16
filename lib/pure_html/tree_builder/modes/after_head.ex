@@ -34,19 +34,22 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   alias PureHTML.TreeBuilder.Modes.InHead
 
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
+  # HTML5 ASCII whitespace characters
+  @html5_whitespace ~c[ \t\n\r\f]
 
   @impl true
-  def process({:character, text}, state) do
-    case String.trim(text) do
-      "" ->
-        # Whitespace: insert directly as child of html
-        # Use top of stack to handle case where current_parent_ref may be stale
-        {:ok, add_text_to_top_of_stack(state, text)}
+  # Empty string - done
+  def process({:character, ""}, state), do: {:ok, state}
 
-      _ ->
-        # Non-whitespace: insert implied body, switch to in_body, reprocess
-        {:reprocess, insert_implied_body(state)}
-    end
+  # Leading HTML5 whitespace - insert and continue with rest
+  def process({:character, <<c, rest::binary>>}, state) when c in @html5_whitespace do
+    state = add_text_to_top_of_stack(state, <<c>>)
+    process({:character, rest}, state)
+  end
+
+  # Non-whitespace at start - insert implied body and reprocess
+  def process({:character, text}, state) do
+    {:reprocess_with, insert_implied_body(state), {:character, text}}
   end
 
   def process({:comment, text}, state) do

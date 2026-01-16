@@ -57,13 +57,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                      dl fieldset figcaption figure footer form header hgroup listing main
                      menu nav ol pre search section summary ul)
 
+  # Note: option and optgroup are handled specially in maybe_close_same/2
+  # per HTML5 spec (they only close if current node matches, not stack search)
   @implicit_closes %{
     "li" => [],
     "dt" => ["dd"],
     "dd" => ["dt"],
     "button" => [],
-    "option" => [],
-    "optgroup" => ["option"],
     "tr" => [],
     "td" => ["th"],
     "th" => ["td"],
@@ -1479,6 +1479,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @implicit_close_boundaries ~w(table template body html)
   @li_scope_boundaries ~w(ol ul table template body html)
+
+  # Per HTML5 spec, option/optgroup only close if current node matches (not stack search)
+  defp maybe_close_same(state, "option") do
+    if current_tag(state) == "option", do: pop_element(state), else: state
+  end
+
+  defp maybe_close_same(state, "optgroup") do
+    state
+    |> then(fn s -> if current_tag(s) == "option", do: pop_element(s), else: s end)
+    |> then(fn s -> if current_tag(s) == "optgroup", do: pop_element(s), else: s end)
+  end
 
   defp maybe_close_same(%{stack: stack, elements: elements} = state, tag) do
     case get_implicit_close_config(tag) do

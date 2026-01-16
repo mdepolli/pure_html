@@ -241,7 +241,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
   @adopt_on_duplicate ~w(a nobr)
-  @foster_parent_context ~w(table tbody thead tfoot tr)
+
+  # li and similar elements that have implicit closing
+  @implicit_close_elements ~w(li dd dt)
 
   defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
     # Check if current node needs foster parenting
@@ -274,6 +276,17 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
           [new_ref | _] = new_state.stack
           new_af = [{new_ref, tag, attrs} | new_state.af]
           {:ok, %{new_state | af: new_af}}
+        end
+
+      # li, dd, dt: close open same-type element if foster-parented before inserting
+      tag in @implicit_close_elements ->
+        state = close_foster_parented_same_tag(state, tag)
+
+        if needs_foster_parenting?(state) do
+          {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
+          {:ok, new_state}
+        else
+          {:ok, push_element(state, tag, attrs)}
         end
 
       true ->
@@ -478,7 +491,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end)
   end
 
-  # Check if the current node is a table context element (needs foster parenting)
+  # Table context elements that require foster parenting
+  @foster_parent_context ~w(table tbody thead tfoot tr)
+
+  # Check if we need foster parenting.
+  # Per HTML5 spec, foster parenting is needed when the current node is a table
+  # structure element (table, tbody, thead, tfoot, tr).
   defp needs_foster_parenting?(%{stack: [ref | _], elements: elements}) do
     case elements[ref] do
       %{tag: tag} -> tag in @foster_parent_context
@@ -487,4 +505,20 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp needs_foster_parenting?(_), do: true
+
+  # Close a foster-parented element of the same tag if it's the current node
+  # This handles implicit closing for li, dd, dt in foster parenting context
+  defp close_foster_parented_same_tag(%{stack: [ref | rest], elements: elements} = state, tag) do
+    case elements[ref] do
+      %{tag: ^tag, foster_parent_ref: fpr} when not is_nil(fpr) ->
+        # Current node is a foster-parented element of the same tag - pop it
+        parent_ref = elements[ref].parent_ref
+        %{state | stack: rest, current_parent_ref: parent_ref}
+
+      _ ->
+        state
+    end
+  end
+
+  defp close_foster_parented_same_tag(state, _tag), do: state
 end
