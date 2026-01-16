@@ -234,16 +234,26 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:ok, state}
   end
 
-  # Other start tags: foster parent directly
+  # Other start tags: check if foster parenting is needed
+  # Per HTML5 spec, enable foster parenting then process using in_body rules
+  # "Appropriate insertion location" checks if current node is table context
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
   @adopt_on_duplicate ~w(a nobr)
+  @foster_parent_context ~w(table tbody thead tfoot tr)
 
   defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
+    # Check if current node needs foster parenting
+    needs_foster = needs_foster_parenting?(state)
+
     cond do
       self_closing or tag in @void_elements ->
-        {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
-        {:ok, new_state}
+        if needs_foster do
+          {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
+          {:ok, new_state}
+        else
+          {:ok, add_child_to_stack(state, {tag, attrs, []})}
+        end
 
       tag in @formatting_elements ->
         # For <a> and <nobr>, run adoption agency if duplicate
@@ -254,13 +264,24 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
             state
           end
 
-        {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
-        new_af = [{new_ref, tag, attrs} | new_state.af]
-        {:ok, %{new_state | af: new_af}}
+        if needs_foster_parenting?(state) do
+          {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
+          new_af = [{new_ref, tag, attrs} | new_state.af]
+          {:ok, %{new_state | af: new_af}}
+        else
+          new_state = push_element(state, tag, attrs)
+          [new_ref | _] = new_state.stack
+          new_af = [{new_ref, tag, attrs} | new_state.af]
+          {:ok, %{new_state | af: new_af}}
+        end
 
       true ->
-        {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
-        {:ok, new_state}
+        if needs_foster do
+          {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
+          {:ok, new_state}
+        else
+          {:ok, push_element(state, tag, attrs)}
+        end
     end
   end
 
@@ -441,4 +462,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       _ -> false
     end)
   end
+
+  # Check if the current node is a table context element (needs foster parenting)
+  defp needs_foster_parenting?(%{stack: [ref | _], elements: elements}) do
+    case elements[ref] do
+      %{tag: tag} -> tag in @foster_parent_context
+      _ -> true
+    end
+  end
+
+  defp needs_foster_parenting?(_), do: true
 end

@@ -31,7 +31,9 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       push_af_marker: 1,
       in_table_scope?: 2,
       pop_until_tag: 2,
-      pop_until_one_of: 2
+      pop_until_one_of: 2,
+      foster_parent: 2,
+      add_child_to_stack: 2
     ]
 
   # Start tags that close the row
@@ -87,9 +89,37 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     end
   end
 
-  # Other start tags: process using in_table rules
-  def process({:start_tag, _, _, _}, state) do
+  # Special start tags that need in_table/in_head handling: delegate properly
+  # These have special mode transitions or namespace handling we shouldn't override
+  @delegate_to_table ~w(template script style svg math)
+
+  def process({:start_tag, tag, _, _}, state) when tag in @delegate_to_table do
     {:reprocess, %{state | mode: :in_table}}
+  end
+
+  # Other start tags: process using in_table rules with foster parenting
+  # But stay in in_row mode so tr remains valid for subsequent cells
+  @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
+  @foster_parent_context ~w(table tbody thead tfoot tr)
+
+  def process({:start_tag, tag, attrs, self_closing}, state) do
+    needs_foster = needs_foster_parenting?(state)
+
+    if self_closing or tag in @void_elements do
+      if needs_foster do
+        {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
+        {:ok, new_state}
+      else
+        {:ok, add_child_to_stack(state, {tag, attrs, []})}
+      end
+    else
+      if needs_foster do
+        {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
+        {:ok, new_state}
+      else
+        {:ok, push_element(state, tag, attrs)}
+      end
+    end
   end
 
   # End tag: tr - close row, switch to in_table_body
@@ -165,4 +195,14 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       :not_found
     end
   end
+
+  # Check if the current node is a table context element (needs foster parenting)
+  defp needs_foster_parenting?(%{stack: [ref | _], elements: elements}) do
+    case elements[ref] do
+      %{tag: tag} -> tag in @foster_parent_context
+      _ -> true
+    end
+  end
+
+  defp needs_foster_parenting?(_), do: true
 end

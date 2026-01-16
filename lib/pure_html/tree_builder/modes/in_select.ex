@@ -38,7 +38,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       pop_element: 1,
       close_select: 1,
       current_tag: 1,
-      in_select_scope?: 2
+      in_select_scope?: 2,
+      has_tag?: 2
     ]
 
   @impl true
@@ -85,8 +86,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Start tag: select (nested) - parse error, close select
+  # Per html5lib tests, nested <select> closes outer select even if option is on stack
+  # (despite spec's select scope boundaries)
   def process({:start_tag, "select", _, _}, state) do
-    if in_select_scope?(state, "select") do
+    if has_tag?(state, "select") do
       {:ok, close_select(state)}
     else
       {:ok, state}

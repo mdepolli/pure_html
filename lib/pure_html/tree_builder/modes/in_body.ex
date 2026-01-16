@@ -245,6 +245,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_dd_dt_in_scope(state, tag)}
   end
 
+  # </form> has special handling when no template is on the stack
+  # Per HTML5 spec: only REMOVE form from stack, don't pop until it
+  def process({:end_tag, "form"}, %{template_mode_stack: [], form_element: form_ref} = state)
+      when not is_nil(form_ref) do
+    {:ok, close_form_special(state, form_ref)}
+  end
+
   # Block-level end tags: generate implied end tags, then pop until match
   # Per HTML5 spec, these do NOT use the "special element stops traversal" rule
   def process({:end_tag, tag}, state) when tag in @block_end_tags do
@@ -1611,6 +1618,35 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       :not_found ->
         state
     end
+  end
+
+  # Special </form> handling when no template on stack
+  # Per HTML5 spec: remove form from stack, don't pop until it
+  defp close_form_special(%{stack: stack} = state, form_ref) do
+    # Clear form_element pointer
+    state = %{state | form_element: nil}
+
+    # If form is not in the stack, ignore
+    if form_ref not in stack do
+      state
+    else
+      # Generate implied end tags, then remove form from stack
+      state
+      |> generate_implied_end_tags()
+      |> remove_from_stack(form_ref)
+    end
+  end
+
+  defp remove_from_stack(%{stack: stack} = state, ref) do
+    new_stack = List.delete(stack, ref)
+    # Update current_parent_ref to top of stack (or its parent if needed)
+    new_parent_ref =
+      case new_stack do
+        [top_ref | _] -> top_ref
+        [] -> nil
+      end
+
+    %{state | stack: new_stack, current_parent_ref: new_parent_ref}
   end
 
   # Generate implied end tags per HTML5 spec
