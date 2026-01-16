@@ -37,6 +37,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       push_af_marker: 1,
       add_child_to_stack: 2,
       in_table_scope?: 2,
+      in_button_scope?: 2,
       has_tag?: 2,
       foster_parent: 2,
       new_element: 2,
@@ -319,7 +320,21 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
-  # Other end tags: foster parent via in_body
+  # </p> special case: check if p is in button scope
+  # If p is in scope (possibly above table due to foster parenting), close it
+  # Otherwise, foster parent an empty p element
+  defp process_in_table({:end_tag, "p"}, state) do
+    if in_button_scope?(state, "p") do
+      # Let in_body handle closing the p
+      InBody.process({:end_tag, "p"}, state)
+    else
+      # Foster parent an empty p element
+      {new_state, _} = foster_parent(state, {:element, {"p", %{}, []}})
+      {:ok, new_state}
+    end
+  end
+
+  # Other end tags: process via in_body
   defp process_in_table({:end_tag, _} = token, state) do
     InBody.process(token, state)
   end

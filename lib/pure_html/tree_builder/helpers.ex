@@ -353,6 +353,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # Scope boundaries for different scope types
   @table_scope_boundaries ~w(html table template)
   @select_scope_boundaries ~w(optgroup option)
+  @button_scope_boundaries ~w(applet caption html table td th marquee object template button)
 
   @doc """
   Checks if an element is in table scope.
@@ -366,6 +367,13 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def in_select_scope?(%{stack: stack, elements: elements}, tag) do
     do_in_scope?(stack, tag, @select_scope_boundaries, elements)
+  end
+
+  @doc """
+  Checks if an element is in button scope.
+  """
+  def in_button_scope?(%{stack: stack, elements: elements}, tag) do
+    do_in_scope?(stack, tag, @button_scope_boundaries, elements)
   end
 
   defp do_in_scope?([], _tag, _boundaries, _elements), do: false
