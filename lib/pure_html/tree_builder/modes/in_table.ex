@@ -259,18 +259,41 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
         end
 
       tag in @formatting_elements ->
-        # For <a> and <nobr>, run adoption agency if duplicate
+        # For <a> and <nobr>, check for duplicate in AF
+        has_duplicate = tag in @adopt_on_duplicate and has_formatting_entry?(af, tag)
+
+        # First, run AA if duplicate exists - this will close the existing element
+        # Per HTML5 spec: run AA then remove from AF and stack if AA didn't already
         state =
-          if tag in @adopt_on_duplicate and has_formatting_entry?(af, tag) do
+          if has_duplicate do
             AdoptionAgency.run(state, tag)
           else
             state
           end
 
+        # Get old ref AFTER AA (in case AA removed it)
+        old_ref =
+          if has_duplicate do
+            find_formatting_ref(state.af, tag)
+          else
+            nil
+          end
+
         if needs_foster_parenting?(state) do
+          # Foster parent the new element
           {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
           new_af = [{new_ref, tag, attrs} | new_state.af]
-          {:ok, %{new_state | af: new_af}}
+          new_state = %{new_state | af: new_af}
+
+          # Remove old element from AF and stack (per spec: if AA didn't already remove it)
+          new_state =
+            if old_ref do
+              remove_formatting_element_by_ref(new_state, old_ref)
+            else
+              new_state
+            end
+
+          {:ok, new_state}
         else
           new_state = push_element(state, tag, attrs)
           [new_ref | _] = new_state.stack
@@ -426,20 +449,42 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp do_ensure_tbody(%{tag: "template"}, state), do: push_element(state, "tbody", %{})
   defp do_ensure_tbody(_, state), do: state
 
+  @formatting_element_tags ~w(a b big code em font i nobr s small strike strong tt u)
+
   defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
-    {new_stack, closed_refs, parent_ref} = do_close_table(stack, [], elements)
+    {new_stack, closed_refs, _stored_parent_ref} = do_close_table(stack, [], elements)
     new_af = reject_refs_from_af(af, closed_refs)
     new_tms = Enum.drop(tms, 1)
     mode = List.first(new_tms, :in_body)
 
+    # Pop any orphaned formatting element from stack top (removed from AF by AA)
+    {final_stack, current_parent_ref} =
+      pop_orphaned_formatting_element(new_stack, new_af, elements)
+
     %{
       state
-      | stack: new_stack,
+      | stack: final_stack,
         af: new_af,
         mode: mode,
         template_mode_stack: new_tms,
-        current_parent_ref: parent_ref
+        current_parent_ref: current_parent_ref
     }
+  end
+
+  defp pop_orphaned_formatting_element([], _af, _elements), do: {[], nil}
+
+  defp pop_orphaned_formatting_element([top | rest] = stack, af, elements) do
+    elem = elements[top]
+    is_formatting = elem && elem.tag in @formatting_element_tags
+    in_af = Enum.any?(af, &match?({^top, _, _}, &1))
+
+    if is_formatting and not in_af do
+      # Formatting element was removed from AF - pop it so content
+      # after the table goes to the correct parent
+      {rest, List.first(rest)}
+    else
+      {stack, top}
+    end
   end
 
   defp do_close_table([], closed_refs, _elements), do: {[], closed_refs, nil}
@@ -506,4 +551,32 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp close_foster_parented_same_tag(state, _tag), do: state
+
+  # Per HTML5 spec: after running AA for <a>/<nobr> in table context,
+  # explicitly remove old element from AF and stack if AA didn't already
+  # (it might not have if the element is not in table scope)
+  defp remove_formatting_element_by_ref(%{af: af, stack: stack, elements: elements} = state, ref) do
+    new_af =
+      Enum.reject(af, fn
+        {^ref, _, _} -> true
+        _ -> false
+      end)
+
+    new_stack = List.delete(stack, ref)
+
+    parent_ref =
+      case {new_stack, elements[ref]} do
+        {[^ref | _], %{parent_ref: pr}} -> pr
+        _ -> state.current_parent_ref
+      end
+
+    %{state | af: new_af, stack: new_stack, current_parent_ref: parent_ref}
+  end
+
+  defp find_formatting_ref(af, tag) do
+    Enum.find_value(af, fn
+      {ref, ^tag, _} -> ref
+      _ -> nil
+    end)
+  end
 end

@@ -42,6 +42,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       find_ref: 2
     ]
 
+  # Formatting elements that should be added to AF even in select mode
+  @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
+
   @impl true
   # Character tokens: insert
   def process({:character, text}, state) do
@@ -159,11 +162,24 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Any other start tag: insert (browsers insert elements for compatibility)
+  # Also add formatting elements to AF so they can be reconstructed when select closes
   def process({:start_tag, tag, attrs, self_closing}, state) do
     if self_closing do
       {:ok, add_child_to_stack(state, {tag, attrs, []})}
     else
-      {:ok, push_element(state, tag, attrs)}
+      new_state = push_element(state, tag, attrs)
+
+      # Add formatting elements to AF for later reconstruction
+      new_state =
+        if tag in @formatting_elements do
+          [new_ref | _] = new_state.stack
+          new_af = [{new_ref, tag, attrs} | new_state.af]
+          %{new_state | af: new_af}
+        else
+          new_state
+        end
+
+      {:ok, new_state}
     end
   end
 

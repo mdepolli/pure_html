@@ -45,6 +45,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @table_cells ~w(td th)
   @table_row_context ~w(tr tbody thead tfoot)
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
+  @af_marker_elements ~w(applet marquee object)
 
   # Use shared special_elements from Helpers
   @special_elements PureHTML.TreeBuilder.Helpers.special_elements()
@@ -202,6 +203,21 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     new_state = close_tag_ref_forced(state, tag)
     new_af = clear_af_to_marker(af)
     {:ok, %{new_state | af: new_af}}
+  end
+
+  # applet/marquee/object: clear AF to marker when closed (like table cells)
+  def process({:end_tag, tag}, %{af: af} = state) when tag in @af_marker_elements do
+    if in_scope?(state, tag, :default) do
+      new_state =
+        state
+        |> generate_implied_end_tags()
+        |> close_tag_ref_forced(tag)
+
+      new_af = clear_af_to_marker(af)
+      {:ok, %{new_state | af: new_af}}
+    else
+      {:ok, state}
+    end
   end
 
   def process({:end_tag, "table"}, %{af: af} = state) do
@@ -572,11 +588,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Adopt-on-duplicate formatting elements
+  # Per HTML5 spec: run AA BEFORE reconstructing active formatting
   defp do_process_html_start_tag(tag, attrs, _, state)
        when tag in @adopt_on_duplicate_elements do
     state
     |> in_body()
-    |> reconstruct_active_formatting()
     |> maybe_close_existing_formatting(tag)
     |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
@@ -642,6 +658,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
     state
     |> push_mode(mode)
+    |> set_frameset_not_ok()
+  end
+
+  # applet/marquee/object - push AF marker (scope boundary for formatting elements)
+  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @af_marker_elements do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> push_element(tag, attrs)
+    |> push_af_marker()
     |> set_frameset_not_ok()
   end
 
@@ -1511,8 +1537,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Does NOT respect special element stops - only template is a barrier
   defp close_tag_ref_forced(%{stack: stack, elements: elements} = state, tag) do
     case pop_until_tag_ref_block(stack, elements, tag) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
+      {:found, [new_top | _] = new_stack, _parent_ref} ->
+        # Use new stack top as current_parent_ref, not the stored parent_ref
+        # This handles cases where elements were removed from the stack
+        %{state | stack: new_stack, current_parent_ref: new_top}
+
+      {:found, [] = new_stack, _parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: nil}
 
       :not_found ->
         state
@@ -1546,9 +1577,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Close block-level end tag: generate implied end tags, then pop until match
   # Does NOT use special element stops - only template is a barrier
   defp close_block_end_tag(state, tag) do
-    state
-    |> generate_implied_end_tags()
-    |> do_close_block_end_tag(tag)
+    # Per HTML5 spec: only close if element is in scope
+    if in_scope?(state, tag, :default) do
+      state
+      |> generate_implied_end_tags()
+      |> do_close_block_end_tag(tag)
+    else
+      state
+    end
   end
 
   defp do_close_block_end_tag(%{stack: stack, elements: elements} = state, tag) do
@@ -1799,12 +1835,55 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp maybe_close_existing_formatting(%{af: af} = state, tag) do
-    if find_formatting_entry(af, tag) do
-      state = AdoptionAgency.run(state, tag, &close_tag_ref/2)
+    case find_formatting_entry(af, tag) do
+      nil ->
+        state
+
+      {_idx, {ref, _tag, _attrs}} ->
+        do_close_existing_formatting(state, tag, ref)
+    end
+  end
+
+  defp do_close_existing_formatting(%{stack: stack} = state, tag, ref) do
+    in_stack = Enum.member?(stack, ref)
+    in_table_context = has_table_in_stack?(state)
+
+    cond do
+      in_stack ->
+        # Element is in stack - run Adoption Agency to close it
+        close_formatting_in_stack(state, tag, ref)
+
+      in_table_context ->
+        # Element was foster-parented but we're still in table context
+        # Keep in AF for reconstruction after table closes
+        state
+
+      true ->
+        # Element was foster-parented and table is closed
+        # Remove from AF to prevent reconstruction
+        %{state | af: remove_formatting_entry(state.af, tag)}
+    end
+  end
+
+  defp close_formatting_in_stack(state, tag, ref) do
+    old_af = state.af
+    state = AdoptionAgency.run(state, tag, &close_tag_ref/2)
+
+    # Remove from AF only if AA didn't handle it AND element was actually closed
+    aa_unchanged = state.af == old_af
+    element_closed = not Enum.member?(state.stack, ref)
+
+    if aa_unchanged and element_closed do
       %{state | af: remove_formatting_entry(state.af, tag)}
     else
       state
     end
+  end
+
+  defp has_table_in_stack?(%{stack: stack, elements: elements}) do
+    Enum.any?(stack, fn ref ->
+      match?(%{tag: "table"}, elements[ref])
+    end)
   end
 
   defp apply_noahs_ark(af, tag, attrs) do

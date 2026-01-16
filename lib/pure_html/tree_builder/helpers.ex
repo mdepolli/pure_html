@@ -362,6 +362,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # --------------------------------------------------------------------------
 
   @scope_boundaries %{
+    default: ~w(applet caption html table td th marquee object template),
     table: ~w(html table template),
     select: ~w(optgroup option),
     button: ~w(applet caption html table td th marquee object template button)
@@ -369,7 +370,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Checks if an element with the given tag is in the specified scope.
-  Scope types: :table, :select, :button
+  Scope types: :default, :table, :select, :button
   """
   def in_scope?(%{stack: stack, elements: elements}, tag, scope_type) do
     do_in_scope?(stack, tag, @scope_boundaries[scope_type], elements)
@@ -491,10 +492,11 @@ defmodule PureHTML.TreeBuilder.Helpers do
         {template_ref, nil}
 
       # Table exists and is closer to top than template (or no template)
+      # Per HTML5 spec: foster parent is the table's parent element (from DOM tree)
       table_pos != nil ->
         table_ref = Enum.at(stack, table_pos)
 
-        case Enum.at(stack, table_pos + 1) do
+        case elements[table_ref].parent_ref do
           nil -> {:document, nil}
           parent_ref -> {parent_ref, table_ref}
         end
