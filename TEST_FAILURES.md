@@ -1,11 +1,11 @@
 # Test Failures
 
-**18 failures out of 1476 tests**
+**16 failures out of 1476 tests**
 
 | File | Failures |
 |------|----------|
-| tricky01 | 3 |
-| tests26 | 3 |
+| tests7 | 2 |
+| tests26 | 2 |
 | tests19 | 2 |
 | tests16 | 2 |
 | webkit01 | 1 |

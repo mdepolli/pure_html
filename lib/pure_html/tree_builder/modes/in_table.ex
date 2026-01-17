@@ -41,7 +41,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       foster_parent: 2,
       new_element: 2,
       reject_refs_from_af: 2,
-      needs_foster_parenting?: 1
+      needs_foster_parenting?: 1,
+      update_af_entry: 3
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -252,8 +253,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     cond do
       self_closing or tag in @void_elements ->
         if needs_foster do
-          {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
-          {:ok, new_state}
+          # Reconstruct AF before foster parenting the void element
+          state = reconstruct_formatting_for_foster(state)
+          # After reconstruction, insert the element (into reconstructed formatting if any)
+          {:ok, add_child_to_stack(state, {tag, attrs, []})}
         else
           {:ok, add_child_to_stack(state, {tag, attrs, []})}
         end
@@ -578,5 +581,34 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       {ref, ^tag, _} -> ref
       _ -> nil
     end)
+  end
+
+  # Reconstruct active formatting elements for foster parenting
+  # Creates clones of formatting elements and foster-parents them
+  defp reconstruct_formatting_for_foster(%{stack: stack, af: af} = state) do
+    # Get entries to reconstruct (formatting elements not on stack)
+    entries =
+      af
+      |> Enum.take_while(&(&1 != :marker))
+      |> Enum.reverse()
+      |> Enum.filter(fn {ref, _tag, _attrs} ->
+        not Enum.any?(stack, &(&1 == ref))
+      end)
+
+    # Reconstruct each entry with foster parenting
+    reconstruct_entries_foster(entries, state)
+  end
+
+  defp reconstruct_entries_foster([], state), do: state
+
+  defp reconstruct_entries_foster([{old_ref, tag, attrs} | rest], state) do
+    # Foster-push the element (inserts before table)
+    {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
+
+    # Update AF entry to point to new ref
+    new_af = update_af_entry(new_state.af, old_ref, {new_ref, tag, attrs})
+    new_state = %{new_state | af: new_af}
+
+    reconstruct_entries_foster(rest, new_state)
   end
 end

@@ -67,9 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Table/anchor active formatting handling and scope checks
 - Form element pointer handling and nested form detection
 - Row mode bogus `<tr>` detection
+- `current_parent_ref` handling in foster parenting contexts
+  - Fixed `close_tag_ref`, `close_block_end_tag`, `close_foreign_root` to use stack top
+  - Fixed adoption agency to use stack top after popping elements
+- Active formatting reconstruction for void elements in table context
+- Row mode foster parenting with in_body rules delegation
 
 ### Current Status
 
-- 18 test failures remaining out of 1476 tests (99% passing)
+- 16 test failures remaining out of 1476 tests (99% passing)
 - All failures are assertion failures (tree structure mismatches), no crashes
-- Remaining work: edge cases in table foster parenting and adoption agency
+- Remaining work: edge cases in table foster parenting, SVG integration, and tokenizer

@@ -174,6 +174,8 @@ defmodule PureHTML.TreeBuilder do
       scripting: true,
       # Quirks mode flag (affects table/p interaction)
       quirks_mode: false,
+      # Foster parenting flag (when true, elements inserted via foster_parent)
+      foster_parenting: false,
 
       # === DOM Structure ===
       # Element storage: ref => %{ref, tag, attrs, parent_ref, children}

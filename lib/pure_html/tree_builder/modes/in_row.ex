@@ -31,11 +31,10 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       push_af_marker: 1,
       in_scope?: 3,
       pop_until_tag: 2,
-      pop_until_one_of: 2,
-      foster_parent: 2,
-      add_child_to_stack: 2,
-      needs_foster_parenting?: 1
+      pop_until_one_of: 2
     ]
+
+  alias PureHTML.TreeBuilder.Modes.InBody
 
   # Start tags that close the row
   @row_closing_start_tags ~w(caption col colgroup tbody tfoot thead tr)
@@ -98,28 +97,14 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     {:reprocess, %{state | mode: :in_table}}
   end
 
-  # Other start tags: process using in_table rules with foster parenting
-  # But stay in in_row mode so tr remains valid for subsequent cells
-  @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
-
-  def process({:start_tag, tag, attrs, self_closing}, state) do
-    needs_foster = needs_foster_parenting?(state)
-
-    if self_closing or tag in @void_elements do
-      if needs_foster do
-        {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
-        {:ok, new_state}
-      else
-        {:ok, add_child_to_stack(state, {tag, attrs, []})}
-      end
-    else
-      if needs_foster do
-        {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
-        {:ok, new_state}
-      else
-        {:ok, push_element(state, tag, attrs)}
-      end
-    end
+  # Other start tags: process using in_body rules with foster parenting enabled
+  # Per HTML5 spec: "Enable foster parenting, process the token using the rules
+  # for the 'in body' insertion mode, and then disable foster parenting."
+  def process({:start_tag, _, _, _} = token, state) do
+    # Enable foster parenting, process in in_body, restore mode
+    state_with_foster = %{state | foster_parenting: true, mode: :in_body}
+    {:ok, new_state} = InBody.process(token, state_with_foster)
+    {:ok, %{new_state | foster_parenting: false, mode: :in_row}}
   end
 
   # End tag: tr - close row, switch to in_table_body

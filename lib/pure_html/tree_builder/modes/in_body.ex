@@ -551,6 +551,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
     state
     |> in_body()
+    |> reconstruct_active_formatting()
     |> maybe_close_p(tag)
     |> add_child_to_stack({tag, attrs, []})
     |> maybe_set_frameset_not_ok_for_element(tag)
@@ -1564,8 +1565,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Used for "any other end tag" per HTML5 spec
   defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
     case pop_until_tag_ref(stack, elements, tag) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
+      {:found, [new_top | _] = new_stack, _parent_ref} ->
+        # Use new stack top as current_parent_ref, not the stored parent_ref
+        # This handles foster-parented elements where parent_ref points to
+        # the foster parent position, not the stack parent
+        %{state | stack: new_stack, current_parent_ref: new_top}
+
+      {:found, [] = new_stack, _parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: nil}
 
       :not_found ->
         state
@@ -1576,8 +1583,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # This is needed because </svg> and </math> should close all children
   defp close_foreign_root(%{stack: stack, elements: elements} = state, ns) do
     case pop_until_foreign_root(stack, elements, ns) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
+      {:found, [new_top | _] = new_stack, _parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: new_top}
+
+      {:found, [] = new_stack, _parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: nil}
 
       :not_found ->
         state
@@ -1654,8 +1664,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp do_close_block_end_tag(%{stack: stack, elements: elements} = state, tag) do
     case pop_until_tag_ref_block(stack, elements, tag) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
+      {:found, [new_top | _] = new_stack, _parent_ref} ->
+        # Use new stack top as current_parent_ref (not element's parent_ref)
+        # This handles foster-parented elements correctly
+        %{state | stack: new_stack, current_parent_ref: new_top}
+
+      {:found, [] = new_stack, _parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: nil}
 
       :not_found ->
         state

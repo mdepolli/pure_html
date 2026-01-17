@@ -58,11 +58,24 @@ defmodule PureHTML.TreeBuilder.Helpers do
   - Adds element's ref to parent's children (at push time)
   - Pushes ref to stack
   """
-  def push_element(
-        %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
-        tag,
-        attrs
-      ) do
+  def push_element(%{foster_parenting: true} = state, tag, attrs) do
+    # Foster parenting enabled - use foster_parent only if current element is table-related
+    if needs_foster_parenting?(state) do
+      {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
+      new_state
+    else
+      # Already inside a foster-parented element, insert normally
+      do_push_element(state, tag, attrs)
+    end
+  end
+
+  def push_element(state, tag, attrs), do: do_push_element(state, tag, attrs)
+
+  defp do_push_element(
+         %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
+         tag,
+         attrs
+       ) do
     elem = new_element(tag, attrs, parent_ref)
 
     # Add to elements map
@@ -100,7 +113,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def add_child_to_stack(%{current_parent_ref: nil} = state, _child), do: state
 
-  def add_child_to_stack(%{current_parent_ref: parent_ref, elements: elements} = state, child) do
+  def add_child_to_stack(%{foster_parenting: true} = state, child) do
+    # Foster parenting enabled - use foster_parent only if current element is table-related
+    if needs_foster_parenting?(state) do
+      {new_state, _} = foster_parent(state, {:element, child})
+      new_state
+    else
+      do_add_child_to_stack(state, child)
+    end
+  end
+
+  def add_child_to_stack(state, child), do: do_add_child_to_stack(state, child)
+
+  defp do_add_child_to_stack(%{current_parent_ref: parent_ref, elements: elements} = state, child) do
     new_elements = add_child_to_elements(elements, parent_ref, child)
     %{state | elements: new_elements}
   end
@@ -110,7 +135,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def add_text_to_stack(%{current_parent_ref: nil} = state, _text), do: state
 
-  def add_text_to_stack(%{current_parent_ref: parent_ref, elements: elements} = state, text) do
+  def add_text_to_stack(%{foster_parenting: true} = state, text) do
+    # Foster parenting enabled - use foster_parent only if current element is table-related
+    if needs_foster_parenting?(state) do
+      {new_state, _} = foster_parent(state, {:text, text})
+      new_state
+    else
+      do_add_text_to_stack(state, text)
+    end
+  end
+
+  def add_text_to_stack(state, text), do: do_add_text_to_stack(state, text)
+
+  defp do_add_text_to_stack(%{current_parent_ref: parent_ref, elements: elements} = state, text) do
     new_elements = add_text_to_elements(elements, parent_ref, text)
     %{state | elements: new_elements}
   end

@@ -148,22 +148,23 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   # --------------------------------------------------------------------------
 
   defp pop_to_formatting_element(
-         %{stack: stack, af: af, elements: elements} = state,
+         %{stack: stack, af: af} = state,
          af_idx,
          stack_idx
        ) do
-    {_above_fe, [fe_ref | rest]} = Enum.split(stack, stack_idx)
+    {_above_fe, [_fe_ref | rest]} = Enum.split(stack, stack_idx)
 
-    parent_ref =
-      if is_map_key(elements, fe_ref) do
-        elements[fe_ref].parent_ref
-      else
-        state.current_parent_ref
+    # Use new stack top as current_parent_ref (not element's parent_ref)
+    # This handles foster-parented elements correctly
+    new_parent_ref =
+      case rest do
+        [top | _] -> top
+        [] -> nil
       end
 
     new_af = List.delete_at(af, af_idx)
 
-    %{state | stack: rest, af: new_af, current_parent_ref: parent_ref}
+    %{state | stack: rest, af: new_af, current_parent_ref: new_parent_ref}
   end
 
   # --------------------------------------------------------------------------
@@ -230,11 +231,12 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
         List.insert_at(state.stack, fb_current_idx + 1, new_fe.ref)
       end
 
-    # Update current_parent_ref
-    current_parent_ref =
+    # Update current_parent_ref to new stack top (not element's parent_ref)
+    # This handles foster-parented elements correctly
+    new_parent_ref =
       case new_stack do
-        [top_ref | _] when is_map_key(new_elements, top_ref) -> new_elements[top_ref].parent_ref
-        _ -> state.current_parent_ref
+        [top_ref | _] -> top_ref
+        [] -> nil
       end
 
     %{
@@ -242,7 +244,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
       | stack: new_stack,
         af: new_af,
         elements: new_elements,
-        current_parent_ref: current_parent_ref
+        current_parent_ref: new_parent_ref
     }
   end
 
