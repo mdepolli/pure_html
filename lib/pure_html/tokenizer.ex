@@ -2531,20 +2531,46 @@ defmodule PureHTML.Tokenizer do
   end
 
   # CDATA: stop on ] or null
+  # Uses multi-byte scanning with guards for better performance
+  defguardp is_cdata_safe(c) when c != ?] and c != 0 and c < 128
+
   defp chars_until_cdata(input), do: chars_until_cdata(input, [])
 
+  # 8-byte fast path
+  defp chars_until_cdata(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_cdata_safe(a) and is_cdata_safe(b) and is_cdata_safe(c) and is_cdata_safe(d) and
+              is_cdata_safe(e) and is_cdata_safe(f) and is_cdata_safe(g) and is_cdata_safe(h) do
+    chars_until_cdata(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_cdata(<<a, b, c, d, rest::binary>>, acc)
+       when is_cdata_safe(a) and is_cdata_safe(b) and is_cdata_safe(c) and is_cdata_safe(d) do
+    chars_until_cdata(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_cdata(<<a, b, rest::binary>>, acc)
+       when is_cdata_safe(a) and is_cdata_safe(b) do
+    chars_until_cdata(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_cdata(<<c, rest::binary>>, acc) when is_cdata_safe(c) do
+    chars_until_cdata(rest, [c | acc])
+  end
+
+  # Stop on delimiter
   defp chars_until_cdata(<<c, _::binary>> = input, acc) when c == ?] or c == 0 do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_cdata(<<c, rest::binary>>, acc) when c < 128 do
-    chars_until_cdata(rest, [c | acc])
-  end
-
+  # UTF-8 multibyte characters
   defp chars_until_cdata(<<c::utf8, rest::binary>>, acc) do
     chars_until_cdata(rest, [<<c::utf8>> | acc])
   end
 
+  # End of input
   defp chars_until_cdata("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
