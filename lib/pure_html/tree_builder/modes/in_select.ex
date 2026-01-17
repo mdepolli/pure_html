@@ -42,6 +42,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       find_ref: 2
     ]
 
+  # Note: This module has its own foreign_namespace/1 that searches the entire
+  # stack for any foreign element, unlike the shared helper which only checks
+  # the top. This is needed for select mode's foreign content handling.
+
   # Formatting elements that should be added to AF even in select mode
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
 

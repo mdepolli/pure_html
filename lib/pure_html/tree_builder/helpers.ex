@@ -394,6 +394,20 @@ defmodule PureHTML.TreeBuilder.Helpers do
     Enum.find(stack, fn ref -> elements[ref].tag == tag end)
   end
 
+  @doc """
+  Returns the foreign namespace (:svg or :math) if the current element is in
+  a foreign namespace, or nil if in HTML namespace.
+  """
+  def foreign_namespace(%{stack: [ref | _], elements: elements}) do
+    case elements[ref].tag do
+      {:svg, _} -> :svg
+      {:math, _} -> :math
+      _ -> nil
+    end
+  end
+
+  def foreign_namespace(%{stack: []}), do: nil
+
   # --------------------------------------------------------------------------
   # Scope Checking (ref-only stack + elements map)
   # --------------------------------------------------------------------------

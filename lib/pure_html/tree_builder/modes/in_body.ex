@@ -27,6 +27,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       pop_until_one_of: 2,
       foster_parent: 2,
       find_ref: 2,
+      foreign_namespace: 1,
       in_scope?: 3,
       needs_foster_parenting?: 1,
       merge_html_attrs: 2,
@@ -916,17 +917,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp adjust_svg_tag(_ns, tag), do: tag
-
-  # Check if current element is in a foreign namespace (SVG or MathML)
-  # Per HTML5 spec: "in foreign content" means current node is not HTML
-  defp foreign_namespace(%{stack: [ref | _], elements: elements}) do
-    case elements[ref].tag do
-      {ns, _} when ns in [:svg, :math] -> ns
-      _ -> nil
-    end
-  end
-
-  defp foreign_namespace(%{stack: []}), do: nil
 
   @html_integration_encodings ["text/html", "application/xhtml+xml"]
 

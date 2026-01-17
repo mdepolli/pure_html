@@ -75,6 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Current Status
 
-- 16 test failures remaining out of 1476 tests (99% passing)
+- 8 test failures remaining out of 1476 tests (99.5% passing)
 - All failures are assertion failures (tree structure mismatches), no crashes
-- Remaining work: edge cases in table foster parenting, SVG integration, and tokenizer
+- Remaining work: edge cases in adoption agency, ruby handling, frameset/noframes
