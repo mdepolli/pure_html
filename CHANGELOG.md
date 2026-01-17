@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Second `<body>` tag attribute merging
 - Nested `<form>` handling (ignored when form pointer is set)
 - Post-`</html>` content handling (comments as document siblings)
+- HTML serializer with html5lib-compliant tree output format
+- DOCTYPE quirks mode detection per HTML5 specification
 
 ### Changed
 
@@ -36,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Elements map holds all data: `ref => %{tag, attrs, children, parent_ref}`
 - Consolidated foster parenting into unified `foster_parent/2` API with tagged tuples
 - Extracted all insertion modes to separate modules under `lib/pure_html/tree_builder/modes/`
+- Multi-byte scanning optimization in tokenizer for faster parsing
+  - `chars_until_null`, `chars_until_comment`, `chars_until_cdata`
+  - Entity reference fast path detection
 
 ### Fixed
 
@@ -48,9 +53,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Heading nesting (h1-h6 now properly close previous headings)
 - Frameset handling (body removal from DOM when replaced by frameset)
 - `pop_until_one_of` boundary element handling for template context
+- `</svg>` and `</math>` now properly close all foreign children
+- Foreign content scope boundaries for `in_scope?` checks (SVG: desc, foreignObject, title; MathML: annotation-xml, mi, mn, mo, ms, mtext)
+- Select mode end tag handling to close pushed HTML elements
+- Void elements (img, br, etc.) treated as self-closing in select mode
+- `<selectedcontent>` population with first/selected option content
+- Adoption agency for formatting elements inside select mode
+- Active formatting reconstruction before text insertion in select mode
+- `</p>` handling in table context with foster parenting
+- Option closing when new option/optgroup starts
+- `<li>` in table context handling
+- HTML5 whitespace handling in various contexts
+- Table/anchor active formatting handling and scope checks
+- Form element pointer handling and nested form detection
+- Row mode bogus `<tr>` detection
 
 ### Current Status
 
-- 103 test failures remaining out of 1476 tests (93% passing)
+- 18 test failures remaining out of 1476 tests (99% passing)
 - All failures are assertion failures (tree structure mismatches), no crashes
-- Remaining work: edge cases in adoption agency, foster parenting, and foreign content
+- Remaining work: edge cases in table foster parenting and adoption agency
