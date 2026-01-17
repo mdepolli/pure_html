@@ -2377,24 +2377,53 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Rawtext/script: stop on < or null
+  # Uses multi-byte scanning with guards for better performance
+  defguardp is_rawtext_safe(c) when c != ?< and c != 0 and c < 128
+
   defp chars_until_rawtext(input), do: chars_until_rawtext(input, [])
 
+  # 8-byte fast path
+  defp chars_until_rawtext(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_rawtext_safe(a) and is_rawtext_safe(b) and is_rawtext_safe(c) and
+              is_rawtext_safe(d) and is_rawtext_safe(e) and is_rawtext_safe(f) and
+              is_rawtext_safe(g) and is_rawtext_safe(h) do
+    chars_until_rawtext(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_rawtext(<<a, b, c, d, rest::binary>>, acc)
+       when is_rawtext_safe(a) and is_rawtext_safe(b) and is_rawtext_safe(c) and
+              is_rawtext_safe(d) do
+    chars_until_rawtext(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_rawtext(<<a, b, rest::binary>>, acc)
+       when is_rawtext_safe(a) and is_rawtext_safe(b) do
+    chars_until_rawtext(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_rawtext(<<c, rest::binary>>, acc) when is_rawtext_safe(c) do
+    chars_until_rawtext(rest, [c | acc])
+  end
+
+  # Stop on delimiter
   defp chars_until_rawtext(<<c, _::binary>> = input, acc) when c == ?< or c == 0 do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_rawtext(<<c, rest::binary>>, acc) when c < 128 do
-    chars_until_rawtext(rest, [c | acc])
-  end
-
+  # UTF-8 multibyte characters
   defp chars_until_rawtext(<<c::utf8, rest::binary>>, acc) do
     chars_until_rawtext(rest, [<<c::utf8>> | acc])
   end
 
+  # Fallback for invalid UTF-8 bytes
   defp chars_until_rawtext(<<c, rest::binary>>, acc) do
     chars_until_rawtext(rest, [c | acc])
   end
 
+  # End of input
   defp chars_until_rawtext("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end

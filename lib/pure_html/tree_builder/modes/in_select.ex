@@ -45,6 +45,14 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Formatting elements that should be added to AF even in select mode
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
 
+  # HTML breakout tags - these break out of foreign content
+  @html_breakout_tags ~w(b big blockquote body br center code dd div dl dt em embed
+                         h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol
+                         p pre ruby s small span strong strike sub sup table tt u ul var)
+
+  # Table elements to ignore in in_select
+  @table_elements_to_ignore ~w(caption table tbody tfoot thead tr td th)
+
   @impl true
   # Character tokens: insert
   def process({:character, text}, state) do
@@ -89,8 +97,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Start tag: select (nested) - parse error, close select
-  # Per html5lib tests, nested <select> closes outer select even if option is on stack
-  # (despite spec's select scope boundaries)
   def process({:start_tag, "select", _, _}, state) do
     if find_ref(state, "select") do
       {:ok, close_select(state)}
@@ -137,9 +143,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Table elements in in_select: parse error, ignore per HTML5 spec
-  # (in_select_in_table mode handles these differently by closing select)
-  @table_elements_to_ignore ~w(caption table tbody tfoot thead tr td th)
-
   def process({:start_tag, tag, _, _}, state) when tag in @table_elements_to_ignore do
     {:ok, state}
   end
@@ -162,12 +165,36 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Any other start tag: insert (browsers insert elements for compatibility)
-  # Also add formatting elements to AF so they can be reconstructed when select closes
   def process({:start_tag, tag, attrs, self_closing}, state) do
+    ns = foreign_namespace(state)
+
+    # HTML breakout tags should not get foreign namespace
+    ns = if ns && tag in @html_breakout_tags, do: nil, else: ns
+
+    # Close foreign content when hitting a breakout tag
+    state =
+      if ns == nil && foreign_namespace(state) do
+        close_foreign_content(state)
+      else
+        state
+      end
+
     if self_closing do
-      {:ok, add_child_to_stack(state, {tag, attrs, []})}
+      child =
+        if ns do
+          {{ns, tag}, attrs, []}
+        else
+          {tag, attrs, []}
+        end
+
+      {:ok, add_child_to_stack(state, child)}
     else
-      new_state = push_element(state, tag, attrs)
+      new_state =
+        if ns do
+          push_foreign_element(state, ns, tag, attrs)
+        else
+          push_element(state, tag, attrs)
+        end
 
       # Add formatting elements to AF for later reconstruction
       new_state =
@@ -224,9 +251,17 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:reprocess, %{state | mode: :in_head}}
   end
 
-  # Any other end tag: parse error, ignore
-  def process({:end_tag, _}, state) do
-    {:ok, state}
+  # Any other end tag: handle foreign content, otherwise ignore
+  def process({:end_tag, tag}, state) do
+    case foreign_namespace(state) do
+      nil ->
+        # Not in foreign content - ignore per spec
+        {:ok, state}
+
+      ns ->
+        # In foreign content - close if matches current element
+        {:ok, close_foreign_element(state, ns, tag)}
+    end
   end
 
   # Error tokens: ignore
@@ -248,5 +283,62 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   defp close_if_current_tag(state, tag) do
     if current_tag(state) == tag, do: pop_element(state), else: state
+  end
+
+  # Get the current foreign namespace (if we're inside SVG or MathML)
+  defp foreign_namespace(%{stack: stack, elements: elements}) do
+    Enum.find_value(stack, fn ref ->
+      case elements[ref] do
+        %{tag: {ns, _}} when ns in [:svg, :math] -> ns
+        _ -> nil
+      end
+    end)
+  end
+
+  # Close all foreign content elements (pop until we hit an HTML element)
+  defp close_foreign_content(%{stack: stack, elements: elements} = state) do
+    {new_stack, parent_ref} = pop_foreign_elements(stack, elements)
+    %{state | stack: new_stack, current_parent_ref: parent_ref}
+  end
+
+  defp pop_foreign_elements([], _elements), do: {[], nil}
+
+  defp pop_foreign_elements([ref | rest] = stack, elements) do
+    case elements[ref].tag do
+      {ns, _} when ns in [:svg, :math] ->
+        pop_foreign_elements(rest, elements)
+
+      _ ->
+        {stack, ref}
+    end
+  end
+
+  # Close a foreign element by tag name
+  # Walks up the stack looking for matching foreign element
+  defp close_foreign_element(%{stack: stack, elements: elements} = state, ns, tag) do
+    case pop_until_foreign_tag(stack, elements, ns, tag) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  defp pop_until_foreign_tag([], _elements, _ns, _tag), do: :not_found
+
+  defp pop_until_foreign_tag([ref | rest], elements, ns, tag) do
+    case elements[ref] do
+      %{tag: {^ns, ^tag}, parent_ref: parent_ref} ->
+        {:found, rest, parent_ref}
+
+      %{tag: {^ns, _}} ->
+        # Keep looking in same namespace
+        pop_until_foreign_tag(rest, elements, ns, tag)
+
+      _ ->
+        # Hit non-foreign element, stop
+        :not_found
+    end
   end
 end
