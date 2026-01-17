@@ -2429,47 +2429,103 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Plaintext/CDATA: stop on null only
+  # Uses multi-byte scanning with guards for better performance
+  defguardp is_null_safe(c) when c != 0 and c < 128
+
   defp chars_until_null(input), do: chars_until_null(input, [])
 
+  # 8-byte fast path
+  defp chars_until_null(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_null_safe(a) and is_null_safe(b) and is_null_safe(c) and is_null_safe(d) and
+              is_null_safe(e) and is_null_safe(f) and is_null_safe(g) and is_null_safe(h) do
+    chars_until_null(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_null(<<a, b, c, d, rest::binary>>, acc)
+       when is_null_safe(a) and is_null_safe(b) and is_null_safe(c) and is_null_safe(d) do
+    chars_until_null(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_null(<<a, b, rest::binary>>, acc)
+       when is_null_safe(a) and is_null_safe(b) do
+    chars_until_null(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_null(<<c, rest::binary>>, acc) when is_null_safe(c) do
+    chars_until_null(rest, [c | acc])
+  end
+
+  # Stop on null
   defp chars_until_null(<<0, _::binary>> = input, acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_null(<<c, rest::binary>>, acc) when c < 128 do
-    chars_until_null(rest, [c | acc])
-  end
-
+  # UTF-8 multibyte characters
   defp chars_until_null(<<c::utf8, rest::binary>>, acc) do
     chars_until_null(rest, [<<c::utf8>> | acc])
   end
 
+  # Fallback for invalid UTF-8 bytes
   defp chars_until_null(<<c, rest::binary>>, acc) do
     chars_until_null(rest, [c | acc])
   end
 
+  # End of input
   defp chars_until_null("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
   # Comment: stop on -, <, or null
+  # Uses multi-byte scanning with guards for better performance
+  defguardp is_comment_safe(c) when c != ?- and c != ?< and c != 0 and c < 128
+
   defp chars_until_comment(input), do: chars_until_comment(input, [])
 
+  # 8-byte fast path
+  defp chars_until_comment(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_comment_safe(a) and is_comment_safe(b) and is_comment_safe(c) and
+              is_comment_safe(d) and is_comment_safe(e) and is_comment_safe(f) and
+              is_comment_safe(g) and is_comment_safe(h) do
+    chars_until_comment(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_comment(<<a, b, c, d, rest::binary>>, acc)
+       when is_comment_safe(a) and is_comment_safe(b) and is_comment_safe(c) and
+              is_comment_safe(d) do
+    chars_until_comment(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_comment(<<a, b, rest::binary>>, acc)
+       when is_comment_safe(a) and is_comment_safe(b) do
+    chars_until_comment(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_comment(<<c, rest::binary>>, acc) when is_comment_safe(c) do
+    chars_until_comment(rest, [c | acc])
+  end
+
+  # Stop on delimiter
   defp chars_until_comment(<<c, _::binary>> = input, acc) when c == ?- or c == ?< or c == 0 do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_comment(<<c, rest::binary>>, acc) when c < 128 do
-    chars_until_comment(rest, [c | acc])
-  end
-
+  # UTF-8 multibyte characters
   defp chars_until_comment(<<c::utf8, rest::binary>>, acc) do
     chars_until_comment(rest, [<<c::utf8>> | acc])
   end
 
+  # Fallback for invalid UTF-8 bytes
   defp chars_until_comment(<<c, rest::binary>>, acc) do
     chars_until_comment(rest, [c | acc])
   end
 
+  # End of input
   defp chars_until_comment("", acc) do
     {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
