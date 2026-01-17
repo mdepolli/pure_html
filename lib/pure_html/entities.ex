@@ -9,6 +9,29 @@ defmodule PureHTML.Entities do
   Returns {characters, remaining} if found, or nil if not found.
   The name should include the leading ampersand.
   """
+  # Fast path: most common entities first for quick matching
+  def lookup(<<"&amp;", rest::binary>>), do: {"&", rest}
+  def lookup(<<"&lt;", rest::binary>>), do: {"<", rest}
+  def lookup(<<"&gt;", rest::binary>>), do: {">", rest}
+  def lookup(<<"&quot;", rest::binary>>), do: {"\"", rest}
+  def lookup(<<"&nbsp;", rest::binary>>), do: {"\u00A0", rest}
+  def lookup(<<"&apos;", rest::binary>>), do: {"'", rest}
+  def lookup(<<"&copy;", rest::binary>>), do: {"©", rest}
+  def lookup(<<"&reg;", rest::binary>>), do: {"®", rest}
+  def lookup(<<"&mdash;", rest::binary>>), do: {"—", rest}
+  def lookup(<<"&ndash;", rest::binary>>), do: {"–", rest}
+  def lookup(<<"&hellip;", rest::binary>>), do: {"…", rest}
+  def lookup(<<"&lsquo;", rest::binary>>), do: {"\u2018", rest}
+  def lookup(<<"&rsquo;", rest::binary>>), do: {"\u2019", rest}
+  def lookup(<<"&ldquo;", rest::binary>>), do: {"\u201C", rest}
+  def lookup(<<"&rdquo;", rest::binary>>), do: {"\u201D", rest}
+  def lookup(<<"&trade;", rest::binary>>), do: {"™", rest}
+  def lookup(<<"&bull;", rest::binary>>), do: {"•", rest}
+  def lookup(<<"&euro;", rest::binary>>), do: {"€", rest}
+  def lookup(<<"&pound;", rest::binary>>), do: {"£", rest}
+  def lookup(<<"&yen;", rest::binary>>), do: {"¥", rest}
+
+  # Full entity table (sorted by length descending for correct matching)
   def lookup(<<"&CounterClockwiseContourIntegral;", rest::binary>>), do: {"∳", rest}
   def lookup(<<"&ClockwiseContourIntegral;", rest::binary>>), do: {"∲", rest}
   def lookup(<<"&DoubleLongLeftRightArrow;", rest::binary>>), do: {"⟺", rest}
@@ -772,7 +795,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&ecaron;", rest::binary>>), do: {"ě", rest}
   def lookup(<<"&lesges;", rest::binary>>), do: {"⪓", rest}
   def lookup(<<"&cupdot;", rest::binary>>), do: {"⊍", rest}
-  def lookup(<<"&hellip;", rest::binary>>), do: {"…", rest}
   def lookup(<<"&Ograve;", rest::binary>>), do: {"Ò", rest}
   def lookup(<<"&lambda;", rest::binary>>), do: {"λ", rest}
   def lookup(<<"&copysr;", rest::binary>>), do: {"℗", rest}
@@ -1111,7 +1133,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&varpi;", rest::binary>>), do: {"ϖ", rest}
   def lookup(<<"&Prime;", rest::binary>>), do: {"″", rest}
   def lookup(<<"&boxur;", rest::binary>>), do: {"└", rest}
-  def lookup(<<"&rsquo;", rest::binary>>), do: {"’", rest}
   def lookup(<<"&brvbar", rest::binary>>), do: {"¦", rest}
   def lookup(<<"&ccups;", rest::binary>>), do: {"⩌", rest}
   def lookup(<<"&boxuR;", rest::binary>>), do: {"╘", rest}
@@ -1221,7 +1242,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&angst;", rest::binary>>), do: {"Å", rest}
   def lookup(<<"&Icirc;", rest::binary>>), do: {"Î", rest}
   def lookup(<<"&jukcy;", rest::binary>>), do: {"є", rest}
-  def lookup(<<"&trade;", rest::binary>>), do: {"™", rest}
   def lookup(<<"&Ucirc;", rest::binary>>), do: {"Û", rest}
   def lookup(<<"&cedil;", rest::binary>>), do: {"¸", rest}
   def lookup(<<"&oelig;", rest::binary>>), do: {"œ", rest}
@@ -1272,23 +1292,19 @@ defmodule PureHTML.Entities do
   def lookup(<<"&angle;", rest::binary>>), do: {"∠", rest}
   def lookup(<<"&lrhar;", rest::binary>>), do: {"⇋", rest}
   def lookup(<<"&duhar;", rest::binary>>), do: {"⥯", rest}
-  def lookup(<<"&ndash;", rest::binary>>), do: {"–", rest}
   def lookup(<<"&swArr;", rest::binary>>), do: {"⇙", rest}
   def lookup(<<"&rarrb;", rest::binary>>), do: {"⇥", rest}
   def lookup(<<"&blk34;", rest::binary>>), do: {"▓", rest}
   def lookup(<<"&range;", rest::binary>>), do: {"⦥", rest}
   def lookup(<<"&oacute", rest::binary>>), do: {"ó", rest}
   def lookup(<<"&umacr;", rest::binary>>), do: {"ū", rest}
-  def lookup(<<"&pound;", rest::binary>>), do: {"£", rest}
   def lookup(<<"&aogon;", rest::binary>>), do: {"ą", rest}
   def lookup(<<"&bdquo;", rest::binary>>), do: {"„", rest}
-  def lookup(<<"&mdash;", rest::binary>>), do: {"—", rest}
   def lookup(<<"&xlarr;", rest::binary>>), do: {"⟵", rest}
   def lookup(<<"&raquo;", rest::binary>>), do: {"»", rest}
   def lookup(<<"&rarrc;", rest::binary>>), do: {"⤳", rest}
   def lookup(<<"&ngsim;", rest::binary>>), do: {"≵", rest}
   def lookup(<<"&comma;", rest::binary>>), do: {",", rest}
-  def lookup(<<"&lsquo;", rest::binary>>), do: {"‘", rest}
   def lookup(<<"&rtrie;", rest::binary>>), do: {"⊵", rest}
   def lookup(<<"&THORN;", rest::binary>>), do: {"Þ", rest}
   def lookup(<<"&dharr;", rest::binary>>), do: {"⇂", rest}
@@ -1384,7 +1400,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&boxHu;", rest::binary>>), do: {"╧", rest}
   def lookup(<<"&nrtri;", rest::binary>>), do: {"⋫", rest}
   def lookup(<<"&forkv;", rest::binary>>), do: {"⫙", rest}
-  def lookup(<<"&rdquo;", rest::binary>>), do: {"”", rest}
   def lookup(<<"&disin;", rest::binary>>), do: {"⋲", rest}
   def lookup(<<"&neArr;", rest::binary>>), do: {"⇗", rest}
   def lookup(<<"&nabla;", rest::binary>>), do: {"∇", rest}
@@ -1419,7 +1434,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&theta;", rest::binary>>), do: {"θ", rest}
   def lookup(<<"&aleph;", rest::binary>>), do: {"ℵ", rest}
   def lookup(<<"&lAarr;", rest::binary>>), do: {"⇚", rest}
-  def lookup(<<"&ldquo;", rest::binary>>), do: {"“", rest}
   def lookup(<<"&vBarv;", rest::binary>>), do: {"⫩", rest}
   def lookup(<<"&fflig;", rest::binary>>), do: {"ﬀ", rest}
   def lookup(<<"&cuepr;", rest::binary>>), do: {"⋞", rest}
@@ -1727,7 +1741,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&tbrk;", rest::binary>>), do: {"⎴", rest}
   def lookup(<<"&nisd;", rest::binary>>), do: {"⋺", rest}
   def lookup(<<"&Cdot;", rest::binary>>), do: {"Ċ", rest}
-  def lookup(<<"&euro;", rest::binary>>), do: {"€", rest}
   def lookup(<<"&sung;", rest::binary>>), do: {"♪", rest}
   def lookup(<<"&nscr;", rest::binary>>), do: {"𝓃", rest}
   def lookup(<<"&csub;", rest::binary>>), do: {"⫏", rest}
@@ -1832,7 +1845,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&nang;", rest::binary>>), do: {"∠⃒", rest}
   def lookup(<<"&larr;", rest::binary>>), do: {"←", rest}
   def lookup(<<"&uuml;", rest::binary>>), do: {"ü", rest}
-  def lookup(<<"&nbsp;", rest::binary>>), do: {"\u00A0", rest}
   def lookup(<<"&late;", rest::binary>>), do: {"⪭", rest}
   def lookup(<<"&varr;", rest::binary>>), do: {"↕", rest}
   def lookup(<<"&Zdot;", rest::binary>>), do: {"Ż", rest}
@@ -1840,14 +1852,12 @@ defmodule PureHTML.Entities do
   def lookup(<<"&pound", rest::binary>>), do: {"£", rest}
   def lookup(<<"&gvnE;", rest::binary>>), do: {"≩︀", rest}
   def lookup(<<"&QUOT;", rest::binary>>), do: {"\"", rest}
-  def lookup(<<"&bull;", rest::binary>>), do: {"•", rest}
   def lookup(<<"&Gscr;", rest::binary>>), do: {"𝒢", rest}
   def lookup(<<"&eopf;", rest::binary>>), do: {"𝕖", rest}
   def lookup(<<"&aopf;", rest::binary>>), do: {"𝕒", rest}
   def lookup(<<"&KJcy;", rest::binary>>), do: {"Ќ", rest}
   def lookup(<<"&wopf;", rest::binary>>), do: {"𝕨", rest}
   def lookup(<<"&cups;", rest::binary>>), do: {"∪︀", rest}
-  def lookup(<<"&apos;", rest::binary>>), do: {"'", rest}
   def lookup(<<"&jopf;", rest::binary>>), do: {"𝕛", rest}
   def lookup(<<"&cdot;", rest::binary>>), do: {"ċ", rest}
   def lookup(<<"&ogon;", rest::binary>>), do: {"˛", rest}
@@ -1862,7 +1872,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&Sscr;", rest::binary>>), do: {"𝒮", rest}
   def lookup(<<"&gdot;", rest::binary>>), do: {"ġ", rest}
   def lookup(<<"&xnis;", rest::binary>>), do: {"⋻", rest}
-  def lookup(<<"&quot;", rest::binary>>), do: {"\"", rest}
   def lookup(<<"&Zeta;", rest::binary>>), do: {"Ζ", rest}
   def lookup(<<"&Aring", rest::binary>>), do: {"Å", rest}
   def lookup(<<"&rect;", rest::binary>>), do: {"▭", rest}
@@ -1888,7 +1897,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&Yscr;", rest::binary>>), do: {"𝒴", rest}
   def lookup(<<"&Lang;", rest::binary>>), do: {"⟪", rest}
   def lookup(<<"&Mopf;", rest::binary>>), do: {"𝕄", rest}
-  def lookup(<<"&copy;", rest::binary>>), do: {"©", rest}
   def lookup(<<"&Vbar;", rest::binary>>), do: {"⫫", rest}
   def lookup(<<"&Uuml;", rest::binary>>), do: {"Ü", rest}
   def lookup(<<"&Barv;", rest::binary>>), do: {"⫧", rest}
@@ -1962,7 +1970,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&smt;", rest::binary>>), do: {"⪪", rest}
   def lookup(<<"&Lfr;", rest::binary>>), do: {"𝔏", rest}
   def lookup(<<"&Del;", rest::binary>>), do: {"∇", rest}
-  def lookup(<<"&amp;", rest::binary>>), do: {"&", rest}
   def lookup(<<"&ucy;", rest::binary>>), do: {"у", rest}
   def lookup(<<"&Ncy;", rest::binary>>), do: {"Н", rest}
   def lookup(<<"&prE;", rest::binary>>), do: {"⪳", rest}
@@ -1996,7 +2003,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&icy;", rest::binary>>), do: {"и", rest}
   def lookup(<<"&div;", rest::binary>>), do: {"÷", rest}
   def lookup(<<"&Uuml", rest::binary>>), do: {"Ü", rest}
-  def lookup(<<"&yen;", rest::binary>>), do: {"¥", rest}
   def lookup(<<"&vfr;", rest::binary>>), do: {"𝔳", rest}
   def lookup(<<"&sce;", rest::binary>>), do: {"⪰", rest}
   def lookup(<<"&sfr;", rest::binary>>), do: {"𝔰", rest}
@@ -2104,7 +2110,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&els;", rest::binary>>), do: {"⪕", rest}
   def lookup(<<"&kfr;", rest::binary>>), do: {"𝔨", rest}
   def lookup(<<"&Kcy;", rest::binary>>), do: {"К", rest}
-  def lookup(<<"&reg;", rest::binary>>), do: {"®", rest}
   def lookup(<<"&cir;", rest::binary>>), do: {"○", rest}
   def lookup(<<"&bfr;", rest::binary>>), do: {"𝔟", rest}
   def lookup(<<"&ETH;", rest::binary>>), do: {"Ð", rest}
@@ -2205,7 +2210,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&mp;", rest::binary>>), do: {"∓", rest}
   def lookup(<<"&gl;", rest::binary>>), do: {"≷", rest}
   def lookup(<<"&Xi;", rest::binary>>), do: {"Ξ", rest}
-  def lookup(<<"&lt;", rest::binary>>), do: {"<", rest}
   def lookup(<<"&it;", rest::binary>>), do: {"\u2062", rest}
   def lookup(<<"&dd;", rest::binary>>), do: {"ⅆ", rest}
   def lookup(<<"&af;", rest::binary>>), do: {"\u2061", rest}
@@ -2230,7 +2234,6 @@ defmodule PureHTML.Entities do
   def lookup(<<"&eg;", rest::binary>>), do: {"⪚", rest}
   def lookup(<<"&Pr;", rest::binary>>), do: {"⪻", rest}
   def lookup(<<"&wr;", rest::binary>>), do: {"≀", rest}
-  def lookup(<<"&gt;", rest::binary>>), do: {">", rest}
   def lookup(<<"&wp;", rest::binary>>), do: {"℘", rest}
   def lookup(<<"&Gt;", rest::binary>>), do: {"≫", rest}
   def lookup(<<"&pr;", rest::binary>>), do: {"≺", rest}
