@@ -277,6 +277,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_block_end_tag(state, tag)}
   end
 
+  # </svg> and </math>: close foreign root element (ignores internal barriers)
+  def process({:end_tag, "svg"}, state) do
+    {:ok, close_foreign_root(state, :svg)}
+  end
+
+  def process({:end_tag, "math"}, state) do
+    {:ok, close_foreign_root(state, :math)}
+  end
+
   # Any other end tag: check special elements per HTML5 spec
   def process({:end_tag, tag}, state) do
     {:ok, close_tag_ref(state, tag)}
@@ -1560,6 +1569,32 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       :not_found ->
         state
+    end
+  end
+
+  # Close foreign root element (svg or math) - ignores internal barriers
+  # This is needed because </svg> and </math> should close all children
+  defp close_foreign_root(%{stack: stack, elements: elements} = state, ns) do
+    case pop_until_foreign_root(stack, elements, ns) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  defp pop_until_foreign_root([], _elements, _ns), do: :not_found
+
+  defp pop_until_foreign_root([ref | rest], elements, ns) do
+    case elements[ref].tag do
+      # Found the root foreign element (e.g., {:svg, "svg"} or {:math, "math"})
+      {^ns, tag} when tag in ["svg", "math"] ->
+        {:found, rest, elements[ref].parent_ref}
+
+      # Keep looking past other elements (including foreign children)
+      _ ->
+        pop_until_foreign_root(rest, elements, ns)
     end
   end
 

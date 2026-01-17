@@ -53,11 +53,14 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Table elements to ignore in in_select
   @table_elements_to_ignore ~w(caption table tbody tfoot thead tr td th)
 
+  # Void elements (always treated as self-closing)
+  @void_elements ~w(area base br col embed hr img input link meta source track wbr)
+
   @impl true
-  # Character tokens: insert
+  # Character tokens: reconstruct active formatting, then insert
   def process({:character, text}, state) do
     # Null characters should be ignored, but we don't track that - just insert
-    {:ok, add_text_to_stack(state, text)}
+    {:ok, state |> reconstruct_af_in_select() |> add_text_to_stack(text)}
   end
 
   # Comments: insert
@@ -179,7 +182,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
         state
       end
 
-    if self_closing do
+    # Void elements are always treated as self-closing
+    is_void = tag in @void_elements
+
+    if self_closing or is_void do
       child =
         if ns do
           {{ns, tag}, attrs, []}
@@ -251,12 +257,25 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:reprocess, %{state | mode: :in_head}}
   end
 
-  # Any other end tag: handle foreign content, otherwise ignore
+  # End tag for formatting elements: use adoption agency if element is inside select
+  def process({:end_tag, tag}, state) when tag in @formatting_elements do
+    if formatting_element_in_select?(state, tag) do
+      # Run adoption agency for formatting elements inside select
+      {:ok, PureHTML.TreeBuilder.AdoptionAgency.run(state, tag, &close_formatting_in_select/2)}
+    else
+      # Formatting element is outside select - ignore
+      {:ok, state}
+    end
+  end
+
+  # Any other end tag: handle foreign content or close matching HTML element
+  # Per spec: parse error, ignore. But browsers close matching elements for compat.
   def process({:end_tag, tag}, state) do
     case foreign_namespace(state) do
       nil ->
-        # Not in foreign content - ignore per spec
-        {:ok, state}
+        # Not in foreign content - try to close matching HTML element
+        # This handles cases where elements like <div> were pushed for compatibility
+        {:ok, close_html_element_in_select(state, tag)}
 
       ns ->
         # In foreign content - close if matches current element
@@ -283,6 +302,90 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   defp close_if_current_tag(state, tag) do
     if current_tag(state) == tag, do: pop_element(state), else: state
+  end
+
+  # Check if a formatting element is inside select (on stack above select)
+  defp formatting_element_in_select?(%{stack: stack, elements: elements}, tag) do
+    # Walk stack from top until we hit select - if we find the tag, it's inside
+    Enum.reduce_while(stack, false, fn ref, _acc ->
+      case elements[ref].tag do
+        "select" -> {:halt, false}
+        ^tag -> {:halt, true}
+        _ -> {:cont, false}
+      end
+    end)
+  end
+
+  # Close callback for adoption agency - stops at select boundary
+  defp close_formatting_in_select(%{stack: stack, elements: elements} = state, tag) do
+    case pop_until_html_tag_in_select(stack, elements, tag) do
+      {:found, new_stack, parent_ref} ->
+        %{state | stack: new_stack, current_parent_ref: parent_ref}
+
+      :not_found ->
+        state
+    end
+  end
+
+  # Close an HTML element that was pushed inside select (for browser compatibility)
+  # Pops elements until finding the matching tag, stops at select boundary
+  defp close_html_element_in_select(%{stack: stack, elements: elements, af: af} = state, tag) do
+    case pop_until_html_tag_in_select(stack, elements, tag) do
+      {:found, new_stack, parent_ref} ->
+        # Update state with new stack
+        new_state = %{state | stack: new_stack, current_parent_ref: parent_ref}
+        # Reconstruct active formatting elements
+        reconstruct_af_in_select(new_state, af, new_stack)
+
+      :not_found ->
+        state
+    end
+  end
+
+  defp pop_until_html_tag_in_select([], _elements, _tag), do: :not_found
+
+  defp pop_until_html_tag_in_select([ref | rest], elements, tag) do
+    case elements[ref].tag do
+      ^tag ->
+        {:found, rest, elements[ref].parent_ref}
+
+      "select" ->
+        # Don't pop past select
+        :not_found
+
+      _ ->
+        pop_until_html_tag_in_select(rest, elements, tag)
+    end
+  end
+
+  # Reconstruct active formatting elements after closing an element
+  # Reconstruct active formatting elements in select mode
+  # Only reconstructs elements that are inside select (above select in AF)
+  defp reconstruct_af_in_select(%{af: af, stack: stack} = state) do
+    reconstruct_af_in_select(state, af, stack)
+  end
+
+  defp reconstruct_af_in_select(state, af, stack) do
+    entries_to_reconstruct =
+      af
+      |> Enum.take_while(&(&1 != :marker))
+      |> Enum.reverse()
+      |> Enum.filter(fn {ref, _tag, _attrs} -> ref not in stack end)
+
+    Enum.reduce(entries_to_reconstruct, state, fn {_old_ref, tag, attrs}, acc ->
+      new_state = push_element(acc, tag, attrs)
+      [new_ref | _] = new_state.stack
+
+      new_af = [
+        {new_ref, tag, attrs}
+        | Enum.reject(new_state.af, fn
+            {_, ^tag, ^attrs} -> true
+            _ -> false
+          end)
+      ]
+
+      %{new_state | af: new_af}
+    end)
   end
 
   # Get the current foreign namespace (if we're inside SVG or MathML)
