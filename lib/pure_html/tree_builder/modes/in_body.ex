@@ -28,6 +28,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       foster_parent: 2,
       find_ref: 2,
       in_scope?: 3,
+      needs_foster_parenting?: 1,
       merge_html_attrs: 2,
       update_af_entry: 3
     ]
@@ -354,7 +355,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
         html_breakout_tag?(tag) ->
           state = close_foreign_content(state)
-          do_process_html_start_tag(tag, attrs, self_closing, state)
+          # After breaking out of foreign content, check if we need foster parenting
+          # (e.g., when the foreign element was foster parented in a table context)
+          if needs_foster_parenting?(state) do
+            {state, _ref} = foster_parent(state, {:push, tag, attrs})
+            state
+          else
+            do_process_html_start_tag(tag, attrs, self_closing, state)
+          end
 
         true ->
           do_push_foreign_element(state, ns, tag, attrs, self_closing)
@@ -885,14 +893,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp adjust_svg_tag(_ns, tag), do: tag
 
-  defp foreign_namespace(%{stack: stack, elements: elements}) do
-    Enum.find_value(stack, fn ref ->
-      case elements[ref] do
-        %{tag: {ns, _}} when ns in [:svg, :math] -> ns
-        _ -> nil
-      end
-    end)
+  # Check if current element is in a foreign namespace (SVG or MathML)
+  # Per HTML5 spec: "in foreign content" means current node is not HTML
+  defp foreign_namespace(%{stack: [ref | _], elements: elements}) do
+    case elements[ref].tag do
+      {ns, _} when ns in [:svg, :math] -> ns
+      _ -> nil
+    end
   end
+
+  defp foreign_namespace(%{stack: []}), do: nil
 
   @html_integration_encodings ["text/html", "application/xhtml+xml"]
 
@@ -944,15 +954,35 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp pop_foreign_elements([], _elements), do: {[], nil}
 
   defp pop_foreign_elements([ref | rest] = stack, elements) do
-    case elements[ref].tag do
-      {ns, _} when ns in [:svg, :math] ->
-        pop_foreign_elements(rest, elements)
+    elem = elements[ref]
 
-      _ ->
-        # Return the ref itself as parent - new elements should be children
-        # of this non-foreign element (e.g., body), not its parent
+    case elem.tag do
+      # HTML element - stop here
+      tag when is_binary(tag) ->
         {stack, ref}
+
+      # SVG HTML integration points - stop here
+      {:svg, svg_tag} when svg_tag in ~w(foreignObject desc title) ->
+        {stack, ref}
+
+      # MathML HTML integration point (with proper encoding)
+      {:math, "annotation-xml"} ->
+        if html_integration_encoding?(elem.attrs["encoding"]) do
+          {stack, ref}
+        else
+          pop_foreign_elements(rest, elements)
+        end
+
+      # Other foreign elements - pop and continue
+      _ ->
+        pop_foreign_elements(rest, elements)
     end
+  end
+
+  defp html_integration_encoding?(nil), do: false
+
+  defp html_integration_encoding?(encoding) do
+    String.downcase(encoding) in ~w(text/html application/xhtml+xml)
   end
 
   # --------------------------------------------------------------------------
@@ -1723,27 +1753,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     do_pop_until_tag_ref(stack, elements, target)
   end
 
+  @svg_special ~w(desc foreignobject title)
+  @mathml_special ~w(annotation-xml mi mn mo ms mtext)
+
   defp do_pop_until_tag_ref([], _elements, _target), do: :not_found
 
   defp do_pop_until_tag_ref([ref | rest], elements, target) when is_map_key(elements, ref) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    case tag do
-      ^target ->
-        {:found, rest, parent_ref}
-
-      {:svg, ^target} ->
-        {:found, rest, parent_ref}
-
-      {:math, ^target} ->
-        {:found, rest, parent_ref}
-
-      # Per HTML5 spec: if node is in special category, stop (parse error)
-      special when is_binary(special) and special in @special_elements ->
+    if tag_matches?(tag, target) do
+      {:found, rest, parent_ref}
+    else
+      if special_element_barrier?(tag) do
         :not_found
-
-      _ ->
+      else
         do_pop_until_tag_ref(rest, elements, target)
+      end
     end
   end
 
@@ -1758,18 +1783,32 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
        when is_map_key(elements, ref) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    case tag do
-      ^target -> {:found, rest, parent_ref}
-      {:svg, ^target} -> {:found, rest, parent_ref}
-      {:math, ^target} -> {:found, rest, parent_ref}
-      "template" -> :not_found
-      _ -> pop_until_tag_ref_block(rest, elements, target)
+    if tag_matches?(tag, target) do
+      {:found, rest, parent_ref}
+    else
+      if tag == "template" do
+        :not_found
+      else
+        pop_until_tag_ref_block(rest, elements, target)
+      end
     end
   end
 
   defp pop_until_tag_ref_block([_ref | rest], elements, target) do
     pop_until_tag_ref_block(rest, elements, target)
   end
+
+  # Check if element tag matches target (case-insensitive for SVG)
+  defp tag_matches?(tag, target) when is_binary(tag), do: tag == target
+  defp tag_matches?({:svg, svg_tag}, target), do: String.downcase(svg_tag) == target
+  defp tag_matches?({:math, math_tag}, target), do: math_tag == target
+  defp tag_matches?(_, _), do: false
+
+  # Check if tag is a special element that acts as a barrier
+  defp special_element_barrier?(tag) when is_binary(tag), do: tag in @special_elements
+  defp special_element_barrier?({:svg, tag}), do: String.downcase(tag) in @svg_special
+  defp special_element_barrier?({:math, tag}), do: tag in @mathml_special
+  defp special_element_barrier?(_), do: false
 
   # --------------------------------------------------------------------------
   # Active formatting elements

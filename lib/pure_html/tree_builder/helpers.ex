@@ -368,25 +368,42 @@ defmodule PureHTML.TreeBuilder.Helpers do
     button: ~w(applet caption html table td th marquee object template button)
   }
 
+  # Foreign scope boundaries per HTML5 spec (MathML tags are lowercase)
+  @mathml_scope_boundaries ~w(annotation-xml mi mn mo ms mtext)
+
+  # Scope types that include foreign elements as boundaries per HTML5 spec
+  @scopes_with_foreign_boundaries [:default, :button]
+
   @doc """
   Checks if an element with the given tag is in the specified scope.
   Scope types: :default, :table, :select, :button
   """
   def in_scope?(%{stack: stack, elements: elements}, tag, scope_type) do
-    do_in_scope?(stack, tag, @scope_boundaries[scope_type], elements)
+    check_foreign = scope_type in @scopes_with_foreign_boundaries
+    do_in_scope?(stack, tag, @scope_boundaries[scope_type], elements, check_foreign)
   end
 
-  defp do_in_scope?([], _tag, _boundaries, _elements), do: false
+  defp do_in_scope?([], _tag, _boundaries, _elements, _check_foreign), do: false
 
-  defp do_in_scope?([ref | rest], tag, boundaries, elements) do
+  defp do_in_scope?([ref | rest], tag, boundaries, elements, check_foreign) do
     elem_tag = elements[ref].tag
 
     cond do
       elem_tag == tag -> true
       elem_tag in boundaries -> false
-      true -> do_in_scope?(rest, tag, boundaries, elements)
+      check_foreign and foreign_scope_boundary?(elem_tag) -> false
+      true -> do_in_scope?(rest, tag, boundaries, elements, check_foreign)
     end
   end
+
+  # Check if a tag is a foreign scope boundary (for default/button scope)
+  # SVG: compare case-insensitively (stored with camelCase like foreignObject)
+  defp foreign_scope_boundary?({:svg, tag}) do
+    String.downcase(tag) in ~w(desc foreignobject title)
+  end
+
+  defp foreign_scope_boundary?({:math, tag}) when tag in @mathml_scope_boundaries, do: true
+  defp foreign_scope_boundary?(_), do: false
 
   # --------------------------------------------------------------------------
   # Pop Operations (ref-only stack)
