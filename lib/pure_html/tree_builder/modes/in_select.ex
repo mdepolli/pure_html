@@ -150,6 +150,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   end
 
   # Table elements in in_select: parse error, ignore per HTML5 spec
+  # Note: in_select_in_table mode handles these differently (closes select)
   def process({:start_tag, tag, _, _}, state) when tag in @table_elements_to_ignore do
     {:ok, state}
   end

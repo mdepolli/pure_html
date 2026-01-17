@@ -550,45 +550,43 @@ defmodule PureHTML.TreeBuilder.Helpers do
   5. Otherwise foster parent is the first element (html)
   """
   def find_foster_parent(%{stack: stack, elements: elements}) do
-    # Find positions of last table and last template (closest to stack top)
-    {table_pos, template_pos} = find_table_and_template_positions(stack, elements, 0, nil, nil)
+    template_ref = find_last_template(stack, elements)
+    table_ref = find_last_table(stack, elements)
 
     cond do
-      # Template exists and is closer to top than table (or no table)
-      template_pos != nil and (table_pos == nil or template_pos < table_pos) ->
-        template_ref = Enum.at(stack, template_pos)
+      template_closer_to_top?(stack, template_ref, table_ref) ->
         {template_ref, nil}
 
-      # Table exists and is closer to top than template (or no template)
-      # Per HTML5 spec: foster parent is the table's parent element (from DOM tree)
-      table_pos != nil ->
-        table_ref = Enum.at(stack, table_pos)
-
+      table_ref != nil ->
         case elements[table_ref].parent_ref do
           nil -> {:document, nil}
           parent_ref -> {parent_ref, table_ref}
         end
 
-      # Neither table nor template - use first element (html) as foster parent
       true ->
-        case List.last(stack) do
-          nil -> {:document, nil}
-          html_ref -> {html_ref, nil}
-        end
+        {List.last(stack) || :document, nil}
     end
   end
 
-  defp find_table_and_template_positions([], _elements, _pos, table_pos, template_pos) do
-    {table_pos, template_pos}
+  defp find_last_template(stack, elements) do
+    Enum.find(stack, fn ref -> elements[ref].tag == "template" end)
   end
 
-  defp find_table_and_template_positions([ref | rest], elements, pos, table_pos, template_pos) do
-    tag = elements[ref].tag
+  defp find_last_table(stack, elements) do
+    Enum.find(stack, fn ref ->
+      elem = elements[ref]
+      elem.tag == "table" and elem[:foster_parent_ref] == nil
+    end)
+  end
 
-    new_table_pos = if tag == "table" and table_pos == nil, do: pos, else: table_pos
-    new_template_pos = if tag == "template" and template_pos == nil, do: pos, else: template_pos
+  defp template_closer_to_top?(stack, template_ref, table_ref) do
+    template_ref != nil and
+      (table_ref == nil or
+         stack_index(stack, template_ref) < stack_index(stack, table_ref))
+  end
 
-    find_table_and_template_positions(rest, elements, pos + 1, new_table_pos, new_template_pos)
+  defp stack_index(stack, ref) do
+    Enum.find_index(stack, &(&1 == ref))
   end
 
   @doc """

@@ -366,6 +366,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         tag in ~w(mglyph malignmark) and mathml_text_integration_point?(state) ->
           do_push_foreign_element(state, :math, tag, attrs, self_closing)
 
+        # Table element at integration point in table context: close foreign content
+        # and foster-parent (e.g., <table> inside foreignObject inside a table)
+        # Only applies to "table" tag, not other HTML breakout tags which should stay
+        # inside the integration point
+        tag == "table" and html_integration_point?(state) and
+            has_table_ancestor_for_foster?(state) ->
+          state = close_foreign_content(state)
+          {state, _ref} = foster_parent(state, {:push, tag, attrs})
+          state |> push_mode(:in_table) |> set_frameset_not_ok()
+
         is_nil(ns) or html_integration_point?(state) ->
           do_process_html_start_tag(tag, attrs, self_closing, state)
 
@@ -1259,6 +1269,24 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
+  # Check if there's a table ancestor that would trigger foster-parenting
+  # when we're inside foreign content (SVG/MathML integration point)
+  defp has_table_ancestor_for_foster?(%{stack: stack, elements: elements}) do
+    do_has_table_ancestor_for_foster?(stack, elements)
+  end
+
+  defp do_has_table_ancestor_for_foster?([], _elements), do: false
+
+  defp do_has_table_ancestor_for_foster?([ref | rest], elements) do
+    case elements[ref].tag do
+      "table" -> true
+      "template" -> false
+      {:svg, _} -> do_has_table_ancestor_for_foster?(rest, elements)
+      {:math, _} -> do_has_table_ancestor_for_foster?(rest, elements)
+      _ -> do_has_table_ancestor_for_foster?(rest, elements)
+    end
+  end
+
   defp maybe_skip_leading_newline(state, <<?\n, rest::binary>>) do
     case current_element(state) do
       %{tag: tag, children: []} when tag in @newline_skipping_elements ->
@@ -1486,6 +1514,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @implicit_close_boundaries ~w(table template body html)
   @li_scope_boundaries ~w(ol ul table template body html)
+  # Ruby elements should stop at ruby boundaries to handle nested ruby elements correctly
+  @ruby_close_boundaries ~w(ruby table template body html)
 
   # Per HTML5 spec, option/optgroup only close if current node matches (not stack search)
   defp maybe_close_same(state, "option") do
@@ -1520,8 +1550,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     closes = [tag | also_closes]
     close_all? = tag in @ruby_elements
 
+    boundaries =
+      if tag in @ruby_elements, do: @ruby_close_boundaries, else: @implicit_close_boundaries
+
     defp get_implicit_close_config(unquote(tag)) do
-      {unquote(closes), @implicit_close_boundaries, unquote(close_all?)}
+      {unquote(closes), unquote(boundaries), unquote(close_all?)}
     end
   end
 
