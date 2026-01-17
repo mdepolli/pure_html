@@ -264,11 +264,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_dd_dt_in_scope(state, tag)}
   end
 
-  # </form> has special handling when no template is on the stack
+  # </form> has special handling when no template is on the stack of open elements
   # Per HTML5 spec: only REMOVE form from stack, don't pop until it
-  def process({:end_tag, "form"}, %{template_mode_stack: [], form_element: form_ref} = state)
+  def process({:end_tag, "form"}, %{form_element: form_ref} = state)
       when not is_nil(form_ref) do
-    {:ok, close_form_special(state, form_ref)}
+    # Check if there's a template on the stack of open elements
+    if has_template_on_stack?(state) do
+      # With template, use normal end tag handling
+      {:ok, close_tag_ref(state, "form")}
+    else
+      {:ok, close_form_special(state, form_ref)}
+    end
   end
 
   # Block-level end tags: generate implied end tags, then pop until match
@@ -640,28 +646,36 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
-  # Form - ignore if form_element is set and no template on stack
-  defp do_process_html_start_tag(
-         "form",
-         _attrs,
-         _,
-         %{form_element: f, template_mode_stack: []} = state
-       )
+  # Form - ignore if form_element is set and no template element on stack of open elements
+  defp do_process_html_start_tag("form", attrs, _, %{form_element: f} = state)
        when not is_nil(f) do
-    state
+    # Per spec: ignore if form_element is set and no template on stack
+    if has_template_on_stack?(state) do
+      # With template, process normally (form_element won't be set again)
+      do_process_html_start_tag_form(attrs, state)
+    else
+      # No template, ignore the form tag
+      state
+    end
   end
 
   defp do_process_html_start_tag("form", attrs, _, state) do
+    do_process_html_start_tag_form(attrs, state)
+  end
+
+  defp do_process_html_start_tag_form(attrs, state) do
     state
     |> in_body()
     |> maybe_close_p("form")
     |> push_element("form", attrs)
-    |> then(fn
-      %{template_mode_stack: [], stack: [form_ref | _]} = new_state ->
-        %{new_state | form_element: form_ref}
-
-      new_state ->
+    |> then(fn new_state ->
+      # Set form_element only if no template on stack
+      if has_template_on_stack?(new_state) do
         new_state
+      else
+        [form_ref | _] = new_state.stack
+        %{new_state | form_element: form_ref}
+      end
     end)
   end
 
@@ -1704,6 +1718,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       end
 
     %{state | stack: new_stack, current_parent_ref: new_parent_ref}
+  end
+
+  # Check if there's a template element on the stack of open elements
+  defp has_template_on_stack?(state) do
+    find_ref(state, "template") != nil
   end
 
   # Generate implied end tags per HTML5 spec

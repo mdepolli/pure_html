@@ -53,14 +53,20 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   end
 
   # Cell-closing start tags: close cell, reprocess
-  def process({:start_tag, tag, _, _}, state) when tag in @cell_closing_start_tags do
-    case close_cell(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
+  # But first check if we're in foreign content - if so, delegate to in_body
+  def process({:start_tag, tag, _, _} = token, state) when tag in @cell_closing_start_tags do
+    if in_foreign_content?(state) do
+      # In foreign content, let in_body handle it (may push as foreign element)
+      InBody.process(token, state)
+    else
+      case close_cell(state) do
+        {:ok, new_state} ->
+          {:reprocess, new_state}
 
-      :not_found ->
-        # Cell not in scope, ignore
-        {:ok, state}
+        :not_found ->
+          # Cell not in scope, ignore
+          {:ok, state}
+      end
     end
   end
 
@@ -133,4 +139,14 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
       _ -> :not_found
     end
   end
+
+  # Check if the current node is in a foreign namespace (SVG/MathML)
+  defp in_foreign_content?(%{stack: [ref | _], elements: elements}) do
+    case elements[ref].tag do
+      {ns, _} when ns in [:svg, :math] -> true
+      _ -> false
+    end
+  end
+
+  defp in_foreign_content?(%{stack: []}), do: false
 end

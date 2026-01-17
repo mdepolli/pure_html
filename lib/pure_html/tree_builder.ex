@@ -287,8 +287,18 @@ defmodule PureHTML.TreeBuilder do
     Tokenizer.set_foreign_content(tokenizer, in_foreign)
   end
 
+  # Check if the current element is in foreign content for tokenizer purposes.
+  # Returns false for HTML integration points (where content should be parsed as HTML).
+  @svg_html_integration_points ~w(foreignObject desc title)
+  @mathml_html_integration_points ~w(mi mo mn ms mtext)
+
   defp current_element_is_foreign?([ref | _], elements) do
     case elements[ref] do
+      # SVG HTML integration points - parse as HTML
+      %{tag: {:svg, tag}} when tag in @svg_html_integration_points -> false
+      # MathML text integration points - parse as HTML
+      %{tag: {:math, tag}} when tag in @mathml_html_integration_points -> false
+      # Other foreign elements
       %{tag: {ns, _}} when ns in [:svg, :math] -> true
       _ -> false
     end

@@ -75,6 +75,19 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     content |> String.split("\n", trim: true)
   end
 
+  # For #data section: preserve internal newlines but trim the final section-separator newline
+  # The test format uses blank lines between sections, so content ends with \n\n
+  # but we only want to preserve the actual trailing newline from the HTML input
+  defp parse_section_content("data", content) do
+    # Trim exactly one trailing newline (the section separator)
+    # If content ends with \n\n, result ends with \n (preserving HTML trailing newline)
+    # If content ends with \n, result has no trailing newline (no HTML trailing newline)
+    case content do
+      "" -> ""
+      _ -> String.replace_suffix(content, "\n", "")
+    end
+  end
+
   defp parse_section_content(_keyword, content) do
     String.trim_trailing(content, "\n")
   end

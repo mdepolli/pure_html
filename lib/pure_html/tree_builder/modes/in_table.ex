@@ -33,13 +33,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       push_element: 3,
+      pop_element: 1,
       set_mode: 2,
       push_af_marker: 1,
       add_child_to_stack: 2,
       in_scope?: 3,
       find_ref: 2,
       foster_parent: 2,
-      new_element: 2,
       reject_refs_from_af: 2,
       needs_foster_parenting?: 1,
       update_af_entry: 3
@@ -200,14 +200,21 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
-  # Start tag: form - special handling
+  # Start tag: form - special handling per HTML5 spec
+  # In table mode, if form_element is null and no template on stack:
+  # 1. Insert the form element (directly to table, not foster-parented)
+  # 2. Set form_element pointer to that element
+  # 3. Pop the element immediately (it stays in tree but not on stack)
   defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
     # Only if no form element pointer and no template in stack
     if find_ref(state, "template") do
       {:ok, state}
     else
-      form = new_element("form", attrs)
-      {:ok, %{state | form_element: form} |> add_child_to_stack(form)}
+      # Push form, set pointer, then pop (form stays in tree as child of table)
+      state = push_element(state, "form", attrs)
+      [form_ref | _] = state.stack
+      state = pop_element(state)
+      {:ok, %{state | form_element: form_ref}}
     end
   end
 
@@ -255,8 +262,16 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
         if needs_foster do
           # Reconstruct AF before foster parenting the void element
           state = reconstruct_formatting_for_foster(state)
-          # After reconstruction, insert the element (into reconstructed formatting if any)
-          {:ok, add_child_to_stack(state, {tag, attrs, []})}
+
+          # After reconstruction, check if we're still in foster parenting context
+          # (no AF was reconstructed, so current element is still table-related)
+          if needs_foster_parenting?(state) do
+            {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
+            {:ok, new_state}
+          else
+            # AF was reconstructed, insert into the reconstructed element
+            {:ok, add_child_to_stack(state, {tag, attrs, []})}
+          end
         else
           {:ok, add_child_to_stack(state, {tag, attrs, []})}
         end

@@ -2174,6 +2174,8 @@ defmodule PureHTML.Tokenizer do
   # In foreign content (SVG/MathML), title should NOT switch to RCDATA mode
   # since it's an HTML integration point where content is parsed as HTML
   defp next_state_for_tag("title", true), do: :data
+  # In foreign content, plaintext is a regular element, not raw text
+  defp next_state_for_tag("plaintext", true), do: :data
   defp next_state_for_tag("plaintext", _), do: :plaintext
   defp next_state_for_tag("script", _), do: :script_data
   defp next_state_for_tag(tag, _) when tag in @rawtext_elements, do: :rawtext
