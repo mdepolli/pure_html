@@ -70,8 +70,9 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   end
 
   # Start tag: noframes - process using in_head rules
+  # Set original_mode so text mode returns here after noframes closes
   def process({:start_tag, "noframes", _attrs, _}, state) do
-    {:reprocess, %{state | mode: :in_head}}
+    {:reprocess, %{state | original_mode: :in_frameset, mode: :in_head}}
   end
 
   # Other start tags: parse error, ignore

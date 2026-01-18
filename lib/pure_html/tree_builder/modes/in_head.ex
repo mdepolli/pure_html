@@ -93,7 +93,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   def process({:start_tag, tag, attrs, _self_closing}, state)
       when tag in @raw_text_elements do
     # Insert element, switch to text mode (RAWTEXT)
-    # Preserve original_mode if already set (e.g., from table context)
+    # Preserve original_mode if already set (e.g., from frameset context)
     state =
       state
       |> push_element(tag, attrs)

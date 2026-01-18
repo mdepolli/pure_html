@@ -34,7 +34,6 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
   end
 
   def process({:comment, text}, state) do
-    # Insert comment
     {:ok, add_child_to_stack(state, {:comment, text})}
   end
 

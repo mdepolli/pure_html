@@ -674,22 +674,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     do_process_html_start_tag_form(attrs, state)
   end
 
-  defp do_process_html_start_tag_form(attrs, state) do
-    state
-    |> in_body()
-    |> maybe_close_p("form")
-    |> push_element("form", attrs)
-    |> then(fn new_state ->
-      # Set form_element only if no template on stack
-      if has_template_on_stack?(new_state) do
-        new_state
-      else
-        [form_ref | _] = new_state.stack
-        %{new_state | form_element: form_ref}
-      end
-    end)
-  end
-
   # Select - use in_select_in_table if there's a table ancestor
   defp do_process_html_start_tag("select", attrs, _, state) do
     state = state |> in_body() |> reconstruct_active_formatting() |> push_element("select", attrs)
@@ -732,6 +716,23 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_close_same(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
+  end
+
+  # Helper function for form handling (separate to allow grouping of do_process_html_start_tag clauses)
+  defp do_process_html_start_tag_form(attrs, state) do
+    state
+    |> in_body()
+    |> maybe_close_p("form")
+    |> push_element("form", attrs)
+    |> then(fn new_state ->
+      # Set form_element only if no template on stack
+      if has_template_on_stack?(new_state) do
+        new_state
+      else
+        [form_ref | _] = new_state.stack
+        %{new_state | form_element: form_ref}
+      end
+    end)
   end
 
   # Per HTML5 spec: if current node is a heading and we're inserting a heading,
@@ -2017,9 +2018,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
+  # Noah's Ark clause: if there are already 3 formatting elements with same tag/attrs
+  # in the current scope (before any marker), remove the oldest one.
   defp apply_noahs_ark(af, tag, attrs) do
+    # Only consider entries before the first marker (current scope)
+    in_scope = Enum.take_while(af, &(&1 != :marker))
+
     matching_indices =
-      af
+      in_scope
       |> Enum.with_index()
       |> Enum.flat_map(fn
         {{_ref, ^tag, ^attrs}, idx} -> [idx]

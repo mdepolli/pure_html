@@ -23,7 +23,8 @@ defmodule PureHTML.TreeBuilder do
   Final output: {tag, attrs, children} tuples (attrs are maps, not lists like Floki)
   """
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, foster_parent: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3]
 
   alias PureHTML.Tokenizer
   alias PureHTML.TreeBuilder.Modes
@@ -273,12 +274,45 @@ defmodule PureHTML.TreeBuilder do
         # Whitespace only: insert normally
         add_text_to_stack(state, text)
       else
-        # Contains non-whitespace: foster parent
-        {state_with_text, _} = foster_parent(state, {:text, text})
-        state_with_text
+        # Contains non-whitespace: foster parent with AF reconstruction
+        foster_parent_with_formatting(state, text)
       end
 
     {doctype, %{new_state | pending_table_text: ""}, comments}
+  end
+
+  # Foster parent text with active formatting reconstruction at EOF.
+  # If there are formatting elements to reconstruct, they get foster parented
+  # and the text is added to the reconstructed element (not foster parented).
+  defp foster_parent_with_formatting(state, text) do
+    case entries_needing_reconstruction(state) do
+      [] ->
+        {new_state, _} = foster_parent(state, {:text, text})
+        new_state
+
+      entries ->
+        state
+        |> reconstruct_formatting_for_foster(entries)
+        |> add_text_to_stack(text)
+    end
+  end
+
+  # Returns active formatting entries that need reconstruction (not on stack),
+  # in the order they should be reconstructed (reversed from AF list order).
+  defp entries_needing_reconstruction(%{af: af, stack: stack}) do
+    af
+    |> Enum.take_while(&(&1 != :marker))
+    |> Enum.filter(fn {ref, _tag, _attrs} -> ref not in stack end)
+    |> Enum.reverse()
+  end
+
+  # Reconstruct active formatting elements via foster parenting.
+  defp reconstruct_formatting_for_foster(state, entries) do
+    Enum.reduce(entries, state, fn {old_ref, tag, attrs}, acc ->
+      {new_state, new_ref} = foster_parent(acc, {:push, tag, attrs})
+      new_af = update_af_entry(new_state.af, old_ref, {new_ref, tag, attrs})
+      %{new_state | af: new_af}
+    end)
   end
 
   defp update_tokenizer_context(tokenizer, {_, %State{stack: stack, elements: elements}, _}) do

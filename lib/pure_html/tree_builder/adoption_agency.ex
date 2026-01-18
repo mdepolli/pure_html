@@ -179,20 +179,38 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
        ) do
     # Common ancestor = element immediately before FE in stack
     # BUT: if FE was foster parented, use its actual parent_ref instead
-    common_ancestor_ref =
-      if is_map_key(elements, fe_ref) and
-           is_map_key(elements[fe_ref], :foster_parent_ref) and
-           elements[fe_ref].foster_parent_ref != nil do
-        elements[fe_ref].foster_parent_ref
+    # (foster_parent_ref is the table, parent_ref is the table's parent where FE was inserted)
+    fe_elem = elements[fe_ref]
+
+    is_foster_parented =
+      is_map_key(elements, fe_ref) and
+        is_map_key(fe_elem, :foster_parent_ref) and
+        fe_elem.foster_parent_ref != nil
+
+    # If FE was foster-parented, use its parent_ref (body) as common ancestor
+    # and propagate the foster_parent_ref to clones created in inner loop
+    {common_ancestor_ref, clone_foster_parent_ref} =
+      if is_foster_parented do
+        {fe_elem.parent_ref, fe_elem.foster_parent_ref}
       else
-        Enum.at(stack, fe_stack_idx + 1)
+        {Enum.at(stack, fe_stack_idx + 1), nil}
       end
 
     fb_ref = Enum.at(stack, fb_idx)
 
     # Run inner loop (processes nodes between FB and FE)
     {state, last_node_ref, bookmark} =
-      inner_loop(state, fe_ref, fb_idx, fb_ref, fb_ref, common_ancestor_ref, af_idx, 0)
+      inner_loop(
+        state,
+        fe_ref,
+        fb_idx,
+        fb_ref,
+        fb_ref,
+        common_ancestor_ref,
+        clone_foster_parent_ref,
+        af_idx,
+        0
+      )
 
     # Insert last_node at common ancestor (foster-aware)
     new_elements = reparent_node_foster_aware(state.elements, last_node_ref, common_ancestor_ref)
@@ -210,13 +228,22 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
       |> Map.put(fb_ref, %{fb_elem | children: [new_fe.ref]})
       |> update_children_parent_refs(fb_elem.children, new_fe.ref)
 
-    # Update AF: remove old FE, insert new FE at bookmark
-    adjusted_bookmark = if af_idx < bookmark, do: bookmark - 1, else: bookmark
+    # Update AF: remove old FE (by ref, not index - inner loop may have changed indices)
+    # Then insert new FE at bookmark position
+    current_af_idx = Enum.find_index(state.af, fn {ref, _, _} -> ref == fe_ref end)
+
+    adjusted_bookmark =
+      if current_af_idx && current_af_idx < bookmark, do: bookmark - 1, else: bookmark
 
     new_af =
-      state.af
-      |> List.delete_at(af_idx)
-      |> List.insert_at(adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
+      if current_af_idx do
+        state.af
+        |> List.delete_at(current_af_idx)
+        |> List.insert_at(adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
+      else
+        # FE was already removed from AF (shouldn't happen normally)
+        List.insert_at(state.af, adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
+      end
 
     # Update stack: remove FE, insert new FE below FB
     fe_current_idx = Enum.find_index(state.stack, &(&1 == fe_ref))
@@ -264,6 +291,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
          last_node_ref,
          fb_ref,
          common_ancestor_ref,
+         clone_foster_parent_ref,
          bookmark,
          counter
        ) do
@@ -300,6 +328,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
             last_node_ref,
             fb_ref,
             common_ancestor_ref,
+            clone_foster_parent_ref,
             bookmark,
             counter
           )
@@ -308,6 +337,15 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
           {node_af_idx, {_, node_tag, node_attrs}} = af_entry
 
           new_node = new_element(node_tag, node_attrs, common_ancestor_ref)
+
+          # If we're in a foster-parenting context, mark the clone as foster-parented too
+          new_node =
+            if clone_foster_parent_ref do
+              Map.put(new_node, :foster_parent_ref, clone_foster_parent_ref)
+            else
+              new_node
+            end
+
           new_elements = Map.put(elements, new_node.ref, new_node)
 
           new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
@@ -324,6 +362,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
             new_node.ref,
             fb_ref,
             common_ancestor_ref,
+            clone_foster_parent_ref,
             new_bookmark,
             counter
           )
@@ -375,6 +414,8 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
 
     new_children =
       if table_ref do
+        # Foster parenting: insert BEFORE table in DOM order = AFTER in stored list
+        # (children are stored in reverse order)
         insert_after_in_list(parent.children, child_ref, table_ref)
       else
         [child_ref | parent.children]
