@@ -10,7 +10,8 @@ defmodule PureHTML.Html5libTokenizerTest do
     "RCDATA state" => :rcdata,
     "RAWTEXT state" => :rawtext,
     "Script data state" => :script_data,
-    "PLAINTEXT state" => :plaintext
+    "PLAINTEXT state" => :plaintext,
+    "CDATA section state" => :cdata_section
   }
 
   for path <- H5.list_test_files() do
@@ -25,8 +26,7 @@ defmodule PureHTML.Html5libTokenizerTest do
         for initial_state <- normalized.initial_states do
           state_atom = @state_map[initial_state]
 
-          # Only run tests for states we support
-          if state_atom == :data do
+          if state_atom do
             @tag :html5lib
             @tag :tokenizer
             @tag test_file: filename

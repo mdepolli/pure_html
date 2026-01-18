@@ -338,7 +338,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_end_tag_buffer(state, :rawtext, rest)
+      # Reconsume the whitespace in rawtext state
+      emit_end_tag_buffer(state, :rawtext, state.input)
     end
   end
 
@@ -346,7 +347,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_end_tag_buffer(state, :rawtext, rest)
+      # Reconsume the '/' in rawtext state
+      emit_end_tag_buffer(state, :rawtext, state.input)
     end
   end
 
@@ -423,7 +425,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_end_tag_buffer(state, :rcdata, rest)
+      # Reconsume the whitespace in rcdata state
+      emit_end_tag_buffer(state, :rcdata, state.input)
     end
   end
 
@@ -431,7 +434,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_end_tag_buffer(state, :rcdata, rest)
+      # Reconsume the '/' in rcdata state
+      emit_end_tag_buffer(state, :rcdata, state.input)
     end
   end
 
@@ -508,7 +512,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_end_tag_buffer(state, :script_data, rest)
+      # Reconsume the whitespace in script_data state
+      emit_end_tag_buffer(state, :script_data, state.input)
     end
   end
 
@@ -516,7 +521,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_end_tag_buffer(state, :script_data, rest)
+      # Reconsume the '/' in script_data state
+      emit_end_tag_buffer(state, :script_data, state.input)
     end
   end
 
@@ -661,7 +667,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
     else
-      emit_end_tag_buffer(state, :script_data_escaped, rest)
+      # Reconsume the whitespace in script_data_escaped state
+      emit_end_tag_buffer(state, :script_data_escaped, state.input)
     end
   end
 
@@ -669,7 +676,8 @@ defmodule PureHTML.Tokenizer do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
-      emit_end_tag_buffer(state, :script_data_escaped, rest)
+      # Reconsume the '/' in script_data_escaped state
+      emit_end_tag_buffer(state, :script_data_escaped, state.input)
     end
   end
 
@@ -1944,8 +1952,13 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, state.buffer, state: :data, buffer: "")
   end
 
+  defp step(%{state: :cdata_section, input: <<0, rest::binary>>} = state) do
+    # NUL in CDATA - pass through unchanged (unlike other states)
+    continue(state, input: rest, buffer: state.buffer <> <<0>>)
+  end
+
   defp step(%{state: :cdata_section, input: input} = state) do
-    # Consume characters until ] or end
+    # Consume characters until ] or NUL or end
     {chars, rest} = chars_until_cdata(input)
     continue(state, input: rest, buffer: state.buffer <> chars)
   end

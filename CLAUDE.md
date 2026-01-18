@@ -35,17 +35,12 @@ Tests are defined in `.dat` files under `test/html5lib-tests/tree-construction/`
 - Optional `#document-fragment`: Context element for fragment parsing
 - Optional `#script-off`/`#script-on`: Scripting mode
 
-## Tracking Test Failures
+## html5lib Test Coverage
 
-**IMPORTANT:** When running the full test suite, you MUST:
-
-1. Always pipe output through `tee` to cache results in `/tmp/test_failures.txt`
-2. Always update `TEST_FAILURES.md` with current failure counts after the run completes
-
-```bash
-# REQUIRED: Always run the full suite this way to cache output
-mix test test/pure_html/html5lib_tree_construction_test.exs 2>&1 | tee /tmp/test_failures.txt
-
-# Then count failures by file and update TEST_FAILURES.md
-cat /tmp/test_failures.txt | grep "^\s*[0-9]*) test" | sed 's/.*test \([^ ]*\) #.*/\1/' | sort | uniq -c | sort -rn
-```
+| Category          | Tests | Running |
+| ----------------- | ----- | ------- |
+| Tokenizer         | 7,036 | 7,036   |
+| Tree construction | 1,778 | 1,476   |
+| Encoding          | 82    | 0       |
+| Serializer        | 230   | 0       |
+| **Total**         | **9,126** | **8,512** |
