@@ -53,19 +53,16 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @ignored_end_tags ~w(body caption col colgroup html tbody td tfoot th thead tr)
 
   @impl true
-  # If top of stack is foreign content (svg/math), delegate to in_body
-  # which has proper foreign content handling
   def process(token, %{stack: [ref | _], elements: elements} = state) do
-    do_process(elements[ref], token, state)
+    # If top of stack is foreign content (svg/math), delegate to in_body
+    # which has proper foreign content handling
+    case elements[ref] do
+      %{tag: {ns, _}} when ns in [:svg, :math] -> InBody.process(token, state)
+      _ -> process_dispatch(token, state)
+    end
   end
 
   def process(token, state), do: process_dispatch(token, state)
-
-  defp do_process(%{tag: {ns, _}}, token, state) when ns in [:svg, :math] do
-    InBody.process(token, state)
-  end
-
-  defp do_process(_, token, state), do: process_dispatch(token, state)
 
   # In template context with table-related modes, most tokens go through normal
   # process_in_table which handles foster parenting correctly.
@@ -224,12 +221,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # SVG and math: foster parent as foreign elements
-  defp process_in_table({:start_tag, "svg", attrs, self_closing}, state) do
-    {:ok, foster_foreign_element(state, :svg, "svg", attrs, self_closing)}
-  end
-
-  defp process_in_table({:start_tag, "math", attrs, self_closing}, state) do
-    {:ok, foster_foreign_element(state, :math, "math", attrs, self_closing)}
+  defp process_in_table({:start_tag, tag, attrs, self_closing}, state)
+       when tag in ["svg", "math"] do
+    ns = if tag == "svg", do: :svg, else: :math
+    {new_state, _} = foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing})
+    {:ok, new_state}
   end
 
   # Select: foster parent and push in_select_in_table mode
@@ -247,109 +243,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Per HTML5 spec, enable foster parenting then process using in_body rules
   # "Appropriate insertion location" checks if current node is table context
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
-  @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
+  @formatting_element_tags ~w(a b big code em font i nobr s small strike strong tt u)
   @adopt_on_duplicate ~w(a nobr)
-
-  # li and similar elements that have implicit closing
   @implicit_close_elements ~w(li dd dt)
 
-  defp process_in_table({:start_tag, tag, attrs, self_closing}, %{af: af} = state) do
-    # Check if current node needs foster parenting
-    needs_foster = needs_foster_parenting?(state)
-
-    cond do
-      self_closing or tag in @void_elements ->
-        if needs_foster do
-          # Reconstruct AF before foster parenting the void element
-          state = reconstruct_formatting_for_foster(state)
-
-          # After reconstruction, check if we're still in foster parenting context
-          # (no AF was reconstructed, so current element is still table-related)
-          if needs_foster_parenting?(state) do
-            {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
-            {:ok, new_state}
-          else
-            # AF was reconstructed, insert into the reconstructed element
-            {:ok, add_child_to_stack(state, {tag, attrs, []})}
-          end
-        else
-          {:ok, add_child_to_stack(state, {tag, attrs, []})}
-        end
-
-      tag in @formatting_elements ->
-        # For <a> and <nobr>, check for duplicate in AF
-        has_duplicate = tag in @adopt_on_duplicate and has_formatting_entry?(af, tag)
-
-        # First, run AA if duplicate exists - this will close the existing element
-        # Per HTML5 spec: run AA then remove from AF and stack if AA didn't already
-        state =
-          if has_duplicate do
-            AdoptionAgency.run(state, tag)
-          else
-            state
-          end
-
-        # Get old ref AFTER AA (in case AA removed it)
-        old_ref =
-          if has_duplicate do
-            find_formatting_ref(state.af, tag)
-          else
-            nil
-          end
-
-        if needs_foster_parenting?(state) do
-          # Reconstruct AF before foster parenting (creates clones in foster parent)
-          state = reconstruct_formatting_for_foster(state)
-
-          # After reconstruction, check if we're still in foster parenting context
-          {new_state, new_ref} =
-            if needs_foster_parenting?(state) do
-              foster_parent(state, {:push, tag, attrs})
-            else
-              # Reconstructed elements took us out of foster parent context
-              new_state = push_element(state, tag, attrs)
-              [new_ref | _] = new_state.stack
-              {new_state, new_ref}
-            end
-
-          new_af = [{new_ref, tag, attrs} | new_state.af]
-          new_state = %{new_state | af: new_af}
-
-          # Remove old element from AF and stack (per spec: if AA didn't already remove it)
-          new_state =
-            if old_ref do
-              remove_formatting_element_by_ref(new_state, old_ref)
-            else
-              new_state
-            end
-
-          {:ok, new_state}
-        else
-          new_state = push_element(state, tag, attrs)
-          [new_ref | _] = new_state.stack
-          new_af = [{new_ref, tag, attrs} | new_state.af]
-          {:ok, %{new_state | af: new_af}}
-        end
-
-      # li, dd, dt: close open same-type element if foster-parented before inserting
-      tag in @implicit_close_elements ->
-        state = close_foster_parented_same_tag(state, tag)
-
-        if needs_foster_parenting?(state) do
-          {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
-          {:ok, new_state}
-        else
-          {:ok, push_element(state, tag, attrs)}
-        end
-
-      true ->
-        if needs_foster do
-          {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
-          {:ok, new_state}
-        else
-          {:ok, push_element(state, tag, attrs)}
-        end
-    end
+  defp process_in_table({:start_tag, tag, attrs, self_closing}, state) do
+    process_other_start_tag(tag, attrs, self_closing, state)
   end
 
   # End tag: table
@@ -380,10 +279,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # </select> special case: close select if in scope, but don't change mode
   # (InBody's handler calls pop_mode which would incorrectly switch to in_body)
   defp process_in_table({:end_tag, "select"}, state) do
-    case close_select_in_scope(state) do
-      {:ok, new_state} -> {:ok, new_state}
-      :not_found -> {:ok, state}
-    end
+    {:ok, close_select_in_scope(state)}
   end
 
   # </p> special case: check if p is in button scope
@@ -412,6 +308,71 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------
 
+  # Self-closing tags
+  defp process_other_start_tag(tag, attrs, true, state) do
+    insert_void_element(tag, attrs, state)
+  end
+
+  # Void elements
+  defp process_other_start_tag(tag, attrs, _, state) when tag in @void_elements do
+    insert_void_element(tag, attrs, state)
+  end
+
+  # Formatting elements
+  defp process_other_start_tag(tag, attrs, _, %{af: af} = state)
+       when tag in @formatting_element_tags do
+    {state, old_ref} = handle_duplicate_formatting(state, af, tag)
+    {new_state, new_ref} = push_formatting_element(state, tag, attrs)
+
+    new_af = [{new_ref, tag, attrs} | new_state.af]
+    new_state = %{new_state | af: new_af}
+
+    new_state =
+      if old_ref do
+        remove_formatting_element_by_ref(new_state, old_ref)
+      else
+        new_state
+      end
+
+    {:ok, new_state}
+  end
+
+  # li, dd, dt: close open same-type element if foster-parented before inserting
+  defp process_other_start_tag(tag, attrs, _, state) when tag in @implicit_close_elements do
+    state = close_foster_parented_same_tag(state, tag)
+    insert_or_foster_push(tag, attrs, state)
+  end
+
+  # Fallback: any other tag
+  defp process_other_start_tag(tag, attrs, _, state) do
+    insert_or_foster_push(tag, attrs, state)
+  end
+
+  defp insert_void_element(tag, attrs, state) do
+    state =
+      if needs_foster_parenting?(state) do
+        reconstruct_formatting_for_foster(state)
+      else
+        state
+      end
+
+    if needs_foster_parenting?(state) do
+      {new_state, _} = foster_parent(state, {:element, {tag, attrs, []}})
+      {:ok, new_state}
+    else
+      {:ok, add_child_to_stack(state, {tag, attrs, []})}
+    end
+  end
+
+  defp insert_or_foster_push(tag, attrs, state) do
+    if needs_foster_parenting?(state) do
+      {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
+      {:ok, new_state}
+    else
+      {:ok, push_element(state, tag, attrs)}
+    end
+  end
+
   defp do_process_character(%{tag: tag}, text, state) when tag in @table_context do
     # Switch to in_table_text mode to collect character tokens
     # Preserve original_mode if already set (e.g., delegated from in_row)
@@ -429,11 +390,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp do_process_character(_, text, state) do
     # Character tokens not in table context: delegate to in_body
     InBody.process({:character, text}, state)
-  end
-
-  defp foster_foreign_element(state, ns, tag, attrs, self_closing) do
-    {new_state, _} = foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing})
-    new_state
   end
 
   # Clear stack to table context (table, template, html)
@@ -458,28 +414,25 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp ensure_colgroup(%{stack: [ref | _], elements: elements} = state) do
-    do_ensure_colgroup(elements[ref], state)
+    case elements[ref].tag do
+      "colgroup" -> state
+      "table" -> push_element(state, "colgroup", %{})
+      _ -> state
+    end
   end
 
   defp ensure_colgroup(state), do: state
 
-  defp do_ensure_colgroup(%{tag: "colgroup"}, state), do: state
-  defp do_ensure_colgroup(%{tag: "table"}, state), do: push_element(state, "colgroup", %{})
-  defp do_ensure_colgroup(_, state), do: state
-
   defp ensure_tbody(%{stack: [ref | _], elements: elements} = state) do
-    do_ensure_tbody(elements[ref], state)
+    case elements[ref].tag do
+      tag when tag in @table_sections -> state
+      # In template context, template is the table context boundary - create tbody there too
+      tag when tag in ["table", "template"] -> push_element(state, "tbody", %{})
+      _ -> state
+    end
   end
 
   defp ensure_tbody(state), do: state
-
-  defp do_ensure_tbody(%{tag: tag}, state) when tag in @table_sections, do: state
-  defp do_ensure_tbody(%{tag: "table"}, state), do: push_element(state, "tbody", %{})
-  # In template context, template is the table context boundary - create tbody there too
-  defp do_ensure_tbody(%{tag: "template"}, state), do: push_element(state, "tbody", %{})
-  defp do_ensure_tbody(_, state), do: state
-
-  @formatting_element_tags ~w(a b big code em font i nobr s small strike strong tt u)
 
   defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
     {new_stack, closed_refs, _stored_parent_ref} = do_close_table(stack, [], elements)
@@ -505,12 +458,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp pop_orphaned_formatting_element([top | rest] = stack, af, elements) do
     elem = elements[top]
-    is_formatting = elem && elem.tag in @formatting_element_tags
     in_af = Enum.any?(af, &match?({^top, _, _}, &1))
 
-    if is_formatting and not in_af do
-      # Formatting element was removed from AF - pop it so content
-      # after the table goes to the correct parent
+    # Pop formatting elements removed from AF so content after table goes to correct parent
+    if elem != nil and elem.tag in @formatting_element_tags and not in_af do
       {rest, List.first(rest)}
     else
       {stack, top}
@@ -538,32 +489,60 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Close select if in select scope (table/template/html are barriers)
-  defp close_select_in_scope(%{stack: stack, elements: elements} = state) do
-    case find_select_in_scope(stack, elements) do
-      {:found, new_stack, parent_ref} ->
-        {:ok, %{state | stack: new_stack, current_parent_ref: parent_ref}}
+  # Returns state unchanged if select not in scope
+  @select_scope_barriers ~w(table template html)
 
-      :not_found ->
-        :not_found
-    end
+  defp close_select_in_scope(%{stack: stack, elements: elements} = state) do
+    do_close_select_in_scope(stack, elements, state)
   end
 
-  @select_scope_barriers ~w(table template html)
-  defp find_select_in_scope([], _elements), do: :not_found
+  defp do_close_select_in_scope([], _elements, state), do: state
 
-  defp find_select_in_scope([ref | rest], elements) do
+  defp do_close_select_in_scope([ref | rest], elements, state) do
     case elements[ref] do
-      %{tag: "select", parent_ref: parent_ref} -> {:found, rest, parent_ref}
-      %{tag: tag} when tag in @select_scope_barriers -> :not_found
-      _ -> find_select_in_scope(rest, elements)
+      %{tag: "select", parent_ref: parent_ref} ->
+        %{state | stack: rest, current_parent_ref: parent_ref}
+
+      %{tag: tag} when tag in @select_scope_barriers ->
+        state
+
+      _ ->
+        do_close_select_in_scope(rest, elements, state)
     end
   end
 
   defp has_formatting_entry?(af, tag) do
-    Enum.any?(af, fn
-      {_, ^tag, _} -> true
-      _ -> false
-    end)
+    Enum.any?(af, &match?({_, ^tag, _}, &1))
+  end
+
+  # Handle duplicate formatting elements (<a> and <nobr>)
+  # Runs AA if duplicate exists, returns {state, old_ref}
+  defp handle_duplicate_formatting(state, af, tag) do
+    if tag in @adopt_on_duplicate and has_formatting_entry?(af, tag) do
+      state = AdoptionAgency.run(state, tag)
+      old_ref = find_formatting_ref(state.af, tag)
+      {state, old_ref}
+    else
+      {state, nil}
+    end
+  end
+
+  # Push formatting element with foster parenting reconstruction if needed
+  defp push_formatting_element(state, tag, attrs) do
+    state =
+      if needs_foster_parenting?(state) do
+        reconstruct_formatting_for_foster(state)
+      else
+        state
+      end
+
+    if needs_foster_parenting?(state) do
+      foster_parent(state, {:push, tag, attrs})
+    else
+      new_state = push_element(state, tag, attrs)
+      [new_ref | _] = new_state.stack
+      {new_state, new_ref}
+    end
   end
 
   # Close a foster-parented element of the same tag if it's the current node
@@ -584,23 +563,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Per HTML5 spec: after running AA for <a>/<nobr> in table context,
   # explicitly remove old element from AF and stack if AA didn't already
-  # (it might not have if the element is not in table scope)
-  defp remove_formatting_element_by_ref(%{af: af, stack: stack, elements: elements} = state, ref) do
-    new_af =
-      Enum.reject(af, fn
-        {^ref, _, _} -> true
-        _ -> false
-      end)
-
+  defp remove_formatting_element_by_ref(%{af: af, stack: stack} = state, ref) do
+    new_af = Enum.reject(af, &match?({^ref, _, _}, &1))
     new_stack = List.delete(stack, ref)
-
-    parent_ref =
-      case {new_stack, elements[ref]} do
-        {[^ref | _], %{parent_ref: pr}} -> pr
-        _ -> state.current_parent_ref
-      end
-
-    %{state | af: new_af, stack: new_stack, current_parent_ref: parent_ref}
+    %{state | af: new_af, stack: new_stack}
   end
 
   defp find_formatting_ref(af, tag) do
@@ -613,16 +579,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Reconstruct active formatting elements for foster parenting
   # Creates clones of formatting elements and foster-parents them
   defp reconstruct_formatting_for_foster(%{stack: stack, af: af} = state) do
-    # Get entries to reconstruct (formatting elements not on stack)
     entries =
       af
       |> Enum.take_while(&(&1 != :marker))
       |> Enum.reverse()
-      |> Enum.filter(fn {ref, _tag, _attrs} ->
-        not Enum.any?(stack, &(&1 == ref))
-      end)
+      |> Enum.filter(fn {ref, _tag, _attrs} -> ref not in stack end)
 
-    # Reconstruct each entry with foster parenting
     reconstruct_entries_foster(entries, state)
   end
 
