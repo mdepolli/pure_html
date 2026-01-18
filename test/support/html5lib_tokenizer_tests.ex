@@ -25,7 +25,12 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     |> Enum.map(&Path.join(@test_dir, &1))
   end
 
-  @doc "Parses a test file and returns a list of raw test maps."
+  @doc """
+  Parses a test file and returns {tests, xml_violation_mode?}.
+
+  The xml_violation_mode? flag is true when the JSON uses "xmlViolationTests"
+  key instead of "tests", indicating XML infoset coercion should be applied.
+  """
   def parse_file(path) do
     path
     |> File.read!()
@@ -33,9 +38,9 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     |> extract_tests()
   end
 
-  defp extract_tests(%{"tests" => tests}), do: tests
-  defp extract_tests(%{"xmlViolationTests" => tests}), do: tests
-  defp extract_tests(_), do: []
+  defp extract_tests(%{"tests" => tests}), do: {tests, false}
+  defp extract_tests(%{"xmlViolationTests" => tests}), do: {tests, true}
+  defp extract_tests(_), do: {[], false}
 
   @doc """
   Normalizes a raw test map into a structured format.

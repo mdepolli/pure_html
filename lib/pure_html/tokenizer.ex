@@ -61,7 +61,9 @@ defmodule PureHTML.Tokenizer do
     # Tree builder feedback: is adjusted current node NOT in HTML namespace?
     # When true, <![CDATA[ is parsed as CDATA section
     # When false (default), <![CDATA[ is treated as bogus comment
-    adjusted_current_node_not_in_html_namespace: false
+    adjusted_current_node_not_in_html_namespace: false,
+    # XML infoset coercion mode - applies transformations for XML compatibility
+    xml_violation_mode: false
   ]
 
   # Guards
@@ -108,6 +110,7 @@ defmodule PureHTML.Tokenizer do
   def new(input, opts \\ []) when is_binary(input) do
     initial_state = Keyword.get(opts, :initial_state, :data)
     last_start_tag = Keyword.get(opts, :last_start_tag, nil)
+    xml_violation_mode = Keyword.get(opts, :xml_violation_mode, false)
 
     # Normalize newlines per HTML5 spec: CRLF → LF, CR → LF
     normalized_input = normalize_newlines(input)
@@ -123,7 +126,8 @@ defmodule PureHTML.Tokenizer do
       last_start_tag: last_start_tag,
       errors: [],
       pending_chars: [],
-      deferred_token: nil
+      deferred_token: nil,
+      xml_violation_mode: xml_violation_mode
     }
   end
 
@@ -190,7 +194,7 @@ defmodule PureHTML.Tokenizer do
   def next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
       when s in @eof_flush_states do
     # Flush pending chars at EOF
-    {flush_pending(pending), %{state | pending_chars: []}}
+    {flush_pending(pending, state.xml_violation_mode), %{state | pending_chars: []}}
   end
 
   def next_token(%__MODULE__{} = state) do
@@ -203,11 +207,14 @@ defmodule PureHTML.Tokenizer do
         # Flush pending chars before emitting non-char token
         case new_state.pending_chars do
           [] ->
-            {token, new_state}
+            {maybe_coerce_token(token, new_state.xml_violation_mode), new_state}
 
           pending ->
             # Emit chars now, defer the non-char token
-            {flush_pending(pending), %{new_state | pending_chars: [], deferred_token: token}}
+            deferred = maybe_coerce_token(token, new_state.xml_violation_mode)
+
+            {flush_pending(pending, new_state.xml_violation_mode),
+             %{new_state | pending_chars: [], deferred_token: deferred}}
         end
 
       {:continue, new_state} ->
@@ -217,13 +224,36 @@ defmodule PureHTML.Tokenizer do
         nil
 
       nil ->
-        {flush_pending(state.pending_chars), %{state | pending_chars: []}}
+        {flush_pending(state.pending_chars, state.xml_violation_mode),
+         %{state | pending_chars: []}}
     end
   end
 
-  defp flush_pending(pending) do
-    {:character, pending |> Enum.reverse() |> IO.iodata_to_binary()}
+  defp flush_pending(pending, xml_violation_mode) do
+    chars =
+      pending
+      |> Enum.reverse()
+      |> IO.iodata_to_binary()
+
+    chars = if xml_violation_mode, do: coerce_chars_for_xml(chars), else: chars
+    {:character, chars}
   end
+
+  # XML infoset coercion for characters:
+  # - U+FFFF (noncharacter) → U+FFFD (replacement character)
+  # - U+000C (form feed) → space
+  defp coerce_chars_for_xml(chars) do
+    chars
+    |> String.replace(<<0xFFFF::utf8>>, <<0xFFFD::utf8>>)
+    |> String.replace(<<0x000C>>, " ")
+  end
+
+  # XML infoset coercion for comments: "--" → "- -"
+  defp maybe_coerce_token({:comment, data}, true) do
+    {:comment, String.replace(data, "--", "- -")}
+  end
+
+  defp maybe_coerce_token(token, _xml_violation_mode), do: token
 
   # --------------------------------------------------------------------------
   # State machine

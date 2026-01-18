@@ -15,9 +15,10 @@ defmodule PureHTML.Html5libTokenizerTest do
 
   for path <- H5.list_test_files() do
     filename = Path.basename(path, ".test")
+    {tests, xml_violation_mode} = H5.parse_file(path)
 
     describe filename do
-      for {test, index} <- Enum.with_index(H5.parse_file(path)) do
+      for {test, index} <- Enum.with_index(tests) do
         normalized = H5.normalize_test(test)
         description = normalized.description || "test #{index}"
 
@@ -32,8 +33,9 @@ defmodule PureHTML.Html5libTokenizerTest do
             test "##{index}: #{description} (#{initial_state})" do
               normalized = unquote(Macro.escape(normalized))
               state_atom = unquote(state_atom)
+              xml_violation_mode = unquote(xml_violation_mode)
 
-              opts = [initial_state: state_atom]
+              opts = [initial_state: state_atom, xml_violation_mode: xml_violation_mode]
 
               opts =
                 if normalized.last_start_tag do
