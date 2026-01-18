@@ -298,8 +298,20 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
           end
 
         if needs_foster_parenting?(state) do
-          # Foster parent the new element
-          {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
+          # Reconstruct AF before foster parenting (creates clones in foster parent)
+          state = reconstruct_formatting_for_foster(state)
+
+          # After reconstruction, check if we're still in foster parenting context
+          {new_state, new_ref} =
+            if needs_foster_parenting?(state) do
+              foster_parent(state, {:push, tag, attrs})
+            else
+              # Reconstructed elements took us out of foster parent context
+              new_state = push_element(state, tag, attrs)
+              [new_ref | _] = new_state.stack
+              {new_state, new_ref}
+            end
+
           new_af = [{new_ref, tag, attrs} | new_state.af]
           new_state = %{new_state | af: new_af}
 
