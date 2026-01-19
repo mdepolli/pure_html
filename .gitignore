@@ -25,5 +25,9 @@ fprof.trace
 # Ignore package tarball (built via "mix hex.build").
 pure_html-*.tar
 
-# Claude Code instructions
+# Elixir LS
+.expert
+
+# Claude Code
+.claude/
 CLAUDE.md
