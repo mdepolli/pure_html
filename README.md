@@ -51,6 +51,35 @@ PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
 # => "<html><head></head><body><p>Hello</p></body></html>"
 ```
 
+## Querying
+
+Find elements using CSS selectors.
+
+```elixir
+html = PureHTML.parse("<div><p class='intro'>Hello</p><p>World</p></div>")
+
+# Find by tag
+PureHTML.query(html, "p")
+# => [{"p", [{"class", "intro"}], ["Hello"]}, {"p", [], ["World"]}]
+
+# Find by class
+PureHTML.query(html, ".intro")
+# => [{"p", [{"class", "intro"}], ["Hello"]}]
+
+# Compound selectors
+PureHTML.query(html, "p.intro")
+# => [{"p", [{"class", "intro"}], ["Hello"]}]
+
+# Attribute selectors
+html = PureHTML.parse("<a href='https://example.com'>Link</a>")
+PureHTML.query(html, "[href^=https]")
+# => [{"a", [{"href", "https://example.com"}], ["Link"]}]
+```
+
+Supported: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=val]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`, selector lists (`.a, .b`).
+
+See the [Querying Guide](guides/querying.md) for complete documentation.
+
 ## License
 
 Copyright 2026 (c) Marcelo De Polli.
