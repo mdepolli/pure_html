@@ -7,7 +7,7 @@
 
 ## Before Committing
 
-Always run `mix format` before committing changes.
+Always run `mix format` and `mix credo --strict` before committing changes.
 
 ## Running HTML5lib Tree Construction Tests
 
@@ -34,17 +34,3 @@ Tests are defined in `.dat` files under `test/html5lib-tests/tree-construction/`
 - `#document`: Expected tree output
 - Optional `#document-fragment`: Context element for fragment parsing
 - Optional `#script-off`/`#script-on`: Scripting mode
-
-## html5lib Test Coverage
-
-| Category          | Tests | Running |
-| ----------------- | ----- | ------- |
-| Tokenizer         | 7,036 | 7,036   |
-| Tree construction | 1,695 | 1,476   |
-| Encoding          | 82    | 82      |
-| Serializer        | 230   | 40      |
-| **Total**         | **9,043** | **8,634** |
-
-**Skipped tests:**
-- Tree construction: 192 fragment parsing + 27 script-off = 219 skipped
-- Serializer: 181 optionaltags + 9 injectmeta = 190 skipped (require optional tag omission)
