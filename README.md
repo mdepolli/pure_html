@@ -10,14 +10,14 @@ PureHTML has **zero dependencies**. It's pure Elixir code all the way down.
 
 - **Just install**: No C extensions or system libraries required. Works anywhere Elixir runs.
 - **Debuggable**: Step through the parser with IEx to understand exactly how your HTML is being parsed.
-- **Familiar output**: Returns `{tag, attrs, children}` tuples similar to other Elixir HTML libraries.
+- **Floki-compatible output**: Returns `{tag, attrs, children}` tuples with attributes as lists, matching [Floki](https://hex.pm/packages/floki)'s format.
 
 ### Correct
 
 PureHTML implements the [WHATWG HTML5 specification](https://html.spec.whatwg.org/multipage/parsing.html). It handles all the complex error-recovery rules that browsers use.
 
 - **Spec compliant**: Implements the full HTML5 tree construction algorithm including adoption agency, foster parenting, and foreign content (SVG/MathML).
-- **Tested against html5lib**: Validated against the official [html5lib-tests](https://github.com/html5lib/html5lib-tests) suite used by browser vendors.
+- **100% html5lib compliance**: Passes all 8,634 tests from the official [html5lib-tests](https://github.com/html5lib/html5lib-tests) suite used by browser vendors.
 
 ### Fast Enough
 
@@ -40,11 +40,15 @@ end
 ```elixir
 # Parse HTML into a document tree
 PureHTML.parse("<p class='intro'>Hello!</p>")
-# => [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{"class" => "intro"}, ["Hello!"]}]}]}]
+# => [{"html", [], [{"head", [], []}, {"body", [], [{"p", [{"class", "intro"}], ["Hello!"]}]}]}]
 
 # Works with malformed HTML just like browsers do
 PureHTML.parse("<p>One<p>Two")
-# => [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{}, ["One"]}, {"p", %{}, ["Two"]}]}]}]
+# => [{"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["One"]}, {"p", [], ["Two"]}]}]}]
+
+# Convert back to HTML
+PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
+# => "<html><head></head><body><p>Hello</p></body></html>"
 ```
 
 ## License
