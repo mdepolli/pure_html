@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Serializer options for customizable HTML output (`:print_attributes`, `:escape_comment`, `:escape_empty`)
+- `xml_violation_mode` for XML infoset coercion in tokenizer
+- All tokenizer initial states enabled in test harness
 - All 23 HTML5 insertion modes implemented:
   - `initial`, `before_html`, `before_head`, `in_head`, `in_head_noscript`
   - `after_head`, `in_body`, `text`, `in_table`, `in_table_text`
@@ -33,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Simplified `in_table.ex` with guard clauses and reduced helpers
+- Consolidated `foreign_namespace` helper in helpers.ex
 - Refactored tree builder to ref-only stack architecture
   - Stack holds only refs: `[ref, ref, ref]`
   - Elements map holds all data: `ref => %{tag, attrs, children, parent_ref}`
@@ -44,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Active formatting reconstruction before foster-parenting formatting elements in table context
+- Frameset/noframes mode transitions
+- Ruby nesting edge cases
+- Table handling in `foreignObject`
+- Multiple tree construction edge cases
 - Original mode preservation for style/script in table context
 - `</li>` now only closes when `li` is in list item scope (ul/ol are barriers)
 - `<head>` in body mode is now properly ignored
@@ -75,6 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Current Status
 
-- 8 test failures remaining out of 1476 tests (99.5% passing)
-- All failures are assertion failures (tree structure mismatches), no crashes
-- Remaining work: edge cases in adoption agency, ruby handling, frameset/noframes
+- **All 8,634 html5lib tests passing (100%)**
+  - Tokenizer: 7,036 tests
+  - Tree construction: 1,476 tests
+  - Encoding: 82 tests
+  - Serializer: 40 tests
