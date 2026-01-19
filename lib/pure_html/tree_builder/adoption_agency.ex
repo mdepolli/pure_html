@@ -177,94 +177,33 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
          fe_stack_idx,
          fb_idx
        ) do
-    # Common ancestor = element immediately before FE in stack
-    # BUT: if FE was foster parented, use its actual parent_ref instead
-    # (foster_parent_ref is the table, parent_ref is the table's parent where FE was inserted)
-    fe_elem = elements[fe_ref]
-
-    is_foster_parented =
-      is_map_key(elements, fe_ref) and
-        is_map_key(fe_elem, :foster_parent_ref) and
-        fe_elem.foster_parent_ref != nil
-
-    # If FE was foster-parented, use its parent_ref (body) as common ancestor
-    # and propagate the foster_parent_ref to clones created in inner loop
     {common_ancestor_ref, clone_foster_parent_ref} =
-      if is_foster_parented do
-        {fe_elem.parent_ref, fe_elem.foster_parent_ref}
-      else
-        {Enum.at(stack, fe_stack_idx + 1), nil}
-      end
+      get_common_ancestor(elements, fe_ref, stack, fe_stack_idx)
 
     fb_ref = Enum.at(stack, fb_idx)
 
     # Run inner loop (processes nodes between FB and FE)
-    {state, last_node_ref, bookmark} =
-      inner_loop(
-        state,
-        fe_ref,
-        fb_idx,
-        fb_ref,
-        fb_ref,
-        common_ancestor_ref,
-        clone_foster_parent_ref,
-        af_idx,
-        0
-      )
+    ctx = %{
+      fe_ref: fe_ref,
+      fb_ref: fb_ref,
+      common_ancestor_ref: common_ancestor_ref,
+      clone_foster_parent_ref: clone_foster_parent_ref
+    }
+
+    {state, last_node_ref, bookmark} = inner_loop(state, ctx, fb_idx, fb_ref, af_idx, 0)
 
     # Insert last_node at common ancestor (foster-aware)
     new_elements = reparent_node_foster_aware(state.elements, last_node_ref, common_ancestor_ref)
 
-    # Create new element for formatting element
-    new_fe = new_element(fe_tag, fe_attrs, fb_ref)
-    new_elements = Map.put(new_elements, new_fe.ref, new_fe)
+    # Create new element for formatting element and move FB's children
+    {new_fe, new_elements} =
+      create_new_fe_with_fb_children(new_elements, fe_tag, fe_attrs, fb_ref)
 
-    # Move FB's children to new FE
-    fb_elem = new_elements[fb_ref]
+    # Update AF and stack
+    new_af = update_af_with_new_fe(state.af, fe_ref, new_fe.ref, fe_tag, fe_attrs, bookmark)
+    new_stack = update_stack_with_new_fe(state.stack, fe_ref, new_fe.ref, fb_ref)
 
-    new_elements =
-      new_elements
-      |> Map.update!(new_fe.ref, &%{&1 | children: fb_elem.children})
-      |> Map.put(fb_ref, %{fb_elem | children: [new_fe.ref]})
-      |> update_children_parent_refs(fb_elem.children, new_fe.ref)
-
-    # Update AF: remove old FE (by ref, not index - inner loop may have changed indices)
-    # Then insert new FE at bookmark position
-    current_af_idx = Enum.find_index(state.af, fn {ref, _, _} -> ref == fe_ref end)
-
-    adjusted_bookmark =
-      if current_af_idx && current_af_idx < bookmark, do: bookmark - 1, else: bookmark
-
-    new_af =
-      if current_af_idx do
-        state.af
-        |> List.delete_at(current_af_idx)
-        |> List.insert_at(adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
-      else
-        # FE was already removed from AF (shouldn't happen normally)
-        List.insert_at(state.af, adjusted_bookmark, {new_fe.ref, fe_tag, fe_attrs})
-      end
-
-    # Update stack: remove FE, insert new FE below FB
-    fe_current_idx = Enum.find_index(state.stack, &(&1 == fe_ref))
-    fb_current_idx = Enum.find_index(state.stack, &(&1 == fb_ref))
-
-    new_stack =
-      if fe_current_idx do
-        state.stack
-        |> List.delete_at(fe_current_idx)
-        |> List.insert_at(fb_current_idx, new_fe.ref)
-      else
-        List.insert_at(state.stack, fb_current_idx + 1, new_fe.ref)
-      end
-
-    # Update current_parent_ref to new stack top (not element's parent_ref)
-    # This handles foster-parented elements correctly
-    new_parent_ref =
-      case new_stack do
-        [top_ref | _] -> top_ref
-        [] -> nil
-      end
+    new_parent_ref = List.first(new_stack)
 
     %{
       state
@@ -273,6 +212,69 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
         elements: new_elements,
         current_parent_ref: new_parent_ref
     }
+  end
+
+  # Get common ancestor, handling foster-parented formatting elements
+  defp get_common_ancestor(elements, fe_ref, stack, fe_stack_idx) do
+    fe_elem = elements[fe_ref]
+
+    is_foster_parented =
+      is_map_key(elements, fe_ref) and
+        is_map_key(fe_elem, :foster_parent_ref) and
+        fe_elem.foster_parent_ref != nil
+
+    if is_foster_parented do
+      {fe_elem.parent_ref, fe_elem.foster_parent_ref}
+    else
+      {Enum.at(stack, fe_stack_idx + 1), nil}
+    end
+  end
+
+  # Create new formatting element and move FB's children to it
+  defp create_new_fe_with_fb_children(elements, fe_tag, fe_attrs, fb_ref) do
+    new_fe = new_element(fe_tag, fe_attrs, fb_ref)
+    elements = Map.put(elements, new_fe.ref, new_fe)
+    fb_elem = elements[fb_ref]
+
+    elements =
+      elements
+      |> Map.update!(new_fe.ref, &%{&1 | children: fb_elem.children})
+      |> Map.put(fb_ref, %{fb_elem | children: [new_fe.ref]})
+      |> update_children_parent_refs(fb_elem.children, new_fe.ref)
+
+    {new_fe, elements}
+  end
+
+  # Update AF: remove old FE and insert new FE at bookmark position
+  defp update_af_with_new_fe(af, fe_ref, new_fe_ref, fe_tag, fe_attrs, bookmark) do
+    current_af_idx = Enum.find_index(af, fn {ref, _, _} -> ref == fe_ref end)
+
+    adjusted_bookmark =
+      if current_af_idx && current_af_idx < bookmark, do: bookmark - 1, else: bookmark
+
+    new_entry = {new_fe_ref, fe_tag, fe_attrs}
+
+    if current_af_idx do
+      af
+      |> List.delete_at(current_af_idx)
+      |> List.insert_at(adjusted_bookmark, new_entry)
+    else
+      List.insert_at(af, adjusted_bookmark, new_entry)
+    end
+  end
+
+  # Update stack: remove old FE and insert new FE below FB
+  defp update_stack_with_new_fe(stack, fe_ref, new_fe_ref, fb_ref) do
+    fe_current_idx = Enum.find_index(stack, &(&1 == fe_ref))
+    fb_current_idx = Enum.find_index(stack, &(&1 == fb_ref))
+
+    if fe_current_idx do
+      stack
+      |> List.delete_at(fe_current_idx)
+      |> List.insert_at(fb_current_idx, new_fe_ref)
+    else
+      List.insert_at(stack, fb_current_idx + 1, new_fe_ref)
+    end
   end
 
   # --------------------------------------------------------------------------
@@ -284,91 +286,79 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   # 13.7+ Otherwise create new element and reparent
   # --------------------------------------------------------------------------
 
-  defp inner_loop(
-         %{stack: stack, af: af, elements: elements} = state,
-         fe_ref,
-         node_idx,
-         last_node_ref,
-         fb_ref,
-         common_ancestor_ref,
-         clone_foster_parent_ref,
-         bookmark,
-         counter
-       ) do
+  # Inner loop context keys: fe_ref, fb_ref, common_ancestor_ref, clone_foster_parent_ref
+
+  defp inner_loop(state, ctx, node_idx, last_node_ref, bookmark, counter) do
+    %{stack: stack, af: af} = state
     # 13.4: Increment counter at start of each iteration
     counter = counter + 1
     next_node_idx = node_idx + 1
     node_ref = Enum.at(stack, next_node_idx)
 
-    cond do
+    if node_ref == ctx.fe_ref or node_ref == nil do
       # Reached the formatting element or past it - done
-      node_ref == fe_ref or node_ref == nil ->
-        {state, last_node_ref, bookmark}
+      {state, last_node_ref, bookmark}
+    else
+      af_entry = find_af_entry_by_ref(af, node_ref)
 
-      true ->
-        af_entry = find_af_entry_by_ref(af, node_ref)
+      # 13.5: If counter > 3 and node in AF, remove from AF
+      {af, af_entry} = maybe_remove_from_af(af, af_entry, counter)
 
-        # 13.5: If counter > 3 and node in AF, remove from AF
-        {af, af_entry} =
-          if counter > 3 and af_entry != nil do
-            {node_af_idx, _} = af_entry
-            {List.delete_at(af, node_af_idx), nil}
-          else
-            {af, af_entry}
-          end
-
-        # 13.6: If node not in AF, remove from stack and continue
-        if af_entry == nil do
+      # 13.6: If node not in AF, remove from stack and continue
+      case af_entry do
+        nil ->
           new_stack = List.delete_at(stack, next_node_idx)
 
           inner_loop(
             %{state | stack: new_stack, af: af},
-            fe_ref,
+            ctx,
             node_idx,
             last_node_ref,
-            fb_ref,
-            common_ancestor_ref,
-            clone_foster_parent_ref,
             bookmark,
             counter
           )
-        else
+
+        {_node_af_idx, {_, _node_tag, _node_attrs}} = af_entry ->
           # 13.7+: Node in AF - create new element, replace in AF, reparent
-          {node_af_idx, {_, node_tag, node_attrs}} = af_entry
+          {new_state, new_node_ref, new_bookmark} =
+            process_af_node(state, ctx, af, af_entry, next_node_idx, last_node_ref, bookmark)
 
-          new_node = new_element(node_tag, node_attrs, common_ancestor_ref)
-
-          # If we're in a foster-parenting context, mark the clone as foster-parented too
-          new_node =
-            if clone_foster_parent_ref do
-              Map.put(new_node, :foster_parent_ref, clone_foster_parent_ref)
-            else
-              new_node
-            end
-
-          new_elements = Map.put(elements, new_node.ref, new_node)
-
-          new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
-          new_stack = List.replace_at(stack, next_node_idx, new_node.ref)
-
-          new_bookmark = if last_node_ref == fb_ref, do: node_af_idx + 1, else: bookmark
-
-          new_elements = reparent_node(new_elements, last_node_ref, new_node.ref)
-
-          inner_loop(
-            %{state | stack: new_stack, af: new_af, elements: new_elements},
-            fe_ref,
-            next_node_idx,
-            new_node.ref,
-            fb_ref,
-            common_ancestor_ref,
-            clone_foster_parent_ref,
-            new_bookmark,
-            counter
-          )
-        end
+          inner_loop(new_state, ctx, next_node_idx, new_node_ref, new_bookmark, counter)
+      end
     end
   end
+
+  defp maybe_remove_from_af(af, nil, _counter), do: {af, nil}
+
+  defp maybe_remove_from_af(af, af_entry, counter) when counter > 3 do
+    {node_af_idx, _} = af_entry
+    {List.delete_at(af, node_af_idx), nil}
+  end
+
+  defp maybe_remove_from_af(af, af_entry, _counter), do: {af, af_entry}
+
+  defp process_af_node(state, ctx, af, af_entry, next_node_idx, last_node_ref, bookmark) do
+    {node_af_idx, {_, node_tag, node_attrs}} = af_entry
+    %{stack: stack, elements: elements} = state
+
+    new_node = new_element(node_tag, node_attrs, ctx.common_ancestor_ref)
+
+    # If we're in a foster-parenting context, mark the clone as foster-parented too
+    new_node = maybe_add_foster_parent_ref(new_node, ctx.clone_foster_parent_ref)
+
+    new_elements = Map.put(elements, new_node.ref, new_node)
+    new_af = List.replace_at(af, node_af_idx, {new_node.ref, node_tag, node_attrs})
+    new_stack = List.replace_at(stack, next_node_idx, new_node.ref)
+
+    new_bookmark = if last_node_ref == ctx.fb_ref, do: node_af_idx + 1, else: bookmark
+
+    new_elements = reparent_node(new_elements, last_node_ref, new_node.ref)
+
+    {%{state | stack: new_stack, af: new_af, elements: new_elements}, new_node.ref, new_bookmark}
+  end
+
+  defp maybe_add_foster_parent_ref(node, nil), do: node
+  defp maybe_add_foster_parent_ref(node, ref), do: Map.put(node, :foster_parent_ref, ref)
 
   # --------------------------------------------------------------------------
   # Helper: Find AF entry by ref

@@ -42,6 +42,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       find_ref: 2
     ]
 
+  alias PureHTML.TreeBuilder.AdoptionAgency
+
   # Note: This module has its own foreign_namespace/1 that searches the entire
   # stack for any foreign element, unlike the shared helper which only checks
   # the top. This is needed for select mode's foreign content handling.
@@ -174,54 +176,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # Any other start tag: insert (browsers insert elements for compatibility)
   def process({:start_tag, tag, attrs, self_closing}, state) do
-    ns = foreign_namespace(state)
-
-    # HTML breakout tags should not get foreign namespace
-    ns = if ns && tag in @html_breakout_tags, do: nil, else: ns
-
-    # Close foreign content when hitting a breakout tag
-    state =
-      if ns == nil && foreign_namespace(state) do
-        close_foreign_content(state)
-      else
-        state
-      end
-
-    # Void elements are always treated as self-closing
-    is_void = tag in @void_elements
-
-    if self_closing or is_void do
-      child =
-        if ns do
-          {{ns, tag}, attrs, []}
-        else
-          {tag, attrs, []}
-        end
-
-      {:ok, add_child_to_stack(state, child)}
-    else
-      new_state =
-        if ns do
-          push_foreign_element(state, ns, tag, attrs)
-        else
-          push_element(state, tag, attrs)
-        end
-
-      # Add formatting elements to AF for later reconstruction
-      new_state =
-        if tag in @formatting_elements do
-          [new_ref | _] = new_state.stack
-          new_af = [{new_ref, tag, attrs} | new_state.af]
-          %{new_state | af: new_af}
-        else
-          new_state
-        end
-
-      {:ok, new_state}
-    end
+    {ns, state} = resolve_namespace_and_close_foreign(state, tag)
+    {:ok, insert_element_in_select(state, ns, tag, attrs, self_closing)}
   end
 
-  # End tag: optgroup
+  # End tag: optgroup (with parent context)
   def process({:end_tag, "optgroup"}, %{stack: [_, parent_ref | _], elements: elements} = state) do
     case {current_tag(state), elements[parent_ref].tag} do
       {"option", "optgroup"} ->
@@ -235,6 +194,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     end
   end
 
+  # End tag: optgroup (fallback)
   def process({:end_tag, "optgroup"}, state) do
     if current_tag(state) == "optgroup", do: {:ok, pop_element(state)}, else: {:ok, state}
   end
@@ -266,7 +226,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   def process({:end_tag, tag}, state) when tag in @formatting_elements do
     if formatting_element_in_select?(state, tag) do
       # Run adoption agency for formatting elements inside select
-      {:ok, PureHTML.TreeBuilder.AdoptionAgency.run(state, tag, &close_formatting_in_select/2)}
+      {:ok, AdoptionAgency.run(state, tag, &close_formatting_in_select/2)}
     else
       # Formatting element is outside select - ignore
       {:ok, state}
@@ -294,6 +254,50 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
+
+  # Resolve namespace for the tag and close foreign content if needed
+  defp resolve_namespace_and_close_foreign(state, tag) do
+    ns = foreign_namespace(state)
+    ns = if ns && tag in @html_breakout_tags, do: nil, else: ns
+
+    state =
+      if ns == nil && foreign_namespace(state), do: close_foreign_content(state), else: state
+
+    {ns, state}
+  end
+
+  # Insert element, handling void/self-closing vs regular elements
+  defp insert_element_in_select(state, ns, tag, attrs, self_closing) do
+    if self_closing or tag in @void_elements do
+      child = build_child_node(ns, tag, attrs)
+      add_child_to_stack(state, child)
+    else
+      push_element_in_select(state, ns, tag, attrs)
+    end
+  end
+
+  defp build_child_node(nil, tag, attrs), do: {tag, attrs, []}
+  defp build_child_node(ns, tag, attrs), do: {{ns, tag}, attrs, []}
+
+  defp push_element_in_select(state, nil, tag, attrs) do
+    state
+    |> push_element(tag, attrs)
+    |> maybe_add_formatting_entry(tag, attrs)
+  end
+
+  defp push_element_in_select(state, ns, tag, attrs) do
+    state
+    |> push_foreign_element(ns, tag, attrs)
+    |> maybe_add_formatting_entry(tag, attrs)
+  end
+
+  defp maybe_add_formatting_entry(state, tag, attrs) when tag in @formatting_elements do
+    [new_ref | _] = state.stack
+    new_af = [{new_ref, tag, attrs} | state.af]
+    %{state | af: new_af}
+  end
+
+  defp maybe_add_formatting_entry(state, _tag, _attrs), do: state
 
   # Close current option if on top of stack
   defp close_current_option(state) do

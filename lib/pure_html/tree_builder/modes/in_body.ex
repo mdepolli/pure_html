@@ -301,6 +301,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_tag_ref(state, tag)}
   end
 
+  # Error tokens - ignore
+  def process({:error, _}, state), do: {:ok, state}
+
   # --------------------------------------------------------------------------
   # Start tags
   # --------------------------------------------------------------------------
@@ -362,46 +365,61 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   def process({:start_tag, tag, attrs, self_closing}, state) do
     tag = correct_tag(tag)
     ns = foreign_namespace(state)
-
-    state =
-      cond do
-        # mglyph/malignmark stay in MathML namespace even at text integration points
-        tag in ~w(mglyph malignmark) and mathml_text_integration_point?(state) ->
-          do_push_foreign_element(state, :math, tag, attrs, self_closing)
-
-        # Table element at integration point in table context: close foreign content
-        # and foster-parent (e.g., <table> inside foreignObject inside a table)
-        # Only applies to "table" tag, not other HTML breakout tags which should stay
-        # inside the integration point
-        tag == "table" and html_integration_point?(state) and
-            has_table_ancestor_for_foster?(state) ->
-          state = close_foreign_content(state)
-          {state, _ref} = foster_parent(state, {:push, tag, attrs})
-          state |> push_mode(:in_table) |> set_frameset_not_ok()
-
-        is_nil(ns) or html_integration_point?(state) ->
-          do_process_html_start_tag(tag, attrs, self_closing, state)
-
-        html_breakout_tag?(tag) ->
-          state = close_foreign_content(state)
-          # After breaking out of foreign content, check if we need foster parenting
-          # (e.g., when the foreign element was foster parented in a table context)
-          if needs_foster_parenting?(state) do
-            {state, _ref} = foster_parent(state, {:push, tag, attrs})
-            state
-          else
-            do_process_html_start_tag(tag, attrs, self_closing, state)
-          end
-
-        true ->
-          do_push_foreign_element(state, ns, tag, attrs, self_closing)
-      end
-
+    state = dispatch_start_tag(state, ns, tag, attrs, self_closing)
     {:ok, state}
   end
 
-  # Error tokens - ignore
-  def process({:error, _}, state), do: {:ok, state}
+  # Dispatch start tag to the appropriate handler based on namespace and context
+  defp dispatch_start_tag(state, _ns, tag, attrs, self_closing)
+       when tag in ~w(mglyph malignmark) do
+    # mglyph/malignmark stay in MathML namespace even at text integration points
+    if mathml_text_integration_point?(state) do
+      do_push_foreign_element(state, :math, tag, attrs, self_closing)
+    else
+      dispatch_start_tag_default(state, foreign_namespace(state), tag, attrs, self_closing)
+    end
+  end
+
+  defp dispatch_start_tag(state, ns, tag, attrs, self_closing) do
+    cond do
+      tag == "table" and html_integration_point?(state) and has_table_ancestor_for_foster?(state) ->
+        handle_table_at_integration_point(state, tag, attrs)
+
+      is_nil(ns) or html_integration_point?(state) ->
+        do_process_html_start_tag(tag, attrs, self_closing, state)
+
+      html_breakout_tag?(tag) ->
+        handle_html_breakout_tag(state, tag, attrs, self_closing)
+
+      true ->
+        do_push_foreign_element(state, ns, tag, attrs, self_closing)
+    end
+  end
+
+  defp dispatch_start_tag_default(state, nil, tag, attrs, self_closing) do
+    do_process_html_start_tag(tag, attrs, self_closing, state)
+  end
+
+  defp dispatch_start_tag_default(state, ns, tag, attrs, self_closing) do
+    do_push_foreign_element(state, ns, tag, attrs, self_closing)
+  end
+
+  defp handle_table_at_integration_point(state, tag, attrs) do
+    state = close_foreign_content(state)
+    {state, _ref} = foster_parent(state, {:push, tag, attrs})
+    state |> push_mode(:in_table) |> set_frameset_not_ok()
+  end
+
+  defp handle_html_breakout_tag(state, tag, attrs, self_closing) do
+    state = close_foreign_content(state)
+
+    if needs_foster_parenting?(state) do
+      {state, _ref} = foster_parent(state, {:push, tag, attrs})
+      state
+    else
+      do_process_html_start_tag(tag, attrs, self_closing, state)
+    end
+  end
 
   # Helper for end tags that break out of foreign content
   defp do_process_end_tag({:end_tag, "p"}, state) do
@@ -1722,14 +1740,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     # Clear form_element pointer
     state = %{state | form_element: nil}
 
-    # If form is not in the stack, ignore
-    if form_ref not in stack do
-      state
-    else
-      # Generate implied end tags, then remove form from stack
+    # If form is in the stack, generate implied end tags and remove it
+    if form_ref in stack do
       state
       |> generate_implied_end_tags()
       |> remove_from_stack(form_ref)
+    else
+      state
     end
   end
 

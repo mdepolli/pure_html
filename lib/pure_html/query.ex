@@ -102,14 +102,14 @@ defmodule PureHTML.Query do
     if include_text do
       children
     else
-      Enum.filter(children, &is_element?/1)
+      Enum.filter(children, &element?/1)
     end
   end
 
-  defp is_element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
+  defp element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
 
-  defp is_element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
+  defp element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
     do: true
 
-  defp is_element?(_), do: false
+  defp element?(_), do: false
 end

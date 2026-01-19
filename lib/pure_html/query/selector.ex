@@ -30,19 +30,19 @@ defmodule PureHTML.Query.Selector do
   """
   @spec match?(term(), t()) :: boolean()
   def match?(node, %__MODULE__{} = selector) do
-    is_element?(node) and
+    element?(node) and
       type_matches?(node, selector.type) and
       id_matches?(node, selector.id) and
       classes_match?(node, selector.classes) and
       attributes_match?(node, selector.attributes)
   end
 
-  defp is_element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
+  defp element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
 
-  defp is_element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
+  defp element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
     do: true
 
-  defp is_element?(_), do: false
+  defp element?(_), do: false
 
   defp type_matches?(_node, nil), do: true
   defp type_matches?(_node, "*"), do: true

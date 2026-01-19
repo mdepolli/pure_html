@@ -81,12 +81,10 @@ defmodule PureHTML.Serializer do
         text
       end
 
-    cond do
-      context in @raw_text_elements and not escape_rcdata ->
-        text
-
-      true ->
-        escape_text(text)
+    if context in @raw_text_elements and not escape_rcdata do
+      text
+    else
+      escape_text(text)
     end
   end
 
@@ -146,41 +144,31 @@ defmodule PureHTML.Serializer do
     minimize = Keyword.get(opts, :minimize_boolean_attributes, true)
     escape_lt = Keyword.get(opts, :escape_lt_in_attrs, false)
 
+    case determine_quote_style(name, value, quote_char, minimize) do
+      :empty_quoted -> [name, "=\"\""]
+      :minimized -> name
+      :single -> [name, "='", escape_attr_single(value, escape_lt), "'"]
+      :double -> [name, "=\"", escape_attr_double(value, escape_lt), "\""]
+      :unquoted -> [name, "=", value]
+    end
+  end
+
+  defp determine_quote_style(_name, "", _quote_char, false), do: :empty_quoted
+  defp determine_quote_style(_name, "", _quote_char, _minimize), do: :minimized
+  defp determine_quote_style(name, name, _quote_char, true), do: :minimized
+  defp determine_quote_style(_name, _value, "'", _minimize), do: :single
+  defp determine_quote_style(_name, _value, "\"", _minimize), do: :double
+
+  defp determine_quote_style(_name, value, _quote_char, _minimize) do
     cond do
-      # Empty value with minimize=false - use empty quotes
-      value == "" and minimize == false ->
-        [name, "=\"\""]
-
-      # Empty value with minimize=true (default) - just the attribute name
-      value == "" ->
-        name
-
-      # Value equals name (boolean attribute like disabled=disabled)
-      minimize and value == name ->
-        name
-
-      # Forced quote char
-      quote_char == "'" ->
-        escaped = escape_attr_single(value, escape_lt)
-        [name, "='", escaped, "'"]
-
-      quote_char == "\"" ->
-        escaped = escape_attr_double(value, escape_lt)
-        [name, "=\"", escaped, "\""]
-
-      # Smart quoting: unquoted if safe chars only
       Regex.match?(@unquoted_attr_regex, value) ->
-        [name, "=", value]
+        :unquoted
 
-      # Single quotes: contains " but not '
       String.contains?(value, "\"") and not String.contains?(value, "'") ->
-        escaped = escape_attr_single(value, escape_lt)
-        [name, "='", escaped, "'"]
+        :single
 
-      # Double quotes: default (contains ' or both or neither)
       true ->
-        escaped = escape_attr_double(value, escape_lt)
-        [name, "=\"", escaped, "\""]
+        :double
     end
   end
 
