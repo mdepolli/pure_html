@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CSS selector querying with `query/2` and `children/2` functions
+  - Tag selectors: `div`, `p`, `a`
+  - Universal selector: `*`
+  - Class selectors: `.class`, `.foo.bar`
+  - ID selectors: `#id`
+  - Attribute selectors: `[attr]`, `[attr=val]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`
+  - Compound selectors: `div.class#id[attr]`
+  - Selector lists: `.a, .b`
 - `get_attr/3` helper for retrieving attribute values from lists
 - `merge_attr_lists/2` helper for merging attribute lists (preserves existing values)
 - Serializer options for customizable HTML output (`:print_attributes`, `:escape_comment`, `:escape_empty`)
