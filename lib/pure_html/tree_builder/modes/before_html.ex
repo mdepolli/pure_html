@@ -34,7 +34,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   # Non-whitespace at start - insert html and reprocess
   def process({:character, text}, state) do
-    {:reprocess_with, insert_html(state, %{}), {:character, text}}
+    {:reprocess_with, insert_html(state, []), {:character, text}}
   end
 
   def process({:comment, _text}, state) do
@@ -55,7 +55,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - create implied <html> and reprocess
-    {:reprocess, insert_html(state, %{})}
+    {:reprocess, insert_html(state, [])}
   end
 
   def process({:end_tag, _tag}, state) do
@@ -65,7 +65,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   def process(_token, state) do
     # Anything else: create implied <html>, switch to before_head, reprocess
-    {:reprocess, insert_html(state, %{})}
+    {:reprocess, insert_html(state, [])}
   end
 
   # Insert html element and switch to before_head mode

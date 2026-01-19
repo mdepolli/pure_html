@@ -30,8 +30,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       foreign_namespace: 1,
       in_scope?: 3,
       needs_foster_parenting?: 1,
+      merge_attr_lists: 2,
       merge_html_attrs: 2,
-      update_af_entry: 3
+      reject_refs_from_af: 2,
+      update_af_entry: 3,
+      get_attr: 2
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -407,12 +410,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         {:ok, new_state}
 
       :not_found ->
-        {:ok, add_child_to_stack(state, {"p", %{}, []})}
+        {:ok, add_child_to_stack(state, {"p", [], []})}
     end
   end
 
   defp do_process_end_tag({:end_tag, "br"}, state) do
-    element = {"br", %{}, []}
+    element = {"br", [], []}
 
     state =
       state
@@ -864,7 +867,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   }
 
   defp adjust_foreign_attributes(ns, attrs) do
-    Map.new(attrs, fn {key, value} ->
+    Enum.map(attrs, fn {key, value} ->
       {adjust_attr_key(ns, key), value}
     end)
   end
@@ -941,7 +944,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         true
 
       {:math, "annotation-xml"} ->
-        case elem.attrs["encoding"] do
+        case get_attr(elem.attrs, "encoding") do
           nil -> false
           enc -> String.downcase(enc) in @html_integration_encodings
         end
@@ -992,7 +995,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       # MathML HTML integration point (with proper encoding)
       {:math, "annotation-xml"} ->
-        if html_integration_encoding?(elem.attrs["encoding"]) do
+        if html_integration_encoding?(get_attr(elem.attrs, "encoding")) do
           {stack, ref}
         else
           pop_foreign_elements(rest, elements)
@@ -1016,7 +1019,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp ensure_html(%{stack: []} = state) do
     # Create html element and add to elements map
-    elem = new_element("html", %{}, nil)
+    elem = new_element("html", [], nil)
     elements = Map.put(state.elements, elem.ref, elem)
 
     %{
@@ -1042,7 +1045,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
           state
         else
           state
-          |> push_element("head", %{})
+          |> push_element("head", [])
           |> set_mode(:in_head)
         end
 
@@ -1080,7 +1083,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
           state
         else
           state
-          |> push_element("body", %{})
+          |> push_element("body", [])
           |> set_mode(:in_body)
         end
 
@@ -1174,7 +1177,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
            find_ref_in_children(elements[html_ref].children, elements, "head") do
       %{state | stack: [head_ref | stack], current_parent_ref: head_ref}
     else
-      _ -> push_element(state, "head", %{})
+      _ -> push_element(state, "head", [])
     end
   end
 
@@ -1187,7 +1190,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
       body_ref ->
         body_elem = elements[body_ref]
-        merged_attrs = Map.merge(new_attrs, body_elem.attrs)
+        merged_attrs = merge_attr_lists(new_attrs, body_elem.attrs)
         %{state | elements: Map.put(elements, body_ref, %{body_elem | attrs: merged_attrs})}
     end
   end
@@ -1399,7 +1402,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp ensure_tbody(state) do
     case current_tag(state) do
-      "table" -> push_element(state, "tbody", %{})
+      "table" -> push_element(state, "tbody", [])
       tag when tag in @table_sections -> state
       "tr" -> state
       _ -> state
@@ -1409,7 +1412,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp ensure_tr(state) do
     case current_tag(state) do
       tag when tag in @table_sections ->
-        push_element(state, "tr", %{})
+        push_element(state, "tr", [])
 
       "tr" ->
         state
@@ -1418,7 +1421,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         elem = current_element(state)
 
         if has_table_row_structure?(state, elem.children) do
-          push_element(state, "tr", %{})
+          push_element(state, "tr", [])
         else
           state
         end
@@ -1440,7 +1443,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp ensure_colgroup(state) do
     case current_tag(state) do
       "colgroup" -> state
-      "table" -> push_element(state, "colgroup", %{})
+      "table" -> push_element(state, "colgroup", [])
       tag when tag in @colgroup_close_tags -> state |> pop_element() |> ensure_colgroup()
       _ -> state
     end
@@ -1519,14 +1522,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @ruby_close_boundaries ~w(ruby table template body html)
 
   # Per HTML5 spec, option/optgroup only close if current node matches (not stack search)
-  defp maybe_close_same(state, "option") do
-    if current_tag(state) == "option", do: pop_element(state), else: state
-  end
+  defp maybe_close_same(state, "option"), do: pop_if_current_tag(state, "option")
 
   defp maybe_close_same(state, "optgroup") do
     state
-    |> then(fn s -> if current_tag(s) == "option", do: pop_element(s), else: s end)
-    |> then(fn s -> if current_tag(s) == "optgroup", do: pop_element(s), else: s end)
+    |> pop_if_current_tag("option")
+    |> pop_if_current_tag("optgroup")
   end
 
   defp maybe_close_same(%{stack: stack, elements: elements} = state, tag) do
@@ -2045,13 +2046,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> Enum.drop(1)
   end
 
-  defp reject_refs_from_af(af, refs) do
-    Enum.reject(af, fn
-      :marker -> false
-      {ref, _, _} -> MapSet.member?(refs, ref)
-    end)
-  end
-
   defp find_formatting_entry(af, tag) do
     af
     |> Enum.with_index()
@@ -2066,5 +2060,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       {_, ^tag, _} -> true
       _ -> false
     end)
+  end
+
+  # Pop element if current tag matches target
+  defp pop_if_current_tag(state, tag) do
+    if current_tag(state) == tag, do: pop_element(state), else: state
   end
 end

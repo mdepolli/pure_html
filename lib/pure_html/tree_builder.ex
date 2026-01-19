@@ -20,7 +20,7 @@ defmodule PureHTML.TreeBuilder do
 
   ## Output
 
-  Final output: {tag, attrs, children} tuples (attrs are maps, not lists like Floki)
+  Final output: {tag, attrs, children} tuples (attrs are lists of {name, value} tuples)
   """
 
   import PureHTML.TreeBuilder.Helpers,
@@ -38,7 +38,7 @@ defmodule PureHTML.TreeBuilder do
 
   @typedoc "Document node: element tuple, comment, or text."
   @type document_node ::
-          {State.tag_name(), %{String.t() => String.t()}, [document_node()]}
+          {State.tag_name(), [{String.t(), String.t()}], [document_node()]}
           | {:comment, String.t()}
           | {:content, [document_node()]}
           | String.t()
@@ -74,14 +74,14 @@ defmodule PureHTML.TreeBuilder do
     Fields:
     - `ref` - unique reference for this element
     - `tag` - tag name (string or {namespace, name} tuple)
-    - `attrs` - element attributes as a map
+    - `attrs` - element attributes as a list of {name, value} tuples
     - `children` - list of children (refs, text strings, comments, or tuples)
     - `parent_ref` - reference to parent element (nil for root)
     """
     @type element :: %{
             ref: element_ref(),
             tag: tag_name(),
-            attrs: %{String.t() => String.t()},
+            attrs: [{String.t(), String.t()}],
             children: [child()],
             parent_ref: element_ref() | nil
           }
@@ -90,7 +90,7 @@ defmodule PureHTML.TreeBuilder do
     @type child :: element_ref() | String.t() | {:comment, String.t()} | output_node()
 
     @typedoc "Output node format: {tag, attrs, children} tuple."
-    @type output_node :: {tag_name(), %{String.t() => String.t()}, [output_node() | String.t()]}
+    @type output_node :: {tag_name(), [{String.t(), String.t()}], [output_node() | String.t()]}
 
     @typedoc """
     HTML5 insertion mode.
@@ -129,7 +129,7 @@ defmodule PureHTML.TreeBuilder do
     Either a marker (for scope boundaries like applet, object, etc.) or a tuple
     containing the element ref, tag name, and attributes for reconstruction.
     """
-    @type af_entry :: :marker | {element_ref(), String.t(), %{String.t() => String.t()}}
+    @type af_entry :: :marker | {element_ref(), String.t(), [{String.t(), String.t()}]}
 
     @typedoc "The tree builder state."
     @type t :: %__MODULE__{
@@ -437,7 +437,7 @@ defmodule PureHTML.TreeBuilder do
       |> convert_to_tuples()
     else
       # No html element - create minimal structure
-      {"html", %{}, [{"head", %{}, []}, {"body", %{}, []}]}
+      {"html", [], [{"head", [], []}, {"body", [], []}]}
     end
   end
 
@@ -511,7 +511,7 @@ defmodule PureHTML.TreeBuilder do
           _ -> false
         end)
 
-      head = %{tag: "head", attrs: %{}, children: []}
+      head = %{tag: "head", attrs: [], children: []}
       %{html | children: leading_comments ++ [head | rest]}
     end
   end
@@ -529,7 +529,7 @@ defmodule PureHTML.TreeBuilder do
     if has_body_or_frameset? do
       html
     else
-      %{html | children: children ++ [%{tag: "body", attrs: %{}, children: []}]}
+      %{html | children: children ++ [%{tag: "body", attrs: [], children: []}]}
     end
   end
 
@@ -620,7 +620,7 @@ defmodule PureHTML.TreeBuilder do
   defp get_option_content(options) do
     # Find option with selected attribute, or use first option
     selected =
-      Enum.find(options, fn %{attrs: attrs} -> Map.has_key?(attrs, "selected") end)
+      Enum.find(options, fn %{attrs: attrs} -> List.keymember?(attrs, "selected", 0) end)
 
     option = selected || hd(options)
     option.children
@@ -651,18 +651,21 @@ defmodule PureHTML.TreeBuilder do
 
   # Template elements wrap children in :content tuple
   defp convert_to_tuples(%{tag: "template", attrs: attrs, children: children}) do
-    {"template", attrs, [{:content, convert_children(children)}]}
+    {"template", sort_attrs(attrs), [{:content, convert_children(children)}]}
   end
 
   # Map elements convert to tuples, preserving namespace if present
   defp convert_to_tuples(%{tag: tag, attrs: attrs, children: children}) do
-    {tag, attrs, convert_children(children)}
+    {tag, sort_attrs(attrs), convert_children(children)}
   end
 
   # Already-converted tuples just need children converted
   defp convert_to_tuples({tag, attrs, children}) do
-    {tag, attrs, convert_children(children)}
+    {tag, sort_attrs(attrs), convert_children(children)}
   end
 
   defp convert_children(children), do: Enum.map(children, &convert_to_tuples/1)
+
+  # Sort attributes alphabetically for deterministic output
+  defp sort_attrs(attrs), do: Enum.sort(attrs)
 end

@@ -35,7 +35,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   # Non-whitespace at start - insert head and reprocess
   def process({:character, text}, state) do
-    {:reprocess_with, insert_head(state, %{}), {:character, text}}
+    {:reprocess_with, insert_head(state, []), {:character, text}}
   end
 
   def process({:comment, text}, state) do
@@ -50,7 +50,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules - insert implied head first, then reprocess
-    {:reprocess, insert_head(state, %{})}
+    {:reprocess, insert_head(state, [])}
   end
 
   def process({:start_tag, "head", attrs, _self_closing}, state) do
@@ -60,7 +60,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - insert implied head and reprocess
-    {:reprocess, insert_head(state, %{})}
+    {:reprocess, insert_head(state, [])}
   end
 
   def process({:end_tag, _tag}, state) do
@@ -70,7 +70,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process(_token, state) do
     # Anything else: insert implied <head>, switch to "in head", reprocess
-    {:reprocess, insert_head(state, %{})}
+    {:reprocess, insert_head(state, [])}
   end
 
   # Insert head element, set head_element pointer, and switch to in_head mode

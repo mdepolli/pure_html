@@ -35,13 +35,13 @@ defmodule PureHTML.Serializer do
 
   ## Examples
 
-      iex> PureHTML.Serializer.serialize([{"p", %{}, ["Hello"]}])
+      iex> PureHTML.Serializer.serialize([{"p", [], ["Hello"]}])
       "<p>Hello</p>"
 
-      iex> PureHTML.Serializer.serialize([{"br", %{}, []}])
+      iex> PureHTML.Serializer.serialize([{"br", [], []}])
       "<br>"
 
-      iex> PureHTML.Serializer.serialize([{"br", %{}, []}], use_trailing_solidus: true)
+      iex> PureHTML.Serializer.serialize([{"br", [], []}], use_trailing_solidus: true)
       "<br />"
 
   """
@@ -117,7 +117,7 @@ defmodule PureHTML.Serializer do
     end
   end
 
-  defp serialize_opening_tag(tag, attrs, opts) when map_size(attrs) == 0 do
+  defp serialize_opening_tag(tag, attrs, opts) when attrs == [] do
     if tag in @void_elements and Keyword.get(opts, :use_trailing_solidus, false) do
       ["<", tag, " />"]
     else

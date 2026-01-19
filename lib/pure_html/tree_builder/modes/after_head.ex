@@ -136,7 +136,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   # First reset current_parent_ref to top of stack in case it's stale
   defp insert_implied_body(%{stack: [top_ref | _]} = state) do
     %{state | current_parent_ref: top_ref}
-    |> push_element("body", %{})
+    |> push_element("body", [])
     |> set_mode(:in_body)
   end
 

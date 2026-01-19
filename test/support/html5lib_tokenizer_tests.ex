@@ -79,11 +79,16 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   end
 
   defp normalize_token(["StartTag", name, attrs], _) do
-    {:start_tag, name, attrs, false}
+    normalize_start_tag(name, attrs, false)
   end
 
   defp normalize_token(["StartTag", name, attrs, self_closing], _) do
-    {:start_tag, name, attrs, self_closing}
+    normalize_start_tag(name, attrs, self_closing)
+  end
+
+  defp normalize_start_tag(name, attrs, self_closing) do
+    attrs_list = attrs |> Map.to_list() |> Enum.sort()
+    {:start_tag, name, attrs_list, self_closing}
   end
 
   defp normalize_token(["EndTag", name], _) do

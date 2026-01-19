@@ -48,6 +48,7 @@ defmodule PureHTML.Html5libTokenizerTest do
                 normalized.input
                 |> Tokenizer.tokenize(opts)
                 |> Enum.to_list()
+                |> Enum.map(&normalize_token_attrs/1)
 
               assert actual == normalized.expected_tokens
             end
@@ -56,4 +57,11 @@ defmodule PureHTML.Html5libTokenizerTest do
       end
     end
   end
+
+  # Sort attrs in start tags for deterministic comparison
+  defp normalize_token_attrs({:start_tag, name, attrs, sc}) do
+    {:start_tag, name, Enum.sort(attrs), sc}
+  end
+
+  defp normalize_token_attrs(other), do: other
 end

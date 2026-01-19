@@ -93,30 +93,12 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   def process({:start_tag, tag, attrs, _self_closing}, state)
       when tag in @raw_text_elements do
     # Insert element, switch to text mode (RAWTEXT)
-    # Preserve original_mode if already set (e.g., from frameset context)
-    state =
-      state
-      |> push_element(tag, attrs)
-      |> then(fn s ->
-        if s.original_mode, do: s, else: %{s | original_mode: :in_head}
-      end)
-      |> Map.put(:mode, :text)
-
-    {:ok, state}
+    {:ok, switch_to_text_mode(state, tag, attrs)}
   end
 
   def process({:start_tag, "script", attrs, _self_closing}, state) do
     # Insert script element, switch to text mode
-    # Preserve original_mode if already set (e.g., from table context)
-    state =
-      state
-      |> push_element("script", attrs)
-      |> then(fn s ->
-        if s.original_mode, do: s, else: %{s | original_mode: :in_head}
-      end)
-      |> Map.put(:mode, :text)
-
-    {:ok, state}
+    {:ok, switch_to_text_mode(state, "script", attrs)}
   end
 
   def process({:start_tag, "template", _attrs, _self_closing}, state) do
@@ -165,5 +147,12 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   defp pop_head_if_current(state) do
     if current_tag(state) == "head", do: pop_element(state), else: state
+  end
+
+  # Switch to text mode, preserving original_mode if already set
+  defp switch_to_text_mode(state, tag, attrs) do
+    state = push_element(state, tag, attrs)
+    original = state.original_mode || :in_head
+    %{state | original_mode: original, mode: :text}
   end
 end

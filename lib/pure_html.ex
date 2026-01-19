@@ -11,16 +11,18 @@ defmodule PureHTML do
   Returns a list of nodes where each node is one of:
   - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration (if present, always first)
   - `{:comment, text}` - HTML comment
-  - `{tag, attrs, children}` - Element with tag name, attributes map, and child nodes
+  - `{tag, attrs, children}` - Element with tag name, attributes list, and child nodes
   - `text` - Text content (binary)
+
+  Attributes are represented as a list of `{name, value}` tuples, sorted alphabetically.
 
   ## Examples
 
       iex> PureHTML.parse("<p>Hello</p>")
-      [{"html", %{}, [{"head", %{}, []}, {"body", %{}, [{"p", %{}, ["Hello"]}]}]}]
+      [{"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["Hello"]}]}]}]
 
       iex> PureHTML.parse("<!DOCTYPE html><html></html>")
-      [{:doctype, "html", nil, nil}, {"html", %{}, [{"head", %{}, []}, {"body", %{}, []}]}]
+      [{:doctype, "html", nil, nil}, {"html", [], [{"head", [], []}, {"body", [], []}]}]
 
   """
   def parse(html) when is_binary(html) do
@@ -46,10 +48,10 @@ defmodule PureHTML do
       iex> PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
       "<html><head></head><body><p>Hello</p></body></html>"
 
-      iex> PureHTML.to_html([{"div", %{"class" => "foo"}, ["text"]}])
+      iex> PureHTML.to_html([{"div", [{"class", "foo"}], ["text"]}])
       "<div class=foo>text</div>"
 
-      iex> PureHTML.to_html([{"br", %{}, []}], use_trailing_solidus: true)
+      iex> PureHTML.to_html([{"br", [], []}], use_trailing_solidus: true)
       "<br />"
 
   """

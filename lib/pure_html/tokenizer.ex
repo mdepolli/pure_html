@@ -9,7 +9,7 @@ defmodule PureHTML.Tokenizer do
   ## Usage
 
       iex> PureHTML.Tokenizer.tokenize("<p>Hello</p>") |> Enum.to_list()
-      [{:start_tag, "p", %{}, false}, {:character, "Hello"}, {:end_tag, "p"}]
+      [{:start_tag, "p", [], false}, {:character, "Hello"}, {:end_tag, "p"}]
 
   ## Token Types
 
@@ -28,7 +28,7 @@ defmodule PureHTML.Tokenizer do
 
   @type token ::
           {:doctype, String.t() | nil, String.t() | nil, String.t() | nil, boolean()}
-          | {:start_tag, String.t(), map(), boolean()}
+          | {:start_tag, String.t(), [{String.t(), String.t()}], boolean()}
           | {:end_tag, String.t()}
           | {:comment, String.t()}
           | {:character, String.t()}
@@ -836,7 +836,7 @@ defmodule PureHTML.Tokenizer do
     continue(state,
       state: :tag_name,
       input: <<c, rest::binary>>,
-      token: {:start_tag, "", %{}, false}
+      token: {:start_tag, "", [], false}
     )
   end
 
@@ -2270,8 +2270,8 @@ defmodule PureHTML.Tokenizer do
        ) do
     # Add the attribute to the token (only if name is non-empty and not duplicate)
     attrs =
-      if attr_name != "" and not Map.has_key?(attrs, attr_name) do
-        Map.put(attrs, attr_name, attr_value)
+      if attr_name != "" and not List.keymember?(attrs, attr_name, 0) do
+        [{attr_name, attr_value} | attrs]
       else
         attrs
       end

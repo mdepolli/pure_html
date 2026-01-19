@@ -37,7 +37,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Creates a new HTML element with the given tag and attributes.
   """
-  def new_element(tag, attrs \\ %{}, parent_ref \\ nil) do
+  def new_element(tag, attrs \\ [], parent_ref \\ nil) do
     %{ref: make_ref(), tag: tag, attrs: attrs, children: [], parent_ref: parent_ref}
   end
 
@@ -675,6 +675,30 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # --------------------------------------------------------------------------
 
   @doc """
+  Gets an attribute value from an attribute list.
+
+  Returns the value if the attribute is found, or the default if not.
+
+  ## Examples
+
+      iex> get_attr([{"type", "hidden"}, {"name", "foo"}], "type")
+      "hidden"
+
+      iex> get_attr([{"name", "foo"}], "type")
+      nil
+
+      iex> get_attr([{"name", "foo"}], "type", "text")
+      "text"
+
+  """
+  def get_attr(attrs, key, default \\ nil) do
+    case List.keyfind(attrs, key, 0) do
+      nil -> default
+      {_, val} -> val
+    end
+  end
+
+  @doc """
   Corrects certain tag names (e.g., "image" -> "img").
   """
   def correct_tag("image"), do: "img"
@@ -708,7 +732,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Merges new attributes into the html element, preserving existing attrs.
   Used when processing <html> start tags in various modes.
   """
-  def merge_html_attrs(state, new_attrs) when new_attrs == %{}, do: state
+  def merge_html_attrs(state, new_attrs) when new_attrs == [], do: state
 
   def merge_html_attrs(%{elements: elements} = state, new_attrs) do
     case find_ref(state, "html") do
@@ -717,9 +741,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
       html_ref ->
         html_elem = elements[html_ref]
-        merged = Map.merge(new_attrs, html_elem.attrs)
+        merged = merge_attr_lists(new_attrs, html_elem.attrs)
         %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
     end
+  end
+
+  @doc """
+  Merges new attrs into existing attrs, preserving existing values.
+  New attrs are only added if the key doesn't already exist.
+  """
+  def merge_attr_lists(new_attrs, existing_attrs) do
+    Enum.reduce(new_attrs, existing_attrs, fn {k, v}, acc ->
+      if List.keymember?(acc, k, 0), do: acc, else: [{k, v} | acc]
+    end)
   end
 
   # Tags that trigger foster parenting context

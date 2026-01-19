@@ -77,7 +77,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
     state =
       state
       |> clear_to_table_body_context()
-      |> push_element("tr", %{})
+      |> push_element("tr", [])
       |> set_mode(:in_row)
 
     {:reprocess, state}

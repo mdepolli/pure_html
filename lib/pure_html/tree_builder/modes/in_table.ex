@@ -42,7 +42,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       foster_parent: 2,
       reject_refs_from_af: 2,
       needs_foster_parenting?: 1,
-      update_af_entry: 3
+      update_af_entry: 3,
+      get_attr: 3
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -185,7 +186,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Start tag: input - check for type=hidden
   defp process_in_table({:start_tag, "input", attrs, _}, state) do
-    type = Map.get(attrs, "type", "") |> String.downcase()
+    type = attrs |> get_attr("type", "") |> String.downcase()
 
     if type == "hidden" do
       # Insert directly, no foster parenting
@@ -272,7 +273,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # </br> special case: foster parent a <br> element (per HTML5 spec, </br> is treated as <br>)
   defp process_in_table({:end_tag, "br"}, state) do
-    {new_state, _} = foster_parent(state, {:element, {"br", %{}, []}})
+    {new_state, _} = foster_parent(state, {:element, {"br", [], []}})
     {:ok, new_state}
   end
 
@@ -291,7 +292,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       InBody.process({:end_tag, "p"}, state)
     else
       # Foster parent an empty p element
-      {new_state, _} = foster_parent(state, {:element, {"p", %{}, []}})
+      {new_state, _} = foster_parent(state, {:element, {"p", [], []}})
       {:ok, new_state}
     end
   end
@@ -416,7 +417,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp ensure_colgroup(%{stack: [ref | _], elements: elements} = state) do
     case elements[ref].tag do
       "colgroup" -> state
-      "table" -> push_element(state, "colgroup", %{})
+      "table" -> push_element(state, "colgroup", [])
       _ -> state
     end
   end
@@ -427,7 +428,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     case elements[ref].tag do
       tag when tag in @table_sections -> state
       # In template context, template is the table context boundary - create tbody there too
-      tag when tag in ["table", "template"] -> push_element(state, "tbody", %{})
+      tag when tag in ["table", "template"] -> push_element(state, "tbody", [])
       _ -> state
     end
   end

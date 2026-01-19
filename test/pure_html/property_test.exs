@@ -38,7 +38,7 @@ defmodule PureHTML.PropertyTest do
     end
   end
 
-  defp valid_node?({tag, attrs, children}) when is_binary(tag) and is_map(attrs) do
+  defp valid_node?({tag, attrs, children}) when is_binary(tag) and is_list(attrs) do
     is_list(children) and Enum.all?(children, &valid_node?/1)
   end
 
