@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_attr/3` helper for retrieving attribute values from lists
+- `merge_attr_lists/2` helper for merging attribute lists (preserves existing values)
 - Serializer options for customizable HTML output (`:print_attributes`, `:escape_comment`, `:escape_empty`)
 - `xml_violation_mode` for XML infoset coercion in tokenizer
 - All tokenizer initial states enabled in test harness
@@ -36,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING**: Attributes now use list of tuples instead of maps for Floki compatibility
+  - Before: `{"p", %{"class" => "foo"}, ["Hi"]}`
+  - After: `{"p", [{"class", "foo"}], ["Hi"]}`
+  - Attributes are sorted alphabetically for deterministic output
 - Simplified `in_table.ex` with guard clauses and reduced helpers
 - Consolidated `foreign_namespace` helper in helpers.ex
 - Refactored tree builder to ref-only stack architecture
