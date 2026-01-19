@@ -40,7 +40,11 @@ Tests are defined in `.dat` files under `test/html5lib-tests/tree-construction/`
 | Category          | Tests | Running |
 | ----------------- | ----- | ------- |
 | Tokenizer         | 7,036 | 7,036   |
-| Tree construction | 1,778 | 1,476   |
-| Encoding          | 82    | 0       |
-| Serializer        | 230   | 0       |
-| **Total**         | **9,126** | **8,512** |
+| Tree construction | 1,695 | 1,476   |
+| Encoding          | 82    | 82      |
+| Serializer        | 230   | 40      |
+| **Total**         | **9,043** | **8,634** |
+
+**Skipped tests:**
+- Tree construction: 192 fragment parsing + 27 script-off = 219 skipped
+- Serializer: 181 optionaltags + 9 injectmeta = 190 skipped (require optional tag omission)

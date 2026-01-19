@@ -6,7 +6,7 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   - "input": list of tokens to serialize
   - "expected": list of acceptable output strings
   - "xhtml": optional XHTML-mode expected output (ignored)
-  - "options": optional serializer options (ignored for now)
+  - "options": optional serializer options
 
   Token formats:
   - ["StartTag", namespace, tag, attrs_list] - start tag
@@ -18,6 +18,16 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   """
 
   @test_dir Path.expand("../html5lib-tests/serializer", __DIR__)
+
+  @void_elements ~w(area base basefont bgsound br col embed hr img input
+                    keygen link meta param source track wbr)
+
+  @raw_text_elements ~w(script style xmp iframe noembed noframes plaintext)
+
+  @whitespace_preserving ~w(pre textarea script style)
+
+  # Characters that require quoting in attribute values
+  @unquoted_attr_regex ~r/^[^ \t\n\r\f"'=>`]+$/
 
   @doc "Returns the path to the serializer test directory."
   def test_dir, do: @test_dir
@@ -58,212 +68,253 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   end
 
   @doc """
-  Converts html5lib tokens to our serializer input format.
+  Serializes tokens with context awareness and options support.
 
-  Since our serializer works with a tree structure but html5lib tests
-  use token streams, we need to handle this conversion carefully.
-
-  For simple cases, we can convert tokens to nodes directly.
-  For complex cases (like unclosed tags), we serialize tokens individually.
+  Options (from html5lib test format):
+  - "quote_char" - force single (') or double (") quotes for attributes
+  - "minimize_boolean_attributes" - output `disabled` vs `disabled=disabled`
+  - "use_trailing_solidus" - output `<br />` vs `<br>`
+  - "escape_lt_in_attrs" - escape `<` in attribute values
+  - "escape_rcdata" - escape content in script/style
+  - "strip_whitespace" - collapse whitespace in text nodes
   """
-  def tokens_to_nodes(tokens) do
-    tokens_to_nodes(tokens, [])
+  def serialize_tokens_with_context(tokens, options \\ %{}) do
+    # Context is a stack of ancestor tags to track raw text and whitespace preservation
+    serialize_tokens_with_context(tokens, [], options, [])
   end
 
-  defp tokens_to_nodes([], acc), do: Enum.reverse(acc)
-
-  # Characters -> text string
-  defp tokens_to_nodes([["Characters", text] | rest], acc) do
-    tokens_to_nodes(rest, [text | acc])
-  end
-
-  # Comment
-  defp tokens_to_nodes([["Comment", text] | rest], acc) do
-    tokens_to_nodes(rest, [{:comment, text} | acc])
-  end
-
-  # Doctype with just name
-  defp tokens_to_nodes([["Doctype", name] | rest], acc) do
-    tokens_to_nodes(rest, [{:doctype, name, nil, nil} | acc])
-  end
-
-  # Doctype with public identifier only
-  defp tokens_to_nodes([["Doctype", name, public_id] | rest], acc) do
-    tokens_to_nodes(rest, [{:doctype, name, public_id, nil} | acc])
-  end
-
-  # Doctype with public and system identifiers
-  defp tokens_to_nodes([["Doctype", name, public_id, system_id] | rest], acc) do
-    tokens_to_nodes(rest, [{:doctype, name, public_id, system_id} | acc])
-  end
-
-  # EmptyTag (void element, legacy format with map attrs)
-  defp tokens_to_nodes([["EmptyTag", tag, attrs] | rest], acc) when is_map(attrs) do
-    node = {tag, attrs, []}
-    tokens_to_nodes(rest, [node | acc])
-  end
-
-  # EmptyTag with list attrs
-  defp tokens_to_nodes([["EmptyTag", tag, attrs] | rest], acc) when is_list(attrs) do
-    node = {tag, normalize_attrs(attrs), []}
-    tokens_to_nodes(rest, [node | acc])
-  end
-
-  # StartTag followed by Characters (for raw text elements like script)
-  defp tokens_to_nodes(
-         [["StartTag", _ns, tag, attrs], ["Characters", text] | rest],
-         acc
-       )
-       when tag in ~w(script style) do
-    node = {tag, normalize_attrs(attrs), [text]}
-    tokens_to_nodes(rest, [node | acc])
-  end
-
-  # StartTag without matching EndTag (serialize as unclosed element)
-  defp tokens_to_nodes([["StartTag", _ns, tag, attrs] | rest], acc) do
-    # For tests that just check start tag serialization, we create an element
-    # and mark it specially so the serializer knows to omit the end tag
-    node = {:start_tag_only, tag, normalize_attrs(attrs)}
-    tokens_to_nodes(rest, [node | acc])
-  end
-
-  # EndTag (standalone)
-  defp tokens_to_nodes([["EndTag", _ns, tag] | rest], acc) do
-    node = {:end_tag_only, tag}
-    tokens_to_nodes(rest, [node | acc])
-  end
-
-  # Normalize attrs from list of {namespace, name, value} maps to simple map
-  defp normalize_attrs(attrs) when is_list(attrs) do
-    attrs
-    |> Enum.map(fn attr ->
-      name = attr["name"]
-      value = attr["value"]
-      {name, value}
-    end)
-    |> Map.new()
-  end
-
-  defp normalize_attrs(attrs) when is_map(attrs), do: attrs
-
-  @doc """
-  Serializes tokens directly for html5lib test compatibility.
-
-  This handles the token stream format that html5lib tests use,
-  including partial structures like unclosed tags.
-  """
-  def serialize_tokens(tokens) do
-    tokens
-    |> Enum.map(&serialize_token/1)
+  defp serialize_tokens_with_context([], _context_stack, _opts, acc) do
+    acc
+    |> Enum.reverse()
     |> IO.iodata_to_binary()
   end
 
-  defp serialize_token(["Characters", text]) do
-    escape_text(text)
+  defp serialize_tokens_with_context(
+         [["Characters", text] | rest],
+         context_stack,
+         opts,
+         acc
+       ) do
+    escape_rcdata = Map.get(opts, "escape_rcdata", false)
+    strip_whitespace = Map.get(opts, "strip_whitespace", false)
+
+    # Check if any ancestor is whitespace-preserving
+    preserve_whitespace = Enum.any?(context_stack, &(&1 in @whitespace_preserving))
+
+    # Check if immediate parent is raw text element
+    raw_text_context = List.first(context_stack) in @raw_text_elements
+
+    text =
+      if strip_whitespace and not preserve_whitespace do
+        strip_ws(text)
+      else
+        text
+      end
+
+    serialized =
+      cond do
+        raw_text_context and not escape_rcdata ->
+          text
+
+        true ->
+          escape_text(text)
+      end
+
+    serialize_tokens_with_context(rest, context_stack, opts, [serialized | acc])
   end
 
-  defp serialize_token(["Comment", text]) do
-    ["<!--", text, "-->"]
+  defp serialize_tokens_with_context(
+         [["StartTag", _ns, tag, attrs] | rest],
+         context_stack,
+         opts,
+         acc
+       ) do
+    serialized = serialize_start_tag(tag, attrs, opts)
+    serialize_tokens_with_context(rest, [tag | context_stack], opts, [serialized | acc])
   end
 
-  defp serialize_token(["Doctype", name]) do
-    ["<!DOCTYPE ", name, ">"]
+  defp serialize_tokens_with_context(
+         [["EmptyTag", tag, attrs] | rest],
+         context_stack,
+         opts,
+         acc
+       ) do
+    serialized = serialize_start_tag(tag, attrs, opts)
+    # Empty tags don't add to context stack
+    serialize_tokens_with_context(rest, context_stack, opts, [serialized | acc])
   end
 
-  defp serialize_token(["Doctype", name, public_id]) do
-    ["<!DOCTYPE ", name, " PUBLIC \"", public_id, "\">"]
+  defp serialize_tokens_with_context(
+         [["EndTag", _ns, tag] | rest],
+         context_stack,
+         opts,
+         acc
+       ) do
+    # Pop from context stack (find and remove the matching tag)
+    new_stack = pop_tag(context_stack, tag)
+    serialize_tokens_with_context(rest, new_stack, opts, [["</", tag, ">"] | acc])
   end
 
-  defp serialize_token(["Doctype", name, public_id, system_id]) do
-    cond do
-      public_id == "" ->
-        ["<!DOCTYPE ", name, " SYSTEM \"", system_id, "\">"]
+  defp serialize_tokens_with_context([["Comment", text] | rest], context_stack, opts, acc) do
+    serialize_tokens_with_context(rest, context_stack, opts, [["<!--", text, "-->"] | acc])
+  end
 
-      true ->
-        ["<!DOCTYPE ", name, " PUBLIC \"", public_id, "\" \"", system_id, "\">"]
+  defp serialize_tokens_with_context([["Doctype", name] | rest], context_stack, opts, acc) do
+    serialize_tokens_with_context(rest, context_stack, opts, [["<!DOCTYPE ", name, ">"] | acc])
+  end
+
+  defp serialize_tokens_with_context(
+         [["Doctype", name, public_id] | rest],
+         context_stack,
+         opts,
+         acc
+       ) do
+    doctype = ["<!DOCTYPE ", name, " PUBLIC \"", public_id, "\">"]
+    serialize_tokens_with_context(rest, context_stack, opts, [doctype | acc])
+  end
+
+  defp serialize_tokens_with_context(
+         [["Doctype", name, public_id, system_id] | rest],
+         context_stack,
+         opts,
+         acc
+       ) do
+    doctype =
+      cond do
+        public_id == "" ->
+          ["<!DOCTYPE ", name, " SYSTEM \"", system_id, "\">"]
+
+        true ->
+          ["<!DOCTYPE ", name, " PUBLIC \"", public_id, "\" \"", system_id, "\">"]
+      end
+
+    serialize_tokens_with_context(rest, context_stack, opts, [doctype | acc])
+  end
+
+  # Pop a tag from the context stack (remove first occurrence)
+  defp pop_tag([], _tag), do: []
+  defp pop_tag([tag | rest], tag), do: rest
+  defp pop_tag([other | rest], tag), do: [other | pop_tag(rest, tag)]
+
+  defp serialize_start_tag(tag, attrs, opts) when is_map(attrs) and map_size(attrs) == 0 do
+    use_trailing_solidus = Map.get(opts, "use_trailing_solidus", false)
+
+    if use_trailing_solidus and tag in @void_elements do
+      ["<", tag, " />"]
+    else
+      ["<", tag, ">"]
     end
   end
 
-  defp serialize_token(["EmptyTag", tag, attrs]) do
-    serialize_start_tag(tag, attrs)
+  defp serialize_start_tag(tag, attrs, opts) when is_map(attrs) do
+    use_trailing_solidus = Map.get(opts, "use_trailing_solidus", false)
+    attr_str = serialize_attrs_map(attrs, opts)
+
+    if use_trailing_solidus and tag in @void_elements do
+      ["<", tag, " ", attr_str, " />"]
+    else
+      ["<", tag, " ", attr_str, ">"]
+    end
   end
 
-  defp serialize_token(["StartTag", _namespace, tag, attrs]) do
-    serialize_start_tag(tag, attrs)
+  defp serialize_start_tag(tag, attrs, opts) when is_list(attrs) and length(attrs) == 0 do
+    use_trailing_solidus = Map.get(opts, "use_trailing_solidus", false)
+
+    if use_trailing_solidus and tag in @void_elements do
+      ["<", tag, " />"]
+    else
+      ["<", tag, ">"]
+    end
   end
 
-  defp serialize_token(["EndTag", _namespace, tag]) do
-    ["</", tag, ">"]
+  defp serialize_start_tag(tag, attrs, opts) when is_list(attrs) do
+    use_trailing_solidus = Map.get(opts, "use_trailing_solidus", false)
+    attr_str = serialize_attrs_list(attrs, opts)
+
+    if use_trailing_solidus and tag in @void_elements do
+      ["<", tag, " ", attr_str, " />"]
+    else
+      ["<", tag, " ", attr_str, ">"]
+    end
   end
 
-  defp serialize_start_tag(tag, attrs) when is_map(attrs) and map_size(attrs) == 0 do
-    ["<", tag, ">"]
-  end
-
-  defp serialize_start_tag(tag, attrs) when is_map(attrs) do
-    attr_str = serialize_attrs_map(attrs)
-    ["<", tag, " ", attr_str, ">"]
-  end
-
-  defp serialize_start_tag(tag, attrs) when is_list(attrs) and length(attrs) == 0 do
-    ["<", tag, ">"]
-  end
-
-  defp serialize_start_tag(tag, attrs) when is_list(attrs) do
-    attr_str = serialize_attrs_list(attrs)
-    ["<", tag, " ", attr_str, ">"]
-  end
-
-  defp serialize_attrs_map(attrs) do
+  defp serialize_attrs_map(attrs, opts) do
     attrs
-    |> Enum.map(fn {name, value} -> serialize_attr(name, value) end)
+    |> Enum.map(fn {name, value} -> serialize_attr(name, value, opts) end)
     |> Enum.intersperse(" ")
   end
 
-  defp serialize_attrs_list(attrs) do
+  defp serialize_attrs_list(attrs, opts) do
     attrs
-    |> Enum.map(fn attr -> serialize_attr(attr["name"], attr["value"]) end)
+    |> Enum.map(fn attr -> serialize_attr(attr["name"], attr["value"], opts) end)
     |> Enum.intersperse(" ")
   end
 
-  # Characters that require quoting in attribute values
-  # Per html5lib tests:
-  # - < is allowed unquoted (browser will parse correctly)
-  # - > requires quoting
-  # - Only ASCII whitespace (space, tab, LF, CR, FF) requires quoting
-  # - Vertical tab (U+000B) is allowed unquoted
-  @unquoted_attr_regex ~r/^[^ \t\n\r\f"'=>`]+$/
+  defp serialize_attr(name, value, opts) do
+    quote_char = Map.get(opts, "quote_char")
+    minimize = Map.get(opts, "minimize_boolean_attributes", true)
+    escape_lt = Map.get(opts, "escape_lt_in_attrs", false)
 
-  defp serialize_attr(name, value) do
     cond do
-      # Empty value - just the attribute name
+      # Empty value with minimize=false - use empty quotes
+      value == "" and minimize == false ->
+        [name, "=\"\""]
+
+      # Empty value with minimize=true (default) - just the attribute name
       value == "" ->
         name
 
-      # Unquoted: safe chars only
+      # Value equals name (boolean attribute like disabled=disabled)
+      minimize and value == name ->
+        name
+
+      # Forced quote char
+      quote_char == "'" ->
+        escaped = escape_attr_single(value, escape_lt)
+        [name, "='", escaped, "'"]
+
+      quote_char == "\"" ->
+        escaped = escape_attr_double(value, escape_lt)
+        [name, "=\"", escaped, "\""]
+
+      # Smart quoting: unquoted if safe chars only
       Regex.match?(@unquoted_attr_regex, value) ->
         [name, "=", value]
 
       # Single quotes: contains " but not '
       String.contains?(value, "\"") and not String.contains?(value, "'") ->
-        escaped = escape_attr_single(value)
+        escaped = escape_attr_single(value, escape_lt)
         [name, "='", escaped, "'"]
 
-      # Double quotes: default
+      # Double quotes: default (contains ' or both or neither)
       true ->
-        escaped = escape_attr_double(value)
+        escaped = escape_attr_double(value, escape_lt)
         [name, "=\"", escaped, "\""]
     end
   end
 
-  defp escape_attr_single(value) do
-    String.replace(value, "&", "&amp;")
+  defp escape_attr_single(value, escape_lt) do
+    value = String.replace(value, "&", "&amp;")
+    value = String.replace(value, "'", "&#39;")
+
+    if escape_lt do
+      String.replace(value, "<", "&lt;")
+    else
+      value
+    end
   end
 
-  defp escape_attr_double(value) do
-    value
-    |> String.replace("&", "&amp;")
-    |> String.replace("\"", "&quot;")
+  defp escape_attr_double(value, escape_lt) do
+    value =
+      value
+      |> String.replace("&", "&amp;")
+      |> String.replace("\"", "&quot;")
+
+    if escape_lt do
+      String.replace(value, "<", "&lt;")
+    else
+      value
+    end
   end
 
   defp escape_text(text) do
@@ -273,43 +324,10 @@ defmodule PureHTML.Test.Html5libSerializerTests do
     |> String.replace(">", "&gt;")
   end
 
-  @doc """
-  Serializes tokens with context awareness for raw text elements.
-
-  When a StartTag for script/style is followed by Characters,
-  the characters should not be escaped.
-  """
-  def serialize_tokens_with_context(tokens) do
-    serialize_tokens_with_context(tokens, nil, [])
-  end
-
-  defp serialize_tokens_with_context([], _context, acc) do
-    acc
-    |> Enum.reverse()
-    |> IO.iodata_to_binary()
-  end
-
-  defp serialize_tokens_with_context(
-         [["Characters", text] | rest],
-         context,
-         acc
-       )
-       when context in ~w(script style xmp iframe noembed noframes plaintext) do
-    # Raw text element - don't escape
-    serialize_tokens_with_context(rest, context, [text | acc])
-  end
-
-  defp serialize_tokens_with_context([["Characters", text] | rest], _context, acc) do
-    serialize_tokens_with_context(rest, nil, [escape_text(text) | acc])
-  end
-
-  defp serialize_tokens_with_context([["StartTag", _ns, tag, attrs] | rest], _context, acc) do
-    serialized = serialize_start_tag(tag, attrs)
-    serialize_tokens_with_context(rest, tag, [serialized | acc])
-  end
-
-  defp serialize_tokens_with_context([token | rest], _context, acc) do
-    serialized = serialize_token(token)
-    serialize_tokens_with_context(rest, nil, [serialized | acc])
+  # Collapse whitespace: replace sequences of whitespace chars with single space
+  defp strip_ws(text) do
+    text
+    |> String.replace(~r/[\t\r\n\f]+/, " ")
+    |> String.replace(~r/  +/, " ")
   end
 end

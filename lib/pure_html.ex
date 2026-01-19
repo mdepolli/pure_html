@@ -32,6 +32,15 @@ defmodule PureHTML do
   @doc """
   Converts parsed HTML nodes back to an HTML string.
 
+  ## Options
+
+  - `:quote_char` - Force `"'"` or `"\""` for attribute quotes (default: smart quoting)
+  - `:minimize_boolean_attributes` - Output `disabled` vs `disabled=disabled` (default: true)
+  - `:use_trailing_solidus` - Output `<br />` vs `<br>` (default: false)
+  - `:escape_lt_in_attrs` - Escape `<` in attribute values (default: false)
+  - `:escape_rcdata` - Escape content in script/style (default: false)
+  - `:strip_whitespace` - Collapse whitespace in text nodes (default: false)
+
   ## Examples
 
       iex> PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
@@ -40,9 +49,12 @@ defmodule PureHTML do
       iex> PureHTML.to_html([{"div", %{"class" => "foo"}, ["text"]}])
       "<div class=foo>text</div>"
 
+      iex> PureHTML.to_html([{"br", %{}, []}], use_trailing_solidus: true)
+      "<br />"
+
   """
-  @spec to_html([term()]) :: String.t()
-  def to_html(nodes) when is_list(nodes) do
-    Serializer.serialize(nodes)
+  @spec to_html([term()], keyword()) :: String.t()
+  def to_html(nodes, opts \\ []) when is_list(nodes) do
+    Serializer.serialize(nodes, opts)
   end
 end
