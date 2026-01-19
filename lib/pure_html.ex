@@ -3,7 +3,7 @@ defmodule PureHTML do
   HTML parsing library.
   """
 
-  alias PureHTML.{Serializer, Tokenizer, TreeBuilder}
+  alias PureHTML.{Query, Serializer, Tokenizer, TreeBuilder}
 
   @doc """
   Parses an HTML string into a list of nodes.
@@ -59,4 +59,49 @@ defmodule PureHTML do
   def to_html(nodes, opts \\ []) when is_list(nodes) do
     Serializer.serialize(nodes, opts)
   end
+
+  @doc """
+  Finds all nodes matching the CSS selector.
+
+  ## Supported Selectors
+
+  - Tag: `div`, `p`, `a`
+  - Universal: `*`
+  - Class: `.class`
+  - ID: `#id`
+  - Attribute: `[attr]`, `[attr=value]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`
+  - Selector list: `.a, .b`
+
+  ## Examples
+
+      iex> html = PureHTML.parse("<div><p class='intro'>Hello</p><p>World</p></div>")
+      iex> PureHTML.query(html, "p.intro")
+      [{"p", [{"class", "intro"}], ["Hello"]}]
+
+      iex> html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
+      iex> PureHTML.query(html, "li")
+      [{"li", [], ["A"]}, {"li", [], ["B"]}]
+
+  """
+  defdelegate query(html, selector), to: Query, as: :find
+
+  @doc """
+  Returns the immediate children of a node.
+
+  ## Options
+
+  - `:include_text` - Include text nodes (default: true)
+
+  ## Examples
+
+      iex> node = {"div", [], [{"p", [], ["Hello"]}, "Some text"]}
+      iex> PureHTML.children(node)
+      [{"p", [], ["Hello"]}, "Some text"]
+
+      iex> node = {"div", [], [{"p", [], ["Hello"]}, "Some text"]}
+      iex> PureHTML.children(node, include_text: false)
+      [{"p", [], ["Hello"]}]
+
+  """
+  defdelegate children(node, opts \\ []), to: Query
 end
