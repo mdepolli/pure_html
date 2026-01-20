@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Text extraction with `text/2` function
+  - Options: `:deep`, `:separator`, `:strip`, `:include_script`, `:include_style`, `:include_inputs`
+- Attribute extraction functions
+  - `attr/2` - get attribute from single node
+  - `attribute/2` - extract attribute from list of nodes
+  - `attribute/3` - query and extract attribute in one step
+- `query_one/2` for finding first matching element
+- CSS combinator support in selectors
+  - Descendant combinator (space): `div p`
+  - Child combinator: `div > p`
+  - Adjacent sibling combinator: `h1 + p`
+  - General sibling combinator: `h1 ~ p`
+
 ## [0.1.0] - 2026-01-19
 
 ### Added

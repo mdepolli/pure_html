@@ -109,6 +109,54 @@ PureHTML.query(html, ".error, .warning") # Elements with either class
 PureHTML.query(html, "input, textarea")  # All input or textarea elements
 ```
 
+### Combinators
+
+Combinators express relationships between elements.
+
+```elixir
+html = PureHTML.parse("""
+<article>
+  <section>
+    <h2>Title</h2>
+    <p class="intro">First paragraph</p>
+    <p>Second paragraph</p>
+  </section>
+</article>
+""")
+
+# Descendant combinator (space) - matches anywhere inside
+PureHTML.query(html, "article p")
+#=> [{"p", [{"class", "intro"}], ["First paragraph"]}, {"p", [], ["Second paragraph"]}]
+
+# Child combinator (>) - matches direct children only
+PureHTML.query(html, "article > p")
+#=> []  # No <p> directly inside <article>
+
+PureHTML.query(html, "section > p")
+#=> [{"p", [{"class", "intro"}], ["First paragraph"]}, {"p", [], ["Second paragraph"]}]
+
+# Adjacent sibling (+) - matches the next sibling
+PureHTML.query(html, "h2 + p")
+#=> [{"p", [{"class", "intro"}], ["First paragraph"]}]
+
+# General sibling (~) - matches any following sibling
+PureHTML.query(html, "h2 ~ p")
+#=> [{"p", [{"class", "intro"}], ["First paragraph"]}, {"p", [], ["Second paragraph"]}]
+```
+
+Combinators can be chained:
+
+```elixir
+# Find links inside list items inside nav
+PureHTML.query(html, "nav ul li a")
+
+# Find paragraphs that are direct children of articles
+PureHTML.query(html, "article > section > p")
+
+# Mix combinators as needed
+PureHTML.query(html, "article section > h2 + p")
+```
+
 ## Traversing Children
 
 Use `children/2` to get the immediate children of an element.
@@ -172,31 +220,116 @@ PureHTML.query(content, "a")
 #=> [{"a", [{"href", "/about"}], ["About"]}, {"a", [{"href", "/contact"}], ["Contact"]}]
 ```
 
-### Extracting Data
+## Extracting Text
 
-Common patterns for extracting data from query results.
+Use `text/2` to extract text content from nodes.
+
+```elixir
+html = PureHTML.parse("<p>Hello <strong>World</strong>!</p>")
+
+# Extract all text (deep by default)
+PureHTML.text(html)
+#=> "Hello World!"
+
+# With a separator between text segments
+PureHTML.text(html, separator: " ")
+#=> "Hello World !"
+```
+
+### Text Options
 
 ```elixir
 html = PureHTML.parse("""
-<ul>
-  <li><a href="/one">One</a></li>
-  <li><a href="/two">Two</a></li>
-</ul>
+<div>
+  <p>  Paragraph one  </p>
+  <p>  Paragraph two  </p>
+</div>
 """)
 
-# Get all link hrefs
-html
-|> PureHTML.query("a")
-|> Enum.map(fn {_, attrs, _} ->
-  List.keyfind(attrs, "href", 0) |> elem(1)
-end)
-#=> ["/one", "/two"]
+# Strip whitespace and remove empty segments
+PureHTML.text(html, strip: true, separator: ", ")
+#=> "Paragraph one, Paragraph two"
 
-# Get all link texts
+# Shallow extraction (direct text children only)
+html = PureHTML.parse("<div>Direct <span>nested</span> text</div>")
+[div] = PureHTML.query(html, "div")
+PureHTML.text(div, deep: false)
+#=> "Direct  text"
+```
+
+### Script and Style Content
+
+By default, `<script>` and `<style>` content is excluded:
+
+```elixir
+html = PureHTML.parse("<div>Hello<script>alert('x')</script></div>")
+PureHTML.text(html)
+#=> "Hello"
+
+# Include script content
+PureHTML.text(html, include_script: true)
+#=> "Helloalert('x')"
+```
+
+### Form Input Values
+
+Extract values from form inputs:
+
+```elixir
+html = PureHTML.parse("<input type='text' value='Hello'>")
+PureHTML.text(html, include_inputs: true)
+#=> "Hello"
+```
+
+## Extracting Attributes
+
+### Single Node
+
+Use `attr/2` to get an attribute from a single node:
+
+```elixir
+html = PureHTML.parse("<a href='/home' class='nav-link'>Home</a>")
+[link] = PureHTML.query(html, "a")
+
+PureHTML.attr(link, "href")
+#=> "/home"
+
+PureHTML.attr(link, "title")
+#=> nil
+```
+
+### Multiple Nodes
+
+Use `attribute/2` to extract an attribute from a list of nodes:
+
+```elixir
+html = PureHTML.parse("""
+<nav>
+  <a href="/home">Home</a>
+  <a href="/about">About</a>
+  <a href="/contact">Contact</a>
+</nav>
+""")
+
 html
 |> PureHTML.query("a")
-|> Enum.map(fn {_, _, [text]} -> text end)
-#=> ["One", "Two"]
+|> PureHTML.attribute("href")
+#=> ["/home", "/about", "/contact"]
+```
+
+### Query and Extract
+
+Use `attribute/3` to query and extract in one step:
+
+```elixir
+html
+|> PureHTML.attribute("a", "href")
+#=> ["/home", "/about", "/contact"]
+
+# Equivalent to:
+html
+|> PureHTML.query("a")
+|> PureHTML.attribute("href")
 ```
 
 ### Converting Back to HTML
@@ -216,7 +349,6 @@ html
 
 The following CSS selectors are planned for future versions:
 
-- **Combinators**: `div p` (descendant), `div > p` (child), `h1 + p` (adjacent sibling), `h1 ~ p` (general sibling)
 - **Pseudo-classes**: `:first-child`, `:last-child`, `:nth-child(n)`, `:not(selector)`
 - **Pseudo-elements**: `::before`, `::after` (not applicable to static HTML)
 
@@ -229,6 +361,53 @@ The following CSS selectors are planned for future versions:
 ```
 
 Finds all nodes matching the CSS selector. Returns an empty list if no matches.
+
+### `PureHTML.query_one/2`
+
+```elixir
+@spec query_one(html_tree | html_node, String.t()) :: html_node | nil
+```
+
+Finds the first node matching the CSS selector. Returns `nil` if no match.
+
+### `PureHTML.text/2`
+
+```elixir
+@spec text(html_tree | html_node, keyword()) :: String.t()
+```
+
+Extracts text content from an HTML tree or node. Options:
+
+- `:deep` - Traverse all descendants (default: `true`)
+- `:separator` - String between text segments (default: `""`)
+- `:strip` - Strip whitespace from segments, remove empty (default: `false`)
+- `:include_script` - Include `<script>` content (default: `false`)
+- `:include_style` - Include `<style>` content (default: `false`)
+- `:include_inputs` - Include `<input>` and `<textarea>` values (default: `false`)
+
+### `PureHTML.attr/2`
+
+```elixir
+@spec attr(html_node, String.t()) :: String.t() | nil
+```
+
+Gets an attribute value from a single node. Returns `nil` if not found.
+
+### `PureHTML.attribute/2`
+
+```elixir
+@spec attribute(html_tree | html_node, String.t()) :: [String.t()]
+```
+
+Extracts an attribute from a list of nodes. Skips nodes without the attribute.
+
+### `PureHTML.attribute/3`
+
+```elixir
+@spec attribute(html_tree | html_node, String.t(), String.t()) :: [String.t()]
+```
+
+Finds elements matching a selector and extracts an attribute. Combines `query/2` and `attribute/2`.
 
 ### `PureHTML.children/2`
 

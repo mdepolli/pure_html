@@ -70,13 +70,20 @@ PureHTML.query(html, ".intro")
 PureHTML.query(html, "p.intro")
 # => [{"p", [{"class", "intro"}], ["Hello"]}]
 
-# Attribute selectors
-html = PureHTML.parse("<a href='https://example.com'>Link</a>")
-PureHTML.query(html, "[href^=https]")
-# => [{"a", [{"href", "https://example.com"}], ["Link"]}]
+# Combinators
+PureHTML.query(html, "div > p")      # Direct children
+PureHTML.query(html, "div p")        # All descendants
+
+# Extract text content
+PureHTML.text(html)
+# => "HelloWorld"
+
+# Extract attributes
+PureHTML.attribute(html, "p", "class")
+# => ["intro"]
 ```
 
-Supported: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=val]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`, selector lists (`.a, .b`).
+Supported selectors: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=val]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`, selector lists (`.a, .b`), combinators (`div p`, `div > p`, `h1 + p`, `h1 ~ p`).
 
 See the [Querying Guide](guides/querying.md) for complete documentation.
 
