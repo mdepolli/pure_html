@@ -114,6 +114,104 @@ defmodule PureHTML.QueryTest do
     end
   end
 
+  describe "find_one/2" do
+    test "returns first matching element" do
+      html = PureHTML.parse("<ul><li>A</li><li>B</li><li>C</li></ul>")
+      assert Query.find_one(html, "li") == {"li", [], ["A"]}
+    end
+
+    test "returns nil when no match" do
+      html = PureHTML.parse("<div><p>Hello</p></div>")
+      assert Query.find_one(html, ".missing") == nil
+    end
+
+    test "finds first by class" do
+      html = PureHTML.parse("<div><p class='a'>First</p><p class='a'>Second</p></div>")
+      assert Query.find_one(html, ".a") == {"p", [{"class", "a"}], ["First"]}
+    end
+
+    test "finds first by id" do
+      html = PureHTML.parse("<div><span id='target'>Found</span></div>")
+      assert Query.find_one(html, "#target") == {"span", [{"id", "target"}], ["Found"]}
+    end
+
+    test "finds deeply nested element" do
+      html = PureHTML.parse("<div><div><div><span class='deep'>Deep</span></div></div></div>")
+      assert Query.find_one(html, ".deep") == {"span", [{"class", "deep"}], ["Deep"]}
+    end
+
+    test "works with compound selector" do
+      html =
+        PureHTML.parse("<div><a href='/one'>One</a><a href='/two' class='special'>Two</a></div>")
+
+      assert Query.find_one(html, "a.special") ==
+               {"a", [{"class", "special"}, {"href", "/two"}], ["Two"]}
+    end
+
+    test "works with attribute selector" do
+      html = PureHTML.parse("<form><input type='text'><input type='email'></form>")
+      assert Query.find_one(html, "[type=email]") == {"input", [{"type", "email"}], []}
+    end
+
+    test "works with selector list (returns first match of any)" do
+      html = PureHTML.parse("<div><span>Span</span><p>Para</p></div>")
+      assert Query.find_one(html, "p, span") == {"span", [], ["Span"]}
+    end
+
+    test "works with single node input" do
+      node = {"div", [], [{"p", [{"class", "inner"}], ["Hello"]}]}
+      assert Query.find_one(node, ".inner") == {"p", [{"class", "inner"}], ["Hello"]}
+    end
+
+    test "returns nil for empty tree" do
+      assert Query.find_one([], "p") == nil
+    end
+
+    # Common scraping patterns
+
+    test "get page title" do
+      html =
+        PureHTML.parse("""
+        <html>
+          <head><title>My Page</title></head>
+          <body><h1>Welcome</h1></body>
+        </html>
+        """)
+
+      title = Query.find_one(html, "title")
+      assert title == {"title", [], ["My Page"]}
+    end
+
+    test "get main content" do
+      html =
+        PureHTML.parse("""
+        <html>
+          <body>
+            <nav>Navigation</nav>
+            <main class="content">
+              <article>Main content here</article>
+            </main>
+          </body>
+        </html>
+        """)
+
+      main = Query.find_one(html, "main.content")
+      assert {"main", [{"class", "content"}], _children} = main
+    end
+  end
+
+  describe "PureHTML.query_one/2 delegation" do
+    test "delegates to Query.find_one/2" do
+      html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
+      assert PureHTML.query_one(html, "li") == {"li", [], ["A"]}
+    end
+
+    test "returns nil when no match" do
+      html = PureHTML.parse("<div><p>Hello</p></div>")
+      assert PureHTML.query_one(html, ".missing") == nil
+    end
+  end
+
   describe "children/2" do
     test "returns children of element" do
       node = {"div", [], [{"p", [], ["Hello"]}, {"span", [], ["World"]}]}

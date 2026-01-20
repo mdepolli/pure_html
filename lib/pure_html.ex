@@ -117,6 +117,27 @@ defmodule PureHTML do
   defdelegate query(html, selector), to: Query, as: :find
 
   @doc """
+  Finds the first node matching the CSS selector.
+
+  Returns the first matching node, or `nil` if no match is found.
+  More efficient than `query/2` when you only need the first result.
+
+  ## Examples
+
+      iex> "<ul><li>A</li><li>B</li></ul>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.query_one("li")
+      {"li", [], ["A"]}
+
+      iex> "<div><p>Hello</p></div>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.query_one(".missing")
+      nil
+
+  """
+  defdelegate query_one(html, selector), to: Query, as: :find_one
+
+  @doc """
   Returns the immediate children of a node.
 
   ## Options

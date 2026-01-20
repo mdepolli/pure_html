@@ -42,6 +42,50 @@ defmodule PureHTML.Query do
     |> Enum.reverse()
   end
 
+  @doc """
+  Finds the first node matching the CSS selector.
+
+  Returns the first matching node, or `nil` if no match is found.
+  More efficient than `find/2` when you only need the first result.
+
+  ## Examples
+
+      iex> "<ul><li>A</li><li>B</li></ul>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.query_one("li")
+      {"li", [], ["A"]}
+
+      iex> "<div><p>Hello</p></div>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.query_one(".missing")
+      nil
+
+  """
+  @spec find_one(html_tree() | html_node(), String.t() | [Selector.t()]) :: html_node() | nil
+  def find_one(html, selector) when is_binary(selector) do
+    selectors = Parser.parse(selector)
+    find_one(html, selectors)
+  end
+
+  def find_one(html, selectors) when is_list(selectors) do
+    html
+    |> List.wrap()
+    |> do_find_one(selectors)
+  end
+
+  defp do_find_one([], _selectors), do: nil
+
+  defp do_find_one([node | rest], selectors) do
+    if any_selector_matches?(node, selectors) do
+      node
+    else
+      case do_find_one(get_element_children(node), selectors) do
+        nil -> do_find_one(rest, selectors)
+        found -> found
+      end
+    end
+  end
+
   defp do_find([], _selectors, acc), do: acc
 
   defp do_find([node | rest], selectors, acc) do
