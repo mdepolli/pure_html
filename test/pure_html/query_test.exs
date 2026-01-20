@@ -112,6 +112,152 @@ defmodule PureHTML.QueryTest do
                {"p", [], ["Hello"]}
              ]
     end
+
+    # Combinator tests
+
+    test "child combinator (>) selects direct children only" do
+      html = PureHTML.parse("<div><p>Direct</p><span><p>Nested</p></span></div>")
+      assert Query.find(html, "div > p") == [{"p", [], ["Direct"]}]
+    end
+
+    test "descendant combinator (space) selects all descendants" do
+      html = PureHTML.parse("<div><p>Direct</p><span><p>Nested</p></span></div>")
+
+      assert Query.find(html, "div p") == [
+               {"p", [], ["Direct"]},
+               {"p", [], ["Nested"]}
+             ]
+    end
+
+    test "adjacent sibling combinator (+) selects immediately following sibling" do
+      html = PureHTML.parse("<div><h1>Title</h1><p>First</p><p>Second</p></div>")
+      assert Query.find(html, "h1 + p") == [{"p", [], ["First"]}]
+    end
+
+    test "general sibling combinator (~) selects all following siblings" do
+      html = PureHTML.parse("<div><h1>Title</h1><p>First</p><p>Second</p></div>")
+
+      assert Query.find(html, "h1 ~ p") == [
+               {"p", [], ["First"]},
+               {"p", [], ["Second"]}
+             ]
+    end
+
+    test "chained combinators work correctly" do
+      html =
+        PureHTML.parse("""
+        <article>
+          <section>
+            <h2>Title</h2>
+            <p>Content</p>
+          </section>
+        </article>
+        """)
+
+      # article > section > p
+      assert Query.find(html, "article > section > p") == [{"p", [], ["Content"]}]
+    end
+
+    test "mixed combinators in chain" do
+      html =
+        PureHTML.parse("""
+        <div class="container">
+          <article>
+            <h1>Title</h1>
+            <p class="intro">Intro</p>
+            <p>Body</p>
+          </article>
+        </div>
+        """)
+
+      # descendant then child
+      assert Query.find(html, ".container article > p") == [
+               {"p", [{"class", "intro"}], ["Intro"]},
+               {"p", [], ["Body"]}
+             ]
+    end
+
+    test "adjacent sibling with no match returns empty" do
+      html = PureHTML.parse("<div><p>Only para</p></div>")
+      assert Query.find(html, "h1 + p") == []
+    end
+
+    test "general sibling skips non-element nodes" do
+      html = PureHTML.parse("<div><h1>Title</h1>Some text<p>Para</p></div>")
+      # Should still find p even though there's text between h1 and p
+      assert Query.find(html, "h1 ~ p") == [{"p", [], ["Para"]}]
+    end
+
+    test "combinator with compound selector" do
+      html =
+        PureHTML.parse("""
+        <nav>
+          <a href="/" class="active">Home</a>
+          <a href="/about">About</a>
+        </nav>
+        """)
+
+      assert Query.find(html, "nav > a.active") == [
+               {"a", [{"class", "active"}, {"href", "/"}], ["Home"]}
+             ]
+    end
+
+    test "combinator with attribute selector" do
+      html = PureHTML.parse("<form><input type='text'><input type='email'></form>")
+      assert Query.find(html, "form > [type=email]") == [{"input", [{"type", "email"}], []}]
+    end
+
+    # Real-world scraping patterns with combinators
+
+    test "table row cells" do
+      html =
+        PureHTML.parse("""
+        <table>
+          <tr><th>Name</th><th>Age</th></tr>
+          <tr><td>Alice</td><td>30</td></tr>
+        </table>
+        """)
+
+      assert Query.find(html, "tr > td") == [
+               {"td", [], ["Alice"]},
+               {"td", [], ["30"]}
+             ]
+    end
+
+    test "navigation links" do
+      html =
+        PureHTML.parse("""
+        <nav class="main">
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/about">About</a></li>
+          </ul>
+        </nav>
+        """)
+
+      links = Query.find(html, "nav.main li > a")
+      assert length(links) == 2
+    end
+
+    test "article content without nested articles" do
+      html =
+        PureHTML.parse("""
+        <article>
+          <p>Main content</p>
+          <aside>
+            <article>
+              <p>Related content</p>
+            </article>
+          </aside>
+        </article>
+        """)
+
+      # Only direct p children of article
+      assert Query.find(html, "article > p") == [
+               {"p", [], ["Main content"]},
+               {"p", [], ["Related content"]}
+             ]
+    end
   end
 
   describe "find_one/2" do
@@ -153,9 +299,11 @@ defmodule PureHTML.QueryTest do
       assert Query.find_one(html, "[type=email]") == {"input", [{"type", "email"}], []}
     end
 
-    test "works with selector list (returns first match of any)" do
+    test "works with selector list (returns first match of first selector)" do
       html = PureHTML.parse("<div><span>Span</span><p>Para</p></div>")
-      assert Query.find_one(html, "p, span") == {"span", [], ["Span"]}
+      # Selectors are evaluated in order: "p" first, then "span"
+      assert Query.find_one(html, "p, span") == {"p", [], ["Para"]}
+      assert Query.find_one(html, "span, p") == {"span", [], ["Span"]}
     end
 
     test "works with single node input" do

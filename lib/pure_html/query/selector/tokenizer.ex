@@ -16,6 +16,10 @@ defmodule PureHTML.Query.Selector.Tokenizer do
   - `:substring_match` - Substring match (*=)
   - `:comma` - Selector list separator
   - `{:string, value}` - Quoted string
+  - `:child` - Child combinator (>)
+  - `:adjacent_sibling` - Adjacent sibling combinator (+)
+  - `:general_sibling` - General sibling combinator (~)
+  - `:whitespace` - Whitespace (potential descendant combinator)
   """
 
   @type token ::
@@ -31,6 +35,10 @@ defmodule PureHTML.Query.Selector.Tokenizer do
           | :substring_match
           | :comma
           | {:string, String.t()}
+          | :child
+          | :adjacent_sibling
+          | :general_sibling
+          | :whitespace
 
   @doc """
   Tokenizes a CSS selector string into a list of tokens.
@@ -56,14 +64,47 @@ defmodule PureHTML.Query.Selector.Tokenizer do
     |> String.trim()
     |> do_tokenize([], false)
     |> Enum.reverse()
+    |> strip_edge_whitespace()
+  end
+
+  defp strip_edge_whitespace([:whitespace | rest]), do: strip_edge_whitespace(rest)
+  defp strip_edge_whitespace(tokens), do: strip_trailing_whitespace(tokens)
+
+  defp strip_trailing_whitespace(tokens) do
+    tokens
+    |> Enum.reverse()
+    |> then(fn
+      [:whitespace | rest] -> Enum.reverse(rest)
+      tokens -> Enum.reverse(tokens)
+    end)
   end
 
   # End of input
   defp do_tokenize("", acc, _in_bracket), do: acc
 
-  # Skip whitespace (for now - combinators would use this)
-  defp do_tokenize(<<c, rest::binary>>, acc, in_bracket) when c in ~c[ \t\n\r\f] do
+  # Whitespace outside brackets - emit :whitespace token (potential descendant combinator)
+  defp do_tokenize(<<c, rest::binary>>, acc, false = _in_bracket) when c in ~c[ \t\n\r\f] do
+    do_tokenize(skip_whitespace(rest), [:whitespace | acc], false)
+  end
+
+  # Skip whitespace inside brackets
+  defp do_tokenize(<<c, rest::binary>>, acc, true = in_bracket) when c in ~c[ \t\n\r\f] do
     do_tokenize(skip_whitespace(rest), acc, in_bracket)
+  end
+
+  # Child combinator (>)
+  defp do_tokenize(<<">", rest::binary>>, acc, false = in_bracket) do
+    do_tokenize(rest, [:child | acc], in_bracket)
+  end
+
+  # Adjacent sibling combinator (+)
+  defp do_tokenize(<<"+", rest::binary>>, acc, false = in_bracket) do
+    do_tokenize(rest, [:adjacent_sibling | acc], in_bracket)
+  end
+
+  # General sibling combinator (~)
+  defp do_tokenize(<<"~", rest::binary>>, acc, false = in_bracket) do
+    do_tokenize(rest, [:general_sibling | acc], in_bracket)
   end
 
   # Substring match (*=) - must come before universal selector
