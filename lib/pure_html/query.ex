@@ -151,6 +151,15 @@ defmodule PureHTML.Query do
     apply_combinators(tree, new_matches, rest)
   end
 
+  defp adjacent_sibling_matches(tree, node, selector) do
+    with sibling when not is_nil(sibling) <- find_next_sibling(tree, node),
+         true <- Selector.match?(sibling, selector) do
+      [sibling]
+    else
+      _ -> []
+    end
+  end
+
   # Find all nodes matching a selector (recursive descent)
   defp find_all_matching(nodes, selector) do
     do_find_all_matching(nodes, selector, [])
