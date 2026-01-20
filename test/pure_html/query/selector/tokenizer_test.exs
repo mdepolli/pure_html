@@ -94,15 +94,21 @@ defmodule PureHTML.Query.Selector.TokenizerTest do
     end
 
     test "selector list" do
-      assert Tokenizer.tokenize(".a, .b") == [{:class, "a"}, :comma, {:class, "b"}]
+      # Whitespace after comma is preserved (parser handles normalization)
+      assert Tokenizer.tokenize(".a, .b") == [{:class, "a"}, :comma, :whitespace, {:class, "b"}]
 
       assert Tokenizer.tokenize("div, p, span") == [
                {:ident, "div"},
                :comma,
+               :whitespace,
                {:ident, "p"},
                :comma,
+               :whitespace,
                {:ident, "span"}
              ]
+
+      # No whitespace when selectors are adjacent
+      assert Tokenizer.tokenize(".a,.b") == [{:class, "a"}, :comma, {:class, "b"}]
     end
 
     test "complex compound selector" do
@@ -116,9 +122,51 @@ defmodule PureHTML.Query.Selector.TokenizerTest do
              ]
     end
 
-    test "whitespace is skipped" do
+    test "leading and trailing whitespace is stripped" do
       assert Tokenizer.tokenize("  div  ") == [{:ident, "div"}]
-      assert Tokenizer.tokenize(".a , .b") == [{:class, "a"}, :comma, {:class, "b"}]
+    end
+
+    test "internal whitespace is preserved as tokens" do
+      # Whitespace around commas is preserved (parser handles normalization)
+      assert Tokenizer.tokenize(".a , .b") == [
+               {:class, "a"},
+               :whitespace,
+               :comma,
+               :whitespace,
+               {:class, "b"}
+             ]
+
+      # Whitespace between selectors becomes :whitespace (descendant combinator)
+      assert Tokenizer.tokenize("div p") == [{:ident, "div"}, :whitespace, {:ident, "p"}]
+    end
+
+    test "combinator tokens" do
+      assert Tokenizer.tokenize("div > p") == [
+               {:ident, "div"},
+               :whitespace,
+               :child,
+               :whitespace,
+               {:ident, "p"}
+             ]
+
+      assert Tokenizer.tokenize("h1 + p") == [
+               {:ident, "h1"},
+               :whitespace,
+               :adjacent_sibling,
+               :whitespace,
+               {:ident, "p"}
+             ]
+
+      assert Tokenizer.tokenize("h1 ~ p") == [
+               {:ident, "h1"},
+               :whitespace,
+               :general_sibling,
+               :whitespace,
+               {:ident, "p"}
+             ]
+
+      # Without surrounding whitespace
+      assert Tokenizer.tokenize("div>p") == [{:ident, "div"}, :child, {:ident, "p"}]
     end
 
     test "raises on empty class selector" do
