@@ -135,4 +135,43 @@ defmodule PureHTML do
 
   """
   defdelegate children(node, opts \\ []), to: Query
+
+  @doc """
+  Extracts text content from an HTML tree or node.
+
+  ## Options
+
+  - `:deep` - Traverse all descendants (default: true). When false, only direct text children.
+  - `:separator` - String to insert between text segments (default: "")
+  - `:strip` - Strip whitespace from each segment and remove empty segments (default: false)
+  - `:include_script` - Include text from `<script>` tags (default: false)
+  - `:include_style` - Include text from `<style>` tags (default: false)
+  - `:include_inputs` - Include value from `<input>` and `<textarea>` (default: false)
+
+  ## Examples
+
+      iex> html = PureHTML.parse("<p>Hello <strong>World</strong></p>")
+      iex> PureHTML.text(html)
+      "Hello World"
+
+      iex> html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
+      iex> PureHTML.text(html, separator: ", ")
+      "A, B"
+
+      iex> html = PureHTML.parse("<div>Hello<script>alert(1)</script>World</div>")
+      iex> PureHTML.text(html)
+      "HelloWorld"
+
+      iex> html = PureHTML.parse("<form><input value='test'></form>")
+      iex> PureHTML.text(html, include_inputs: true)
+      "test"
+
+  Formatted HTML often contains whitespace for indentation. Use `:strip` to clean it:
+
+      iex> html = PureHTML.parse("<ul>\\n  <li>One</li>\\n  <li>Two</li>\\n</ul>")
+      iex> PureHTML.text(html, strip: true, separator: " | ")
+      "One | Two"
+
+  """
+  defdelegate text(html, opts \\ []), to: Query
 end

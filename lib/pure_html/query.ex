@@ -112,4 +112,105 @@ defmodule PureHTML.Query do
     do: true
 
   defp element?(_), do: false
+
+  @doc """
+  Extracts text content from an HTML tree or node.
+
+  ## Options
+
+  - `:deep` - Traverse all descendants (default: true). When false, only direct text children.
+  - `:separator` - String to insert between text segments (default: "")
+  - `:strip` - Strip whitespace from each segment and remove empty segments (default: false)
+  - `:include_script` - Include text from `<script>` tags (default: false)
+  - `:include_style` - Include text from `<style>` tags (default: false)
+  - `:include_inputs` - Include value from `<input>` and `<textarea>` (default: false)
+
+  ## Examples
+
+      iex> html = PureHTML.parse("<p>Hello <strong>World</strong></p>")
+      iex> PureHTML.text(html)
+      "Hello World"
+
+      iex> html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
+      iex> PureHTML.text(html, separator: ", ")
+      "A, B"
+
+      iex> html = PureHTML.parse("<ul>\\n  <li>One</li>\\n  <li>Two</li>\\n</ul>")
+      iex> PureHTML.text(html, strip: true, separator: ", ")
+      "One, Two"
+
+  """
+  @spec text(html_tree() | html_node(), keyword()) :: String.t()
+  def text(html, opts \\ []) do
+    deep = Keyword.get(opts, :deep, true)
+    separator = Keyword.get(opts, :separator, "")
+    strip = Keyword.get(opts, :strip, false)
+    include_script = Keyword.get(opts, :include_script, false)
+    include_style = Keyword.get(opts, :include_style, false)
+    include_inputs = Keyword.get(opts, :include_inputs, false)
+
+    extract_opts = %{
+      deep: deep,
+      include_script: include_script,
+      include_style: include_style,
+      include_inputs: include_inputs
+    }
+
+    html
+    |> List.wrap()
+    |> extract_text(extract_opts)
+    |> maybe_strip(strip)
+    |> Enum.join(separator)
+  end
+
+  defp maybe_strip(segments, false), do: segments
+
+  defp maybe_strip(segments, true) do
+    segments
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  defp extract_text(nodes, opts) when is_list(nodes) do
+    Enum.flat_map(nodes, &extract_text_from_node(&1, opts))
+  end
+
+  defp extract_text_from_node(text, _opts) when is_binary(text), do: [text]
+  defp extract_text_from_node({:comment, _}, _opts), do: []
+  defp extract_text_from_node({:doctype, _, _, _}, _opts), do: []
+
+  defp extract_text_from_node({"script", _, _}, %{include_script: false}), do: []
+  defp extract_text_from_node({"style", _, _}, %{include_style: false}), do: []
+
+  defp extract_text_from_node({"input", attrs, _}, %{include_inputs: true}) do
+    case List.keyfind(attrs, "value", 0) do
+      {_, value} -> [value]
+      nil -> []
+    end
+  end
+
+  defp extract_text_from_node({"textarea", _, children}, %{include_inputs: true}) do
+    Enum.filter(children, &is_binary/1)
+  end
+
+  defp extract_text_from_node({_tag, _attrs, children}, %{deep: true} = opts) do
+    extract_text(children, opts)
+  end
+
+  defp extract_text_from_node({_tag, _attrs, children}, %{deep: false}) do
+    Enum.filter(children, &is_binary/1)
+  end
+
+  defp extract_text_from_node({{_ns, "script"}, _, _}, %{include_script: false}), do: []
+  defp extract_text_from_node({{_ns, "style"}, _, _}, %{include_style: false}), do: []
+
+  defp extract_text_from_node({{_ns, _tag}, _attrs, children}, %{deep: true} = opts) do
+    extract_text(children, opts)
+  end
+
+  defp extract_text_from_node({{_ns, _tag}, _attrs, children}, %{deep: false}) do
+    Enum.filter(children, &is_binary/1)
+  end
+
+  defp extract_text_from_node(_, _opts), do: []
 end

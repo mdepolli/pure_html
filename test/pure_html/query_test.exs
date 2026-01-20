@@ -174,4 +174,257 @@ defmodule PureHTML.QueryTest do
       assert PureHTML.children(node) == [{"p", [], ["Hello"]}]
     end
   end
+
+  describe "text/2" do
+    test "extracts text from simple element" do
+      html = PureHTML.parse("<p>Hello</p>")
+      assert Query.text(html) == "Hello"
+    end
+
+    test "extracts text from nested elements" do
+      html = PureHTML.parse("<p>Hello <strong>World</strong></p>")
+      assert Query.text(html) == "Hello World"
+    end
+
+    test "extracts text with separator" do
+      html = PureHTML.parse("<p>Hello<strong>World</strong></p>")
+      assert Query.text(html, separator: " ") == "Hello World"
+    end
+
+    test "extracts text from list elements with separator" do
+      html = PureHTML.parse("<ul><li>A</li><li>B</li><li>C</li></ul>")
+      assert Query.text(html, separator: ", ") == "A, B, C"
+    end
+
+    test "excludes script content by default" do
+      html = PureHTML.parse("<div>Hello<script>alert(1)</script>World</div>")
+      assert Query.text(html) == "HelloWorld"
+    end
+
+    test "includes script content when option is set" do
+      html = PureHTML.parse("<div>Hello<script>alert(1)</script>World</div>")
+      assert Query.text(html, include_script: true) == "Helloalert(1)World"
+    end
+
+    test "excludes style content by default" do
+      html = PureHTML.parse("<div>Hello<style>.foo{}</style>World</div>")
+      assert Query.text(html) == "HelloWorld"
+    end
+
+    test "includes style content when option is set" do
+      html = PureHTML.parse("<div>Hello<style>.foo{}</style>World</div>")
+      assert Query.text(html, include_style: true) == "Hello.foo{}World"
+    end
+
+    test "excludes input values by default" do
+      html = PureHTML.parse("<form><input value='test'>Submit</form>")
+      assert Query.text(html) == "Submit"
+    end
+
+    test "includes input values when option is set" do
+      html = PureHTML.parse("<form><input value='test'>Submit</form>")
+      assert Query.text(html, include_inputs: true) == "testSubmit"
+    end
+
+    test "includes textarea content when include_inputs is set" do
+      html = PureHTML.parse("<form><textarea>Hello World</textarea></form>")
+      assert Query.text(html, include_inputs: true) == "Hello World"
+    end
+
+    test "deep: false only extracts direct text children" do
+      html = PureHTML.parse("<div>Direct<p>Nested</p>Text</div>")
+
+      html
+      |> Query.find("div")
+      |> hd()
+      |> Query.text(deep: false)
+      |> then(&assert &1 == "DirectText")
+    end
+
+    test "works with single node" do
+      node = {"p", [], ["Hello ", {"strong", [], ["World"]}]}
+      assert Query.text(node) == "Hello World"
+    end
+
+    test "ignores comments" do
+      html = [{"div", [], ["Hello", {:comment, "ignored"}, "World"]}]
+      assert Query.text(html) == "HelloWorld"
+    end
+
+    test "ignores doctype" do
+      html = [{:doctype, "html", nil, nil}, {"html", [], [{"body", [], ["Hello"]}]}]
+      assert Query.text(html) == "Hello"
+    end
+
+    test "returns empty string for empty tree" do
+      assert Query.text([]) == ""
+    end
+
+    test "handles foreign elements" do
+      node = {{:svg, "text"}, [], ["SVG Text"]}
+      assert Query.text(node) == "SVG Text"
+    end
+
+    # :strip option tests
+
+    test "strip: true removes leading/trailing whitespace from segments" do
+      html = PureHTML.parse("<p>  Hello  </p>")
+      assert Query.text(html, strip: true) == "Hello"
+    end
+
+    test "strip: true removes whitespace-only segments" do
+      html =
+        PureHTML.parse("""
+        <ul>
+          <li>One</li>
+          <li>Two</li>
+        </ul>
+        """)
+
+      assert Query.text(html, strip: true, separator: ", ") == "One, Two"
+    end
+
+    test "strip: true with deeply nested formatted HTML" do
+      html =
+        PureHTML.parse("""
+        <div>
+          <section>
+            <p>
+              First paragraph.
+            </p>
+            <p>
+              Second paragraph.
+            </p>
+          </section>
+        </div>
+        """)
+
+      assert Query.text(html, strip: true, separator: " ") == "First paragraph. Second paragraph."
+    end
+
+    test "strip: false (default) preserves whitespace" do
+      html = PureHTML.parse("<p>  Hello  </p>")
+      assert Query.text(html) == "  Hello  "
+    end
+
+    # Complex real-world scenarios
+
+    test "scraping workflow: query then extract text" do
+      html =
+        PureHTML.parse("""
+        <article>
+          <h1>Article Title</h1>
+          <p class="summary">This is the summary.</p>
+          <p>This is the body.</p>
+        </article>
+        """)
+
+      summary =
+        html
+        |> Query.find(".summary")
+        |> Query.text(strip: true)
+
+      assert summary == "This is the summary."
+    end
+
+    test "extracting text from a table" do
+      html =
+        PureHTML.parse("""
+        <table>
+          <tr><th>Name</th><th>Age</th></tr>
+          <tr><td>Alice</td><td>30</td></tr>
+          <tr><td>Bob</td><td>25</td></tr>
+        </table>
+        """)
+
+      assert Query.text(html, strip: true, separator: " | ") ==
+               "Name | Age | Alice | 30 | Bob | 25"
+    end
+
+    test "extracting text from navigation" do
+      html =
+        PureHTML.parse("""
+        <nav>
+          <a href="/">Home</a>
+          <a href="/about">About</a>
+          <a href="/contact">Contact</a>
+        </nav>
+        """)
+
+      links =
+        html
+        |> Query.find("a")
+        |> Query.text(strip: true, separator: " > ")
+
+      assert links == "Home > About > Contact"
+    end
+
+    test "handles self-closing elements mixed with text" do
+      html = PureHTML.parse("<p>Line one<br>Line two<br>Line three</p>")
+      assert Query.text(html) == "Line oneLine twoLine three"
+      assert Query.text(html, separator: "\n") == "Line one\nLine two\nLine three"
+    end
+
+    test "deeply nested structure" do
+      html =
+        PureHTML.parse("""
+        <div>
+          <div>
+            <div>
+              <div>
+                <span>Deep text</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        """)
+
+      assert Query.text(html, strip: true) == "Deep text"
+    end
+
+    test "multiple scripts and styles are all excluded" do
+      html =
+        PureHTML.parse("""
+        <div>
+          Start
+          <script>var a = 1;</script>
+          Middle
+          <style>.foo {}</style>
+          <script>var b = 2;</script>
+          End
+        </div>
+        """)
+
+      assert Query.text(html, strip: true, separator: " ") == "Start Middle End"
+    end
+
+    test "combining multiple options" do
+      html =
+        PureHTML.parse("""
+        <form>
+          <label>Name:</label>
+          <input value="John">
+          <label>Email:</label>
+          <textarea>john@example.com</textarea>
+          <script>validate();</script>
+          <button>Submit</button>
+        </form>
+        """)
+
+      result = Query.text(html, strip: true, separator: " ", include_inputs: true)
+      assert result == "Name: John Email: john@example.com Submit"
+    end
+  end
+
+  describe "PureHTML.text/2 delegation" do
+    test "delegates to Query.text/2" do
+      html = PureHTML.parse("<p>Hello <strong>World</strong></p>")
+      assert PureHTML.text(html) == "Hello World"
+    end
+
+    test "delegates with options" do
+      html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
+      assert PureHTML.text(html, separator: ", ") == "A, B"
+    end
+  end
 end
