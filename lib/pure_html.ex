@@ -174,4 +174,63 @@ defmodule PureHTML do
 
   """
   defdelegate text(html, opts \\ []), to: Query
+
+  @doc """
+  Extracts an attribute value from a single node.
+
+  Returns the attribute value as a string, or `nil` if the attribute
+  doesn't exist or the input is not an element.
+
+  ## Examples
+
+      iex> node = {"a", [{"href", "/home"}, {"class", "link"}], ["Home"]}
+      iex> PureHTML.attr(node, "href")
+      "/home"
+
+      iex> node = {"a", [{"href", "/home"}], ["Home"]}
+      iex> PureHTML.attr(node, "title")
+      nil
+
+      iex> PureHTML.attr("text node", "href")
+      nil
+
+  """
+  defdelegate attr(node, name), to: Query
+
+  @doc """
+  Extracts attribute values from a list of nodes.
+
+  Returns a list of attribute values. Nodes without the attribute are skipped.
+
+  ## Examples
+
+      iex> "<a href='/one'>One</a><a href='/two'>Two</a>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.query("a")
+      ...> |> PureHTML.attribute("href")
+      ["/one", "/two"]
+
+  """
+  defdelegate attribute(nodes, name), to: Query
+
+  @doc """
+  Finds elements matching a selector and extracts an attribute from them.
+
+  Combines `query/2` and `attribute/2` into a single call for convenience.
+  This is the most common pattern for scraping.
+
+  ## Examples
+
+      iex> "<nav><a href='/'>Home</a><a href='/about'>About</a></nav>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.attribute("a", "href")
+      ["/", "/about"]
+
+      iex> "<div><img src='a.png'><img src='b.png'></div>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.attribute("img", "src")
+      ["a.png", "b.png"]
+
+  """
+  defdelegate attribute(html, selector, name), to: Query
 end

@@ -427,4 +427,161 @@ defmodule PureHTML.QueryTest do
       assert PureHTML.text(html, separator: ", ") == "A, B"
     end
   end
+
+  describe "attr/2" do
+    test "extracts attribute from element" do
+      node = {"a", [{"href", "/home"}, {"class", "link"}], ["Home"]}
+      assert Query.attr(node, "href") == "/home"
+      assert Query.attr(node, "class") == "link"
+    end
+
+    test "returns nil for missing attribute" do
+      node = {"a", [{"href", "/home"}], ["Home"]}
+      assert Query.attr(node, "title") == nil
+    end
+
+    test "returns nil for non-element nodes" do
+      assert Query.attr("text", "href") == nil
+      assert Query.attr({:comment, "comment"}, "href") == nil
+      assert Query.attr({:doctype, "html", nil, nil}, "href") == nil
+    end
+
+    test "works with foreign elements" do
+      node = {{:svg, "circle"}, [{"r", "10"}, {"cx", "50"}], []}
+      assert Query.attr(node, "r") == "10"
+      assert Query.attr(node, "cx") == "50"
+    end
+  end
+
+  describe "attribute/2" do
+    test "extracts attribute from list of nodes" do
+      nodes = [
+        {"a", [{"href", "/one"}], ["One"]},
+        {"a", [{"href", "/two"}], ["Two"]}
+      ]
+
+      assert Query.attribute(nodes, "href") == ["/one", "/two"]
+    end
+
+    test "skips nodes without the attribute" do
+      nodes = [
+        {"a", [{"href", "/one"}], ["One"]},
+        {"span", [], ["Text"]},
+        {"a", [{"href", "/two"}], ["Two"]}
+      ]
+
+      assert Query.attribute(nodes, "href") == ["/one", "/two"]
+    end
+
+    test "works with single node" do
+      node = {"a", [{"href", "/home"}], ["Home"]}
+      assert Query.attribute(node, "href") == ["/home"]
+    end
+
+    test "returns empty list when no matches" do
+      nodes = [{"span", [], ["Text"]}, {"div", [], []}]
+      assert Query.attribute(nodes, "href") == []
+    end
+
+    test "returns empty list for empty input" do
+      assert Query.attribute([], "href") == []
+    end
+  end
+
+  describe "attribute/3" do
+    test "finds elements and extracts attribute" do
+      html = PureHTML.parse("<nav><a href='/'>Home</a><a href='/about'>About</a></nav>")
+      assert Query.attribute(html, "a", "href") == ["/", "/about"]
+    end
+
+    test "works with different selectors" do
+      html = PureHTML.parse("<div><img src='a.png' alt='A'><img src='b.png' alt='B'></div>")
+      assert Query.attribute(html, "img", "src") == ["a.png", "b.png"]
+      assert Query.attribute(html, "img", "alt") == ["A", "B"]
+    end
+
+    test "returns empty list when selector matches nothing" do
+      html = PureHTML.parse("<div><p>Hello</p></div>")
+      assert Query.attribute(html, "a", "href") == []
+    end
+
+    test "returns empty list when attribute not present" do
+      html = PureHTML.parse("<div><a>Link without href</a></div>")
+      assert Query.attribute(html, "a", "href") == []
+    end
+
+    # Real-world scraping scenarios
+
+    test "scraping all links from a page" do
+      html =
+        PureHTML.parse("""
+        <html>
+          <body>
+            <nav>
+              <a href="/home">Home</a>
+              <a href="/products">Products</a>
+            </nav>
+            <main>
+              <a href="/featured">Featured</a>
+            </main>
+            <footer>
+              <a href="/contact">Contact</a>
+            </footer>
+          </body>
+        </html>
+        """)
+
+      hrefs = Query.attribute(html, "a", "href")
+      assert hrefs == ["/home", "/products", "/featured", "/contact"]
+    end
+
+    test "scraping images with specific class" do
+      html =
+        PureHTML.parse("""
+        <div>
+          <img class="thumbnail" src="thumb1.jpg">
+          <img class="full" src="full1.jpg">
+          <img class="thumbnail" src="thumb2.jpg">
+        </div>
+        """)
+
+      thumbnails = Query.attribute(html, "img.thumbnail", "src")
+      assert thumbnails == ["thumb1.jpg", "thumb2.jpg"]
+    end
+
+    test "scraping data attributes" do
+      html =
+        PureHTML.parse("""
+        <ul>
+          <li data-id="1">Item 1</li>
+          <li data-id="2">Item 2</li>
+          <li data-id="3">Item 3</li>
+        </ul>
+        """)
+
+      ids = Query.attribute(html, "li", "data-id")
+      assert ids == ["1", "2", "3"]
+    end
+  end
+
+  describe "PureHTML.attr/2 delegation" do
+    test "delegates to Query.attr/2" do
+      node = {"a", [{"href", "/home"}], ["Home"]}
+      assert PureHTML.attr(node, "href") == "/home"
+    end
+  end
+
+  describe "PureHTML.attribute/2 delegation" do
+    test "delegates to Query.attribute/2" do
+      nodes = [{"a", [{"href", "/one"}], []}, {"a", [{"href", "/two"}], []}]
+      assert PureHTML.attribute(nodes, "href") == ["/one", "/two"]
+    end
+  end
+
+  describe "PureHTML.attribute/3 delegation" do
+    test "delegates to Query.attribute/3" do
+      html = PureHTML.parse("<div><a href='/link'>Link</a></div>")
+      assert PureHTML.attribute(html, "a", "href") == ["/link"]
+    end
+  end
 end
