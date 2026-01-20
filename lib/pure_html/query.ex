@@ -124,12 +124,7 @@ defmodule PureHTML.Query do
     # For each match, get the next sibling if it matches
     new_matches =
       matches
-      |> Enum.flat_map(fn node ->
-        case find_next_sibling(tree, node) do
-          nil -> []
-          sibling -> if Selector.match?(sibling, selector), do: [sibling], else: []
-        end
-      end)
+      |> Enum.flat_map(&adjacent_sibling_matches(tree, &1, selector))
 
     apply_combinators(tree, new_matches, rest)
   end
@@ -145,6 +140,15 @@ defmodule PureHTML.Query do
       end)
 
     apply_combinators(tree, new_matches, rest)
+  end
+
+  defp adjacent_sibling_matches(tree, node, selector) do
+    with sibling when not is_nil(sibling) <- find_next_sibling(tree, node),
+         true <- Selector.match?(sibling, selector) do
+      [sibling]
+    else
+      _ -> []
+    end
   end
 
   # Find all nodes matching a selector (recursive descent)
