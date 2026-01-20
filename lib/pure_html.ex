@@ -1,6 +1,36 @@
 defmodule PureHTML do
   @moduledoc """
-  HTML parsing library.
+  A pure Elixir HTML5 parser with CSS selector querying.
+
+  PureHTML parses HTML strings into a tree of nodes and provides functions
+  to query, traverse, and serialize them back to HTML.
+
+  ## Parsing
+
+      iex> PureHTML.parse("<p>Hello</p>")
+      [{"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["Hello"]}]}]}]
+
+  ## Querying
+
+      iex> html = PureHTML.parse("<div><p class='intro'>Hello</p></div>")
+      iex> PureHTML.query(html, ".intro")
+      [{"p", [{"class", "intro"}], ["Hello"]}]
+
+  ## Serializing
+
+      iex> [{"p", [], ["Hello"]}] |> PureHTML.to_html()
+      "<p>Hello</p>"
+
+  ## Node Format
+
+  Nodes are represented as tuples compatible with [Floki](https://hex.pm/packages/floki):
+
+  - `{tag, attrs, children}` - Element with tag name, attribute list, and children
+  - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration
+  - `{:comment, text}` - HTML comment
+  - `"text"` - Text content (binary string)
+
+  Attributes are lists of `{name, value}` tuples, sorted alphabetically.
   """
 
   alias PureHTML.{Query, Serializer, Tokenizer, TreeBuilder}
@@ -25,6 +55,7 @@ defmodule PureHTML do
       [{:doctype, "html", nil, nil}, {"html", [], [{"head", [], []}, {"body", [], []}]}]
 
   """
+  @spec parse(String.t()) :: [term()]
   def parse(html) when is_binary(html) do
     html
     |> Tokenizer.new()
