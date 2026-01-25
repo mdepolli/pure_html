@@ -1,5 +1,8 @@
 # PureHTML
 
+[![Hex.pm](https://img.shields.io/hexpm/v/pure_html.svg)](https://hex.pm/packages/pure_html)
+[![Docs](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/pure_html)
+
 A pure Elixir HTML5 parser. No NIFs. No native dependencies. Just Elixir.
 
 ## Why PureHTML?
