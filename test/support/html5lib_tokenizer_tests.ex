@@ -86,11 +86,6 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     normalize_start_tag(name, attrs, self_closing)
   end
 
-  defp normalize_start_tag(name, attrs, self_closing) do
-    attrs_list = attrs |> Map.to_list() |> Enum.sort()
-    {:start_tag, name, attrs_list, self_closing}
-  end
-
   defp normalize_token(["EndTag", name], _) do
     {:end_tag, name}
   end
@@ -101,6 +96,11 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
   defp normalize_token(["Character", data], double_escaped?) do
     {:character, maybe_unescape(data, double_escaped?)}
+  end
+
+  defp normalize_start_tag(name, attrs, self_closing) do
+    attrs_list = attrs |> Map.to_list() |> Enum.sort()
+    {:start_tag, name, attrs_list, self_closing}
   end
 
   # Unicode unescaping for doubleEscaped tests
