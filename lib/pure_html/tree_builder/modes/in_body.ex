@@ -375,13 +375,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
+  defp dispatch_start_tag(state, nil, tag, attrs, self_closing) do
+    do_process_html_start_tag(tag, attrs, self_closing, state)
+  end
+
   defp dispatch_start_tag(state, ns, tag, attrs, self_closing) do
     cond do
-      tag == "table" and html_integration_point?(state) and has_table_ancestor_for_foster?(state) ->
-        handle_table_at_integration_point(state, tag, attrs)
-
-      is_nil(ns) or html_integration_point?(state) ->
-        do_process_html_start_tag(tag, attrs, self_closing, state)
+      html_integration_point?(state) ->
+        dispatch_at_integration_point(state, ns, tag, attrs, self_closing)
 
       html_breakout_tag?(tag) or (tag == "font" and font_breakout_tag?(attrs)) ->
         handle_html_breakout_tag(state, tag, attrs, self_closing)
@@ -389,6 +390,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       true ->
         do_push_foreign_element(state, ns, tag, attrs, self_closing)
     end
+  end
+
+  defp dispatch_at_integration_point(state, _ns, "table", attrs, _self_closing) do
+    if has_table_ancestor_for_foster?(state) do
+      handle_table_at_integration_point(state, "table", attrs)
+    else
+      do_process_html_start_tag("table", attrs, false, state)
+    end
+  end
+
+  defp dispatch_at_integration_point(state, _ns, tag, attrs, self_closing) do
+    do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
   defp dispatch_start_tag_default(state, nil, tag, attrs, self_closing) do

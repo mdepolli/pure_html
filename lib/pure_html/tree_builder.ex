@@ -576,24 +576,22 @@ defmodule PureHTML.TreeBuilder do
   defp foreign_content_end_tag(tag, [ref | rest], count, %{elements: elements} = state) do
     case elements[ref].tag do
       {_ns, etag} ->
-        if String.downcase(etag) == tag do
-          new_stack = Enum.drop(state.stack, count + 1)
-
-          parent_ref =
-            case new_stack do
-              [r | _] -> r
-              [] -> nil
-            end
-
-          {:ok, %{state | stack: new_stack, current_parent_ref: parent_ref}}
-        else
-          foreign_content_end_tag(tag, rest, count + 1, state)
-        end
+        foreign_content_match_or_continue(tag, etag, rest, count, state)
 
       _html_tag ->
         # Reached an HTML element — process using insertion mode rules
         module = Map.fetch!(@mode_modules, state.mode)
         module.process({:end_tag, tag}, state)
+    end
+  end
+
+  defp foreign_content_match_or_continue(tag, etag, rest, count, state) do
+    if String.downcase(etag) == tag do
+      new_stack = Enum.drop(state.stack, count + 1)
+      parent_ref = List.first(new_stack)
+      {:ok, %{state | stack: new_stack, current_parent_ref: parent_ref}}
+    else
+      foreign_content_end_tag(tag, rest, count + 1, state)
     end
   end
 
