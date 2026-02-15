@@ -2,9 +2,9 @@
 
 ## A. Test Infrastructure (vs html5lib-tests READMEs)
 
-**1. Tests not run in both script modes** — `test/pure_html/html5lib_tree_construction_test.exs:12`
+**1. ~~Tests not run in both script modes~~** — DONE (69c1611)
 
-The README says tests without `#script-off` or `#script-on` must be run in **both** scripting modes. Our test file only runs each test once (and skips `script_off` tests entirely). This means hundreds of tests are only exercised in one mode instead of two.
+~~The README says tests without `#script-off` or `#script-on` must be run in **both** scripting modes. Our test file only runs each test once (and skips `script_off` tests entirely). This means hundreds of tests are only exercised in one mode instead of two.~~
 
 **2. `#new-errors` section parsed but not combined** — `test/support/html5lib_tree_construction_tests.ex:49`
 
@@ -34,9 +34,9 @@ The README says the number of parse errors matters. Our tests only assert on the
 
 ~~Step 8 of the fragment parsing algorithm says: if the context element is a `form`, set the form element pointer to it. The `build_fragment` function never checks this — the form pointer stays `nil`.~~
 
-**7. Fragment parsing: `noscript` tokenizer state ignores scripting flag** — `lib/pure_html.ex:287-303`
+**7. ~~Fragment parsing: `noscript` tokenizer state ignores scripting flag~~** — DONE (69c1611)
 
-The spec says `noscript` should use RAWTEXT state only when scripting is **enabled**. Our code puts `noscript` in `@raw_text_elements` unconditionally. Since we assume scripting enabled, this happens to be correct for that assumption, but becomes wrong if we ever support scripting-disabled mode (relevant to finding #1 above).
+~~The spec says `noscript` should use RAWTEXT state only when scripting is **enabled**. Our code puts `noscript` in `@raw_text_elements` unconditionally. Since we assume scripting enabled, this happens to be correct for that assumption, but becomes wrong if we ever support scripting-disabled mode (relevant to finding #1 above).~~
 
 **8. ~~`in_select.ex` searches entire stack for foreign namespace~~** — DONE (6883961)
 
