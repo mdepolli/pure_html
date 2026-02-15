@@ -20,6 +20,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       set_mode: 2,
       pop_mode: 1,
       push_af_marker: 1,
+      clear_af_to_marker: 1,
       correct_tag: 1,
       current_tag: 1,
       current_element: 1,
@@ -35,6 +36,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       reject_refs_from_af: 2,
       update_af_entry: 3,
       get_attr: 2,
+      html_integration_point?: 1,
       determine_mode_from_stack: 3,
       has_table_ancestor?: 2
     ]
@@ -188,22 +190,25 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, AdoptionAgency.run(state, tag, &close_tag_ref/2)}
   end
 
-  def process({:end_tag, tag}, %{af: af} = state) when tag in @table_cells do
-    new_state = close_tag_ref_forced(state, tag)
-    new_af = clear_af_to_marker(af)
-    {:ok, %{new_state | af: new_af}}
+  def process({:end_tag, tag}, state) when tag in @table_cells do
+    state =
+      state
+      |> close_tag_ref_forced(tag)
+      |> clear_af_to_marker()
+
+    {:ok, state}
   end
 
   # applet/marquee/object: clear AF to marker when closed (like table cells)
-  def process({:end_tag, tag}, %{af: af} = state) when tag in @af_marker_elements do
+  def process({:end_tag, tag}, state) when tag in @af_marker_elements do
     if in_scope?(state, tag, :default) do
-      new_state =
+      state =
         state
         |> generate_implied_end_tags()
         |> close_tag_ref_forced(tag)
+        |> clear_af_to_marker()
 
-      new_af = clear_af_to_marker(af)
-      {:ok, %{new_state | af: new_af}}
+      {:ok, state}
     else
       {:ok, state}
     end
@@ -225,11 +230,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_tag_ref_forced(state, "select") |> pop_mode()}
   end
 
-  def process({:end_tag, "template"}, %{af: af} = state) do
+  def process({:end_tag, "template"}, state) do
     # Only close HTML templates, not foreign (SVG/MathML) templates
-    new_state = close_html_template(state)
-    new_af = clear_af_to_marker(af)
-    {:ok, %{new_state | af: new_af} |> reset_insertion_mode()}
+    state =
+      state
+      |> close_html_template()
+      |> clear_af_to_marker()
+      |> reset_insertion_mode()
+
+    {:ok, state}
   end
 
   def process({:end_tag, "frameset"}, state) do
@@ -969,47 +978,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp adjust_svg_tag(_ns, tag), do: tag
 
-  @html_integration_encodings ["text/html", "application/xhtml+xml"]
-
-  defp html_integration_point?(%{stack: [], elements: _}), do: false
-
-  # Adjusted current node: in fragment mode with 1 element on stack,
-  # check the context element instead.
-  defp html_integration_point?(%{
-         stack: [_single],
-         context_element: {:svg, tag}
-       })
-       when tag in ~w(foreignObject desc title),
-       do: true
-
-  defp html_integration_point?(%{
-         stack: [_single],
-         context_element: {:math, tag}
-       })
-       when tag in ~w(mi mo mn ms mtext),
-       do: true
-
-  defp html_integration_point?(%{stack: [ref | _], elements: elements}) do
-    elem = elements[ref]
-
-    case elem.tag do
-      {:svg, tag} when tag in ~w(foreignObject desc title) ->
-        true
-
-      {:math, "annotation-xml"} ->
-        case get_attr(elem.attrs, "encoding") do
-          nil -> false
-          enc -> String.downcase(enc) in @html_integration_encodings
-        end
-
-      {:math, tag} when tag in ~w(mi mo mn ms mtext) ->
-        true
-
-      _ ->
-        false
-    end
-  end
-
   # Adjusted current node: in fragment mode with 1 element on stack,
   # check the context element instead.
   defp mathml_text_integration_point?(%{stack: [_single], context_element: {:math, tag}})
@@ -1333,18 +1301,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp has_table_ancestor_for_foster?(%{stack: stack, elements: elements}) do
-    do_has_table_ancestor_for_foster?(stack, elements)
+    has_table_ancestor_for_foster?(stack, elements)
   end
 
-  defp do_has_table_ancestor_for_foster?([], _elements), do: false
+  defp has_table_ancestor_for_foster?([], _elements), do: false
 
-  defp do_has_table_ancestor_for_foster?([ref | rest], elements) do
+  defp has_table_ancestor_for_foster?([ref | rest], elements) do
     case elements[ref].tag do
       "table" -> true
       "template" -> false
-      {:svg, _} -> do_has_table_ancestor_for_foster?(rest, elements)
-      {:math, _} -> do_has_table_ancestor_for_foster?(rest, elements)
-      _ -> do_has_table_ancestor_for_foster?(rest, elements)
+      _ -> has_table_ancestor_for_foster?(rest, elements)
     end
   end
 
@@ -1666,34 +1632,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Close tag using ref-only stack architecture (respects special element stops)
   # Used for "any other end tag" per HTML5 spec
   defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
-    case pop_until_tag_ref(stack, elements, tag) do
-      {:found, [new_top | _] = new_stack, _parent_ref} ->
-        # Use new stack top as current_parent_ref, not the stored parent_ref
-        # This handles foster-parented elements where parent_ref points to
-        # the foster parent position, not the stack parent
-        %{state | stack: new_stack, current_parent_ref: new_top}
-
-      {:found, [] = new_stack, _parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: nil}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, pop_until_tag_ref(stack, elements, tag))
   end
 
   # Close foreign root element (svg or math) - ignores internal barriers
   # This is needed because </svg> and </math> should close all children
   defp close_foreign_root(%{stack: stack, elements: elements} = state, ns) do
-    case pop_until_foreign_root(stack, elements, ns) do
-      {:found, [new_top | _] = new_stack, _parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: new_top}
-
-      {:found, [] = new_stack, _parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: nil}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, pop_until_foreign_root(stack, elements, ns))
   end
 
   defp pop_until_foreign_root([], _elements, _ns), do: :not_found
@@ -1713,29 +1658,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Close tag for specifically-handled end tags (template, table, select, frameset)
   # Does NOT respect special element stops - only template is a barrier
   defp close_tag_ref_forced(%{stack: stack, elements: elements} = state, tag) do
-    case pop_until_tag_ref_block(stack, elements, tag) do
-      {:found, [new_top | _] = new_stack, _parent_ref} ->
-        # Use new stack top as current_parent_ref, not the stored parent_ref
-        # This handles cases where elements were removed from the stack
-        %{state | stack: new_stack, current_parent_ref: new_top}
-
-      {:found, [] = new_stack, _parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: nil}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, pop_until_tag_ref_block(stack, elements, tag))
   end
 
   # Close HTML template only (not foreign templates like SVG/MathML)
   defp close_html_template(%{stack: stack, elements: elements} = state) do
-    case pop_until_html_template(stack, elements) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, pop_until_html_template(stack, elements))
   end
 
   defp pop_until_html_template([], _elements), do: :not_found
@@ -1765,18 +1693,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp do_close_block_end_tag(%{stack: stack, elements: elements} = state, tag) do
-    case pop_until_tag_ref_block(stack, elements, tag) do
-      {:found, [new_top | _] = new_stack, _parent_ref} ->
-        # Use new stack top as current_parent_ref (not element's parent_ref)
-        # This handles foster-parented elements correctly
-        %{state | stack: new_stack, current_parent_ref: new_top}
-
-      {:found, [] = new_stack, _parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: nil}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, pop_until_tag_ref_block(stack, elements, tag))
   end
 
   # Special </form> handling when no template on stack
@@ -1797,14 +1714,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp remove_from_stack(%{stack: stack} = state, ref) do
     new_stack = List.delete(stack, ref)
-    # Update current_parent_ref to top of stack (or its parent if needed)
-    new_parent_ref =
-      case new_stack do
-        [top_ref | _] -> top_ref
-        [] -> nil
-      end
-
-    %{state | stack: new_stack, current_parent_ref: new_parent_ref}
+    %{state | stack: new_stack, current_parent_ref: List.first(new_stack)}
   end
 
   # Check if there's a template element on the stack of open elements
@@ -1850,13 +1760,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Close any heading element (h1-h6) per HTML5 spec
   # Any heading end tag closes any open heading element
   defp close_any_heading(%{stack: stack, elements: elements} = state) do
-    case pop_until_any_heading(stack, elements) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, pop_until_any_heading(stack, elements))
   end
 
   defp pop_until_any_heading([], _elements), do: :not_found
@@ -1875,13 +1779,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # List item scope barriers: ol, ul, plus standard scope barriers
   @list_item_scope_barriers ~w(ol ul applet caption html table td th marquee object template)
   defp close_li_in_list_scope(%{stack: stack, elements: elements} = state) do
-    case find_li_in_list_scope(stack, elements) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, find_li_in_list_scope(stack, elements))
   end
 
   defp find_li_in_list_scope([], _elements), do: :not_found
@@ -1900,13 +1798,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Close dd/dt only if in scope (dl is not a barrier for dd/dt unlike ul/ol for li)
   defp close_dd_dt_in_scope(%{stack: stack, elements: elements} = state, target) do
-    case find_dd_dt_in_scope(stack, elements, target) do
-      {:found, new_stack, parent_ref} ->
-        %{state | stack: new_stack, current_parent_ref: parent_ref}
-
-      :not_found ->
-        state
-    end
+    apply_pop_result(state, find_dd_dt_in_scope(stack, elements, target))
   end
 
   @scope_barriers ~w(applet caption html table td th marquee object template)
@@ -1925,31 +1817,23 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp find_dd_dt_in_scope([_ | rest], elements, target),
     do: find_dd_dt_in_scope(rest, elements, target)
 
-  defp pop_until_tag_ref(stack, elements, target) do
-    do_pop_until_tag_ref(stack, elements, target)
-  end
-
   @svg_special ~w(desc foreignobject title)
   @mathml_special ~w(annotation-xml mi mn mo ms mtext)
 
-  defp do_pop_until_tag_ref([], _elements, _target), do: :not_found
+  defp pop_until_tag_ref([], _elements, _target), do: :not_found
 
-  defp do_pop_until_tag_ref([ref | rest], elements, target) when is_map_key(elements, ref) do
+  defp pop_until_tag_ref([ref | rest], elements, target) when is_map_key(elements, ref) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    if tag_matches?(tag, target) do
-      {:found, rest, parent_ref}
-    else
-      if special_element_barrier?(tag) do
-        :not_found
-      else
-        do_pop_until_tag_ref(rest, elements, target)
-      end
+    cond do
+      tag_matches?(tag, target) -> {:found, rest, parent_ref}
+      special_element_barrier?(tag) -> :not_found
+      true -> pop_until_tag_ref(rest, elements, target)
     end
   end
 
-  defp do_pop_until_tag_ref([_ref | rest], elements, target) do
-    do_pop_until_tag_ref(rest, elements, target)
+  defp pop_until_tag_ref([_ref | rest], elements, target) do
+    pop_until_tag_ref(rest, elements, target)
   end
 
   # Pop until tag for block-level end tags - only template is a barrier
@@ -1959,20 +1843,28 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
        when is_map_key(elements, ref) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    if tag_matches?(tag, target) do
-      {:found, rest, parent_ref}
-    else
-      if tag == "template" do
-        :not_found
-      else
-        pop_until_tag_ref_block(rest, elements, target)
-      end
+    cond do
+      tag_matches?(tag, target) -> {:found, rest, parent_ref}
+      tag == "template" -> :not_found
+      true -> pop_until_tag_ref_block(rest, elements, target)
     end
   end
 
   defp pop_until_tag_ref_block([_ref | rest], elements, target) do
     pop_until_tag_ref_block(rest, elements, target)
   end
+
+  # Apply the result of a pop_until_* function to the state.
+  # Shared by close_tag_ref, close_tag_ref_forced, close_foreign_root, and do_close_block_end_tag.
+  defp apply_pop_result(state, {:found, [new_top | _] = new_stack, _parent_ref}) do
+    %{state | stack: new_stack, current_parent_ref: new_top}
+  end
+
+  defp apply_pop_result(state, {:found, [], _parent_ref}) do
+    %{state | stack: [], current_parent_ref: nil}
+  end
+
+  defp apply_pop_result(state, :not_found), do: state
 
   # Check if element tag matches target (case-insensitive for SVG)
   defp tag_matches?(tag, target) when is_binary(tag), do: tag == target
@@ -2120,12 +2012,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     else
       af
     end
-  end
-
-  defp clear_af_to_marker(af) do
-    af
-    |> Enum.drop_while(&(&1 != :marker))
-    |> Enum.drop(1)
   end
 
   defp find_formatting_entry(af, tag) do

@@ -159,14 +159,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   defp remove_head_from_stack(%{head_element: head_ref, stack: stack} = state)
        when not is_nil(head_ref) do
     new_stack = List.delete(stack, head_ref)
-
-    new_parent_ref =
-      case new_stack do
-        [ref | _] -> ref
-        [] -> nil
-      end
-
-    %{state | stack: new_stack, current_parent_ref: new_parent_ref}
+    %{state | stack: new_stack, current_parent_ref: List.first(new_stack)}
   end
 
   defp remove_head_from_stack(state), do: state

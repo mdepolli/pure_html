@@ -474,8 +474,8 @@ defmodule PureHTML.TreeBuilder do
 
   defp use_foreign_content_rules?(token, state) do
     case adjusted_current_node_tag(state) do
-      {ns, _} when ns in [:svg, :math] ->
-        not insertion_mode_exception?(token, adjusted_current_node_tag(state), state)
+      {ns, _} = node_tag when ns in [:svg, :math] ->
+        not insertion_mode_exception?(token, node_tag, state)
 
       _ ->
         false
@@ -524,9 +524,7 @@ defmodule PureHTML.TreeBuilder do
   defp insertion_mode_exception?(_, _, _), do: false
 
   defp annotation_xml_is_html_integration_point?(%{stack: [ref | _], elements: elements}) do
-    attrs = elements[ref].attrs || []
-
-    case Enum.find(attrs, fn {name, _} -> name == "encoding" end) do
+    case List.keyfind(elements[ref].attrs || [], "encoding", 0) do
       {_, enc} -> String.downcase(enc) in ["text/html", "application/xhtml+xml"]
       nil -> false
     end
@@ -818,10 +816,7 @@ defmodule PureHTML.TreeBuilder do
   defp find_in_button([_ | rest], idx), do: find_in_button(rest, idx + 1)
 
   defp collect_options(children) do
-    Enum.filter(children, fn
-      %{tag: "option"} -> true
-      _ -> false
-    end)
+    Enum.filter(children, &match?(%{tag: "option"}, &1))
   end
 
   defp get_option_content([]), do: []

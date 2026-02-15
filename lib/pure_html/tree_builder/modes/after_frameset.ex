@@ -23,13 +23,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   @impl true
   def process({:character, text}, state) do
-    # Only whitespace is inserted, non-whitespace is ignored
     case extract_whitespace(text) do
-      "" ->
-        {:ok, state}
-
-      whitespace ->
-        {:ok, add_text_to_stack(state, whitespace)}
+      "" -> {:ok, state}
+      whitespace -> {:ok, add_text_to_stack(state, whitespace)}
     end
   end
 

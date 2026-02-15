@@ -388,21 +388,19 @@ defmodule PureHTML.Query do
 
   """
   @spec attr(html_node(), String.t()) :: String.t() | nil
-  def attr({_tag, attrs, _children}, name) when is_list(attrs) do
-    case List.keyfind(attrs, name, 0) do
-      {_, value} -> value
+  def attr(node, name) do
+    case get_attrs(node) do
       nil -> nil
+      attrs -> List.keyfind(attrs, name, 0) |> extract_value()
     end
   end
 
-  def attr({{_ns, _tag}, attrs, _children}, name) when is_list(attrs) do
-    case List.keyfind(attrs, name, 0) do
-      {_, value} -> value
-      nil -> nil
-    end
-  end
+  defp get_attrs({_tag, attrs, _children}) when is_list(attrs), do: attrs
+  defp get_attrs({{_ns, _tag}, attrs, _children}) when is_list(attrs), do: attrs
+  defp get_attrs(_), do: nil
 
-  def attr(_non_element, _name), do: nil
+  defp extract_value({_, value}), do: value
+  defp extract_value(nil), do: nil
 
   @doc """
   Extracts attribute values from a list of nodes.

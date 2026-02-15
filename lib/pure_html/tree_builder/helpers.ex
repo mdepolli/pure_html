@@ -261,8 +261,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
     end)
   end
 
+  @doc false
   # Insert new_item after target_item in list (because children are reversed)
-  defp insert_after_in_list(list, new_item, target_item) do
+  def insert_after_in_list(list, new_item, target_item) do
     do_insert_after(list, new_item, target_item, [])
   end
 
@@ -790,29 +791,30 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def correct_tag("image"), do: "img"
   def correct_tag(tag), do: tag
 
-  @whitespace_chars [" ", "\t", "\n", "\r", "\f"]
-
   @doc """
   Extracts only whitespace characters from text.
   Returns the whitespace portion of the string.
   """
   def extract_whitespace(text) do
-    text
-    |> String.graphemes()
-    |> Enum.filter(&(&1 in @whitespace_chars))
-    |> Enum.join()
+    for <<c <- text>>, c in ~c[ \t\n\r\f], into: "", do: <<c>>
   end
 
   @doc """
   Splits text into leading whitespace and remaining content.
   Returns {whitespace, rest}.
   """
-  def split_whitespace(text) do
-    text
-    |> String.graphemes()
-    |> Enum.split_while(&(&1 in @whitespace_chars))
-    |> then(fn {ws, rest} -> {Enum.join(ws), Enum.join(rest)} end)
+  def split_whitespace(<<c, rest::binary>> = text) when c in ~c[ \t\n\r\f] do
+    n = count_leading_whitespace(rest, 1)
+    {binary_part(text, 0, n), binary_part(text, n, byte_size(text) - n)}
   end
+
+  def split_whitespace(text), do: {"", text}
+
+  defp count_leading_whitespace(<<c, rest::binary>>, n) when c in ~c[ \t\n\r\f] do
+    count_leading_whitespace(rest, n + 1)
+  end
+
+  defp count_leading_whitespace(_, n), do: n
 
   @doc """
   Merges new attributes into the html element, preserving existing attrs.
@@ -889,29 +891,25 @@ defmodule PureHTML.TreeBuilder.Helpers do
   `context_element` is provided (fragment parsing), it is used as the fallback
   when the bottom of the stack is reached.
   """
-  def determine_mode_from_stack(stack, elements, context_element) do
-    do_determine_mode(stack, elements, context_element)
-  end
-
   # Empty stack, no fragment context
-  defp do_determine_mode([], _elements, nil), do: :in_body
+  def determine_mode_from_stack([], _elements, nil), do: :in_body
 
   # Empty stack with fragment context — use the context element
-  defp do_determine_mode([], _elements, {_ns, tag}) do
+  def determine_mode_from_stack([], _elements, {_ns, tag}) do
     Map.get(@tag_to_mode, tag, :in_body)
   end
 
   # Last node in stack + fragment context: per spec, set node to context element
-  defp do_determine_mode([_ref], _elements, {_ns, _tag} = context) do
-    do_determine_mode([], nil, context)
+  def determine_mode_from_stack([_ref], _elements, {_ns, _tag} = context) do
+    determine_mode_from_stack([], nil, context)
   end
 
-  defp do_determine_mode([ref | rest], elements, context_element) do
+  def determine_mode_from_stack([ref | rest], elements, context_element) do
     tag = elements[ref].tag
 
     case Map.get(@tag_to_mode, tag) do
       nil ->
-        do_determine_mode(rest, elements, context_element)
+        determine_mode_from_stack(rest, elements, context_element)
 
       # Per HTML5 spec: if select and table ancestor exists, use in_select_in_table
       :in_select ->

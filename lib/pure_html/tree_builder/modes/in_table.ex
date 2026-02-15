@@ -53,12 +53,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @table_context ~w(table tbody thead tfoot tr)
   @ignored_end_tags ~w(body caption col colgroup html tbody td tfoot th thead tr)
 
-  @impl true
-  def process(token, state), do: process_dispatch(token, state)
-
-  # In template context with table-related modes, most tokens go through normal
-  # process_in_table which handles foster parenting correctly.
-  # Only end tags for non-table elements need special handling via InBody.
+  # In template context with table-related modes, end tags for non-table
+  # elements need special handling via InBody (which traverses the stack).
   @template_table_modes [
     :in_table,
     :in_table_body,
@@ -68,14 +64,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     :in_column_group
   ]
 
-  # End tags for non-table elements in template table context: use InBody rules
-  # (InBody handles "any other end tag" by traversing stack)
-  defp process_dispatch({:end_tag, _} = token, %{template_mode_stack: [mode | _]} = state)
-       when mode in @template_table_modes do
+  @impl true
+  def process({:end_tag, _} = token, %{template_mode_stack: [mode | _]} = state)
+      when mode in @template_table_modes do
     InBody.process(token, state)
   end
 
-  defp process_dispatch(token, state) do
+  def process(token, state) do
     process_in_table(token, state)
   end
 

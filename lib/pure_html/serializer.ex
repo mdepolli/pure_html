@@ -101,17 +101,11 @@ defmodule PureHTML.Serializer do
   defp serialize_element(tag, attrs, children, opts) do
     opening = serialize_opening_tag(tag, attrs, opts)
 
-    cond do
-      tag in @void_elements ->
-        opening
-
-      tag in @raw_text_elements ->
-        content = Enum.map(children, &serialize_node(&1, tag, opts))
-        [opening, content, "</", tag, ">"]
-
-      true ->
-        content = Enum.map(children, &serialize_node(&1, tag, opts))
-        [opening, content, "</", tag, ">"]
+    if tag in @void_elements do
+      opening
+    else
+      content = Enum.map(children, &serialize_node(&1, tag, opts))
+      [opening, content, "</", tag, ">"]
     end
   end
 
@@ -173,28 +167,21 @@ defmodule PureHTML.Serializer do
   end
 
   defp escape_attr_single(value, escape_lt) do
-    value = String.replace(value, "&", "&amp;")
-    value = String.replace(value, "'", "&#39;")
-
-    if escape_lt do
-      String.replace(value, "<", "&lt;")
-    else
-      value
-    end
+    value
+    |> String.replace("&", "&amp;")
+    |> String.replace("'", "&#39;")
+    |> maybe_escape_lt(escape_lt)
   end
 
   defp escape_attr_double(value, escape_lt) do
-    value =
-      value
-      |> String.replace("&", "&amp;")
-      |> String.replace("\"", "&quot;")
-
-    if escape_lt do
-      String.replace(value, "<", "&lt;")
-    else
-      value
-    end
+    value
+    |> String.replace("&", "&amp;")
+    |> String.replace("\"", "&quot;")
+    |> maybe_escape_lt(escape_lt)
   end
+
+  defp maybe_escape_lt(value, true), do: String.replace(value, "<", "&lt;")
+  defp maybe_escape_lt(value, false), do: value
 
   defp escape_text(text) do
     text

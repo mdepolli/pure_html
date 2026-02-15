@@ -9,7 +9,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   See: https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
   """
 
-  import PureHTML.TreeBuilder.Helpers, only: [new_element: 3]
+  import PureHTML.TreeBuilder.Helpers, only: [new_element: 3, insert_after_in_list: 3]
 
   # Scope boundaries for the "in scope" check
   @scope_boundaries ~w(
@@ -434,21 +434,5 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
       _, elems ->
         elems
     end)
-  end
-
-  defp insert_after_in_list(list, new_item, target_item) do
-    do_insert_after(list, new_item, target_item, [])
-  end
-
-  defp do_insert_after([], new_item, _target, acc) do
-    Enum.reverse([new_item | acc])
-  end
-
-  defp do_insert_after([target | rest], new_item, target, acc) do
-    Enum.reverse(acc) ++ [target, new_item | rest]
-  end
-
-  defp do_insert_after([item | rest], new_item, target, acc) do
-    do_insert_after(rest, new_item, target, [item | acc])
   end
 end
