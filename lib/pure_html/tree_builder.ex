@@ -25,10 +25,7 @@ defmodule PureHTML.TreeBuilder do
 
   import PureHTML.TreeBuilder.Helpers,
     only: [
-      add_text_to_stack: 2,
       add_child_to_stack: 2,
-      foster_parent: 2,
-      update_af_entry: 3,
       determine_mode_from_stack: 3
     ]
 
@@ -315,65 +312,12 @@ defmodule PureHTML.TreeBuilder do
 
     case Tokenizer.next_token(tokenizer) do
       nil ->
-        # Flush any pending table text before finalizing
-        flush_pending_table_text(acc)
+        acc
 
       {token, tokenizer} ->
         acc = process_token(token, acc)
         build_loop(tokenizer, acc)
     end
-  end
-
-  # Flush pending table text if any (for in_table_text mode at EOF)
-  defp flush_pending_table_text({doctype, %State{pending_table_text: ""} = state, comments}) do
-    {doctype, state, comments}
-  end
-
-  defp flush_pending_table_text({doctype, %State{pending_table_text: text} = state, comments}) do
-    new_state =
-      if String.trim(text) == "" do
-        # Whitespace only: insert normally
-        add_text_to_stack(state, text)
-      else
-        # Contains non-whitespace: foster parent with AF reconstruction
-        foster_parent_with_formatting(state, text)
-      end
-
-    {doctype, %{new_state | pending_table_text: ""}, comments}
-  end
-
-  # Foster parent text with active formatting reconstruction at EOF.
-  # If there are formatting elements to reconstruct, they get foster parented
-  # and the text is added to the reconstructed element (not foster parented).
-  defp foster_parent_with_formatting(state, text) do
-    case entries_needing_reconstruction(state) do
-      [] ->
-        {new_state, _} = foster_parent(state, {:text, text})
-        new_state
-
-      entries ->
-        state
-        |> reconstruct_formatting_for_foster(entries)
-        |> add_text_to_stack(text)
-    end
-  end
-
-  # Returns active formatting entries that need reconstruction (not on stack),
-  # in the order they should be reconstructed (reversed from AF list order).
-  defp entries_needing_reconstruction(%{af: af, stack: stack}) do
-    af
-    |> Enum.take_while(&(&1 != :marker))
-    |> Enum.filter(fn {ref, _tag, _attrs} -> ref not in stack end)
-    |> Enum.reverse()
-  end
-
-  # Reconstruct active formatting elements via foster parenting.
-  defp reconstruct_formatting_for_foster(state, entries) do
-    Enum.reduce(entries, state, fn {old_ref, tag, attrs}, acc ->
-      {new_state, new_ref} = foster_parent(acc, {:push, tag, attrs})
-      new_af = update_af_entry(new_state.af, old_ref, {new_ref, tag, attrs})
-      %{new_state | af: new_af}
-    end)
   end
 
   defp update_tokenizer_context(
@@ -526,7 +470,7 @@ defmodule PureHTML.TreeBuilder do
   # 8. Token is EOF
   # Otherwise, use foreign content rules.
   defp use_foreign_content_rules?(_token, %{stack: []}), do: false
-  defp use_foreign_content_rules?({:eof}, _state), do: false
+  defp use_foreign_content_rules?(:eof, _state), do: false
 
   defp use_foreign_content_rules?(token, state) do
     case adjusted_current_node_tag(state) do

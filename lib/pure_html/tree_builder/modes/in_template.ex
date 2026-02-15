@@ -31,7 +31,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
       push_element: 3,
       push_af_marker: 1,
       switch_template_mode: 2,
-      find_ref: 2
+      find_ref: 2,
+      pop_until_tag: 2,
+      clear_af_to_marker: 1,
+      determine_mode_from_stack: 3
     ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -160,6 +163,29 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   # Other end tags: parse error, ignore
   def process({:end_tag, _}, state) do
     {:ok, state}
+  end
+
+  # EOF: if no template on stack, stop. Otherwise clean up template stack.
+  def process(:eof, %{template_mode_stack: []} = state) do
+    {:ok, state}
+  end
+
+  def process(:eof, state) do
+    {_, state} = pop_until_tag(state, "template")
+
+    state = clear_af_to_marker(state)
+
+    %{template_mode_stack: [_ | rest_tms]} = state
+    state = %{state | template_mode_stack: rest_tms}
+
+    mode =
+      determine_mode_from_stack(
+        state.stack,
+        state.elements,
+        state.context_element
+      )
+
+    {:reprocess, %{state | mode: mode}}
   end
 
   # Error tokens: ignore

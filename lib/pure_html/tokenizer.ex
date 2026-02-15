@@ -33,6 +33,7 @@ defmodule PureHTML.Tokenizer do
           | {:comment, String.t()}
           | {:character, String.t()}
           | {:error, atom()}
+          | :eof
 
   # The tokenizer state struct
   defstruct [
@@ -63,7 +64,9 @@ defmodule PureHTML.Tokenizer do
     # When false (default), <![CDATA[ is treated as bogus comment
     adjusted_current_node_not_in_html_namespace: false,
     # XML infoset coercion mode - applies transformations for XML compatibility
-    xml_violation_mode: false
+    xml_violation_mode: false,
+    # Whether the EOF token has already been emitted
+    eof_emitted: false
   ]
 
   # Guards
@@ -138,7 +141,10 @@ defmodule PureHTML.Tokenizer do
   """
   @spec tokenize(String.t(), keyword()) :: Enumerable.t()
   def tokenize(input, opts \\ []) when is_binary(input) do
-    input |> new(opts) |> Stream.unfold(&next_token/1)
+    input
+    |> new(opts)
+    |> Stream.unfold(&next_token/1)
+    |> Stream.reject(&(&1 == :eof))
   end
 
   @doc """
@@ -168,6 +174,9 @@ defmodule PureHTML.Tokenizer do
     {token, %{state | deferred_token: nil}}
   end
 
+  # EOF already emitted — signal end of token stream
+  def next_token(%__MODULE__{eof_emitted: true}), do: nil
+
   # States where EOF should flush pending chars and terminate.
   # Excludes "less_than_sign" states which have implicit pending '<' to emit via step.
   @eof_flush_states [
@@ -186,15 +195,16 @@ defmodule PureHTML.Tokenizer do
     :script_data_double_escaped_dash_dash
   ]
 
-  def next_token(%__MODULE__{input: "", state: s, pending_chars: []} = _state)
+  def next_token(%__MODULE__{input: "", state: s, pending_chars: []} = state)
       when s in @eof_flush_states do
-    nil
+    {:eof, %{state | eof_emitted: true}}
   end
 
   def next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
       when s in @eof_flush_states do
-    # Flush pending chars at EOF
-    {flush_pending(pending, state.xml_violation_mode), %{state | pending_chars: []}}
+    # Flush pending chars at EOF, defer :eof token for next call
+    {flush_pending(pending, state.xml_violation_mode),
+     %{state | pending_chars: [], deferred_token: :eof, eof_emitted: true}}
   end
 
   def next_token(%__MODULE__{} = state) do
@@ -221,11 +231,11 @@ defmodule PureHTML.Tokenizer do
         next_token(new_state)
 
       nil when state.pending_chars == [] ->
-        nil
+        {:eof, %{state | eof_emitted: true}}
 
       nil ->
         {flush_pending(state.pending_chars, state.xml_violation_mode),
-         %{state | pending_chars: []}}
+         %{state | pending_chars: [], deferred_token: :eof, eof_emitted: true}}
     end
   end
 

@@ -285,6 +285,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_tag_ref(state, tag)}
   end
 
+  # EOF: generate implied end tags thoroughly and stop
+  def process(:eof, state) do
+    {:ok, generate_implied_end_tags_thoroughly(state)}
+  end
+
   # Error tokens - ignore
   def process({:error, _}, state), do: {:ok, state}
 
@@ -1639,6 +1644,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Tags that are implicitly closed (popped) when generating implied end tags
   @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
 
+  # Tags for "generate implied end tags thoroughly" (used at EOF)
+  @implied_end_tag_tags_thorough ~w(
+    caption colgroup dd dt li optgroup option p rb rp rt rtc
+    tbody td tfoot th thead tr
+  )
+
   # Close tag using ref-only stack architecture (respects special element stops)
   # Used for "any other end tag" per HTML5 spec
   defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
@@ -1802,6 +1813,26 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp generate_implied_end_tags(state), do: state
+
+  # Generate implied end tags thoroughly (used at EOF per spec)
+  defp generate_implied_end_tags_thoroughly(%{stack: [ref | rest], elements: elements} = state)
+       when is_map_key(elements, ref) do
+    case elements[ref] do
+      %{tag: tag} when tag in @implied_end_tag_tags_thorough ->
+        parent_ref = elements[ref].parent_ref
+
+        generate_implied_end_tags_thoroughly(%{
+          state
+          | stack: rest,
+            current_parent_ref: parent_ref
+        })
+
+      _ ->
+        state
+    end
+  end
+
+  defp generate_implied_end_tags_thoroughly(state), do: state
 
   # Close any heading element (h1-h6) per HTML5 spec
   # Any heading end tag closes any open heading element

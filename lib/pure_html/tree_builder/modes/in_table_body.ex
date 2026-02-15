@@ -135,6 +135,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
     delegate_to_in_table(token, state)
   end
 
+  # EOF: reprocess in in_body
+  def process(:eof, state) do
+    {:reprocess, %{state | mode: :in_body}}
+  end
+
   # Error tokens: ignore
   def process({:error, _}, state), do: {:ok, state}
 

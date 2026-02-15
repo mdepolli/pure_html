@@ -106,6 +106,11 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     {:ok, state}
   end
 
+  # EOF: stop parsing
+  def process(:eof, state) do
+    {:ok, state}
+  end
+
   # Error tokens: ignore
   def process({:error, _}, state), do: {:ok, state}
 end

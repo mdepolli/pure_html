@@ -127,6 +127,11 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     {:ok, state}
   end
 
+  # EOF: reprocess in in_body (without inserting implied body)
+  def process(:eof, state) do
+    {:reprocess, %{state | mode: :in_body}}
+  end
+
   def process(_token, state) do
     # Anything else: insert implied <body>, switch to "in body", reprocess
     {:reprocess, insert_implied_body(state)}

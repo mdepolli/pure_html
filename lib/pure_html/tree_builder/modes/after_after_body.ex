@@ -46,6 +46,11 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
     {:reprocess, %{state | mode: :in_body}}
   end
 
+  # EOF: stop parsing
+  def process(:eof, state) do
+    {:ok, state}
+  end
+
   def process(_token, state) do
     # Anything else: parse error, switch to "in body", reprocess
     {:reprocess, %{state | mode: :in_body}}

@@ -248,6 +248,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     end
   end
 
+  # EOF: stop parsing
+  def process(:eof, state) do
+    {:ok, state}
+  end
+
   # Error tokens: ignore
   def process({:error, _}, state), do: {:ok, state}
 

@@ -293,6 +293,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     InBody.process(token, state)
   end
 
+  # EOF: reprocess in in_body
+  defp process_in_table(:eof, state) do
+    {:reprocess, %{state | mode: :in_body}}
+  end
+
   # Error tokens: ignore
   defp process_in_table({:error, _}, state), do: {:ok, state}
 
