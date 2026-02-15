@@ -39,14 +39,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       close_select: 1,
       current_tag: 1,
       in_scope?: 3,
-      find_ref: 2
+      find_ref: 2,
+      foreign_namespace: 1
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
-
-  # Note: This module has its own foreign_namespace/1 that searches the entire
-  # stack for any foreign element, unlike the shared helper which only checks
-  # the top. This is needed for select mode's foreign content handling.
 
   # Formatting elements that should be added to AF even in select mode
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
@@ -399,16 +396,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       ]
 
       %{new_state | af: new_af}
-    end)
-  end
-
-  # Get the current foreign namespace (if we're inside SVG or MathML)
-  defp foreign_namespace(%{stack: stack, elements: elements}) do
-    Enum.find_value(stack, fn ref ->
-      case elements[ref] do
-        %{tag: {ns, _}} when ns in [:svg, :math] -> ns
-        _ -> nil
-      end
     end)
   end
 
