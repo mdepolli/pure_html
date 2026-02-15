@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `scripting:` option for `PureHTML.parse/2` (default: `true`)
+  - When `false`, `<noscript>` content is parsed as HTML instead of raw text
+  - Per WHATWG spec, affects `in_head`, `in_body`, and `in_template` insertion modes
+  - Tokenizer state for `<noscript>` is now scripting-aware (RAWTEXT vs data state)
+- html5lib tree construction tests now run in both scripting modes per the test README
+  - Tests without `#script-off`/`#script-on` run in both modes
+  - `#script-off` tests are no longer skipped
+  - Filter with `--only scripting:on` or `--only scripting:off`
+
+### Fixed
+
+- Fragment parsing: form element pointer now set when context element is `<form>` (WHATWG spec step 13)
+- `in_select` foreign namespace check now uses adjusted current node instead of scanning entire stack
+
 ## [0.3.0] - 2026-02-15
 
 ### Added
@@ -25,15 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Foster-parented elements no longer incorrectly removed from active formatting list during `pop_until_tag`
 - Table structure elements (tbody/thead/tfoot/caption/colgroup) handled correctly at foreign integration points in all table-related modes
 - Fragment tokenizer no longer sets `last_start_tag`, so end tags in escaped script/rawtext/rcdata contexts are correctly treated as character tokens
-
-### Current Status
-
-- **All 9,028 tests passing (100%)**
-  - Tokenizer: 7,036 tests
-  - Tree construction: 1,668 tests (192 fragment tests)
-  - Encoding: 82 tests
-  - Serializer: 40 tests
-  - Properties: 4
 
 ## [0.2.0] - 2026-01-20
 
@@ -144,10 +153,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active formatting reconstruction for void elements in table context
 - Row mode foster parenting with in_body rules delegation
 
-### Status at Release
-
-- **All 8,634 html5lib tests passing (100%)**
-  - Tokenizer: 7,036 tests
-  - Tree construction: 1,476 tests
-  - Encoding: 82 tests
-  - Serializer: 40 tests

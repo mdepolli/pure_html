@@ -66,7 +66,9 @@ defmodule PureHTML.Tokenizer do
     # XML infoset coercion mode - applies transformations for XML compatibility
     xml_violation_mode: false,
     # Whether the EOF token has already been emitted
-    eof_emitted: false
+    eof_emitted: false,
+    # Scripting flag: when true, <noscript> content is RAWTEXT; when false, parsed as HTML
+    scripting: true
   ]
 
   # Guards
@@ -114,6 +116,7 @@ defmodule PureHTML.Tokenizer do
     initial_state = Keyword.get(opts, :initial_state, :data)
     last_start_tag = Keyword.get(opts, :last_start_tag, nil)
     xml_violation_mode = Keyword.get(opts, :xml_violation_mode, false)
+    scripting = Keyword.get(opts, :scripting, true)
 
     # Normalize newlines per HTML5 spec: CRLF → LF, CR → LF
     normalized_input = normalize_newlines(input)
@@ -130,7 +133,8 @@ defmodule PureHTML.Tokenizer do
       errors: [],
       pending_chars: [],
       deferred_token: nil,
-      xml_violation_mode: xml_violation_mode
+      xml_violation_mode: xml_violation_mode,
+      scripting: scripting
     }
   end
 
@@ -2186,25 +2190,43 @@ defmodule PureHTML.Tokenizer do
     {:continue, struct!(state, updates)}
   end
 
-  @rawtext_elements ~w(style xmp iframe noembed noframes noscript)
+  @rawtext_elements ~w(style xmp iframe noembed noframes)
   @rcdata_elements ~w(textarea title)
 
   defp emit(state), do: emit(state, [])
 
   # Specialized emit/2 for common pattern: input: rest (88% of calls)
   defp emit(%{token: {:start_tag, tag, _, false}} = state, input: new_input) do
-    next = next_state_for_tag(tag, state.adjusted_current_node_not_in_html_namespace)
+    next =
+      next_state_for_tag(
+        tag,
+        state.adjusted_current_node_not_in_html_namespace,
+        state.scripting
+      )
+
     {:emit, state.token, %{state | state: next, token: nil, input: new_input}}
   end
 
   defp emit(%{token: {:start_tag, tag, _, false}} = state, []) do
-    next = next_state_for_tag(tag, state.adjusted_current_node_not_in_html_namespace)
+    next =
+      next_state_for_tag(
+        tag,
+        state.adjusted_current_node_not_in_html_namespace,
+        state.scripting
+      )
+
     {:emit, state.token, %{state | state: next, token: nil}}
   end
 
   # Fallback for start tags with other updates
   defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) do
-    next_state = next_state_for_tag(tag, state.adjusted_current_node_not_in_html_namespace)
+    next_state =
+      next_state_for_tag(
+        tag,
+        state.adjusted_current_node_not_in_html_namespace,
+        state.scripting
+      )
+
     all_updates = Keyword.merge([state: next_state, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
   end
@@ -2226,14 +2248,18 @@ defmodule PureHTML.Tokenizer do
 
   # In foreign content (SVG/MathML), title should NOT switch to RCDATA mode
   # since it's an HTML integration point where content is parsed as HTML
-  defp next_state_for_tag("title", true), do: :data
+  defp next_state_for_tag("title", true, _scripting), do: :data
   # In foreign content, plaintext is a regular element, not raw text
-  defp next_state_for_tag("plaintext", true), do: :data
-  defp next_state_for_tag("plaintext", _), do: :plaintext
-  defp next_state_for_tag("script", _), do: :script_data
-  defp next_state_for_tag(tag, _) when tag in @rawtext_elements, do: :rawtext
-  defp next_state_for_tag(tag, _) when tag in @rcdata_elements, do: :rcdata
-  defp next_state_for_tag(_, _), do: :data
+  defp next_state_for_tag("plaintext", true, _scripting), do: :data
+  defp next_state_for_tag("plaintext", _, _scripting), do: :plaintext
+  defp next_state_for_tag("script", _, _scripting), do: :script_data
+  # <noscript> is RAWTEXT only when scripting is enabled;
+  # when scripting is disabled, content is parsed as HTML (data state)
+  defp next_state_for_tag("noscript", _, true = _scripting), do: :rawtext
+  defp next_state_for_tag("noscript", _, false = _scripting), do: :data
+  defp next_state_for_tag(tag, _, _scripting) when tag in @rawtext_elements, do: :rawtext
+  defp next_state_for_tag(tag, _, _scripting) when tag in @rcdata_elements, do: :rcdata
+  defp next_state_for_tag(_, _, _scripting), do: :data
 
   # Specialized emit_char/3 clauses for common patterns
   defp emit_char(state, char, state: new_state, input: new_input) do

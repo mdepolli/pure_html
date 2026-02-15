@@ -26,7 +26,7 @@ defmodule PureHTML.TreeBuilder do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       add_child_to_stack: 2,
-      determine_mode_from_stack: 3
+      determine_mode_from_stack: 4
     ]
 
   alias PureHTML.Tokenizer
@@ -236,10 +236,10 @@ defmodule PureHTML.TreeBuilder do
   Returns a list of top-level nodes. If a doctype is present, it appears first
   as `{:doctype, name, public_id, system_id}`.
   """
-  @spec build(Tokenizer.t()) :: [document_node()]
-  def build(%Tokenizer{} = tokenizer) do
+  @spec build(Tokenizer.t(), boolean()) :: [document_node()]
+  def build(%Tokenizer{} = tokenizer, scripting \\ true) do
     {doctype, state, pre_html_comments} =
-      build_loop(tokenizer, {nil, %State{}, []})
+      build_loop(tokenizer, {nil, %State{scripting: scripting}, []})
 
     html_node = finalize(state)
     pre_comments = Enum.reverse(pre_html_comments)
@@ -262,8 +262,8 @@ defmodule PureHTML.TreeBuilder do
 
   Returns a list of child nodes (no `<html>/<head>/<body>` wrappers).
   """
-  @spec build_fragment(Tokenizer.t(), atom() | nil, String.t()) :: [document_node()]
-  def build_fragment(%Tokenizer{} = tokenizer, namespace, tag) do
+  @spec build_fragment(Tokenizer.t(), atom() | nil, String.t(), boolean()) :: [document_node()]
+  def build_fragment(%Tokenizer{} = tokenizer, namespace, tag, scripting \\ true) do
     context = {namespace, tag}
 
     # Step 1: Create an html element and push it onto the stack
@@ -291,11 +291,12 @@ defmodule PureHTML.TreeBuilder do
       elements: elements,
       current_parent_ref: html_ref,
       context_element: context,
-      template_mode_stack: template_mode_stack
+      template_mode_stack: template_mode_stack,
+      scripting: scripting
     }
 
     # Step 4: Reset the insertion mode appropriately
-    mode = determine_mode_from_stack(state.stack, state.elements, context)
+    mode = determine_mode_from_stack(state.stack, state.elements, context, scripting)
     state = %{state | mode: mode}
 
     # Step 5: If the context element is a form element, set the form element pointer

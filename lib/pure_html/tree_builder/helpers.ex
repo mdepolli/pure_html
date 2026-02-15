@@ -892,24 +892,24 @@ defmodule PureHTML.TreeBuilder.Helpers do
   when the bottom of the stack is reached.
   """
   # Empty stack, no fragment context
-  def determine_mode_from_stack([], _elements, nil), do: :in_body
+  def determine_mode_from_stack([], _elements, nil, _scripting), do: :in_body
 
   # Empty stack with fragment context — use the context element
-  def determine_mode_from_stack([], _elements, {_ns, tag}) do
-    Map.get(@tag_to_mode, tag, :in_body)
+  def determine_mode_from_stack([], _elements, {_ns, tag}, scripting) do
+    determine_mode_for_tag(tag, scripting) || :in_body
   end
 
   # Last node in stack + fragment context: per spec, set node to context element
-  def determine_mode_from_stack([_ref], _elements, {_ns, _tag} = context) do
-    determine_mode_from_stack([], nil, context)
+  def determine_mode_from_stack([_ref], _elements, {_ns, _tag} = context, scripting) do
+    determine_mode_from_stack([], nil, context, scripting)
   end
 
-  def determine_mode_from_stack([ref | rest], elements, context_element) do
+  def determine_mode_from_stack([ref | rest], elements, context_element, scripting) do
     tag = elements[ref].tag
 
-    case Map.get(@tag_to_mode, tag) do
+    case determine_mode_for_tag(tag, scripting) do
       nil ->
-        determine_mode_from_stack(rest, elements, context_element)
+        determine_mode_from_stack(rest, elements, context_element, scripting)
 
       # Per HTML5 spec: if select and table ancestor exists, use in_select_in_table
       :in_select ->
@@ -923,6 +923,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
         mode
     end
   end
+
+  # noscript with scripting enabled maps to :in_head per WHATWG spec
+  defp determine_mode_for_tag("noscript", true), do: :in_head
+  defp determine_mode_for_tag(tag, _scripting), do: Map.get(@tag_to_mode, tag)
 
   @doc false
   def has_table_ancestor?([], _elements), do: false

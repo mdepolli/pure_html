@@ -34,7 +34,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
       find_ref: 2,
       pop_until_tag: 2,
       clear_af_to_marker: 1,
-      determine_mode_from_stack: 3
+      determine_mode_from_stack: 4
     ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -43,7 +43,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   @void_head_elements ~w(base basefont bgsound link meta)
 
   # Raw text elements that need text mode
-  @raw_text_elements ~w(noframes noscript style)
+  @raw_text_elements ~w(noframes style)
 
   # Title should be delegated to in_head
   @delegate_head_elements ~w(title)
@@ -73,6 +73,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   # Script: push element, switch to text mode with original_mode: :in_template
   def process({:start_tag, "script", attrs, _}, state) do
     {:ok, push_and_enter_text_mode(state, "script", attrs)}
+  end
+
+  # <noscript> with scripting enabled: treat as RAWTEXT
+  def process({:start_tag, "noscript", attrs, _}, %{scripting: true} = state) do
+    {:ok, push_and_enter_text_mode(state, "noscript", attrs)}
   end
 
   # Raw text elements: push element, switch to text mode
@@ -182,7 +187,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
       determine_mode_from_stack(
         state.stack,
         state.elements,
-        state.context_element
+        state.context_element,
+        state.scripting
       )
 
     {:reprocess, %{state | mode: mode}}

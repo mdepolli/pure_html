@@ -38,7 +38,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     ]
 
   @void_head_elements ~w(base basefont bgsound link meta)
-  @raw_text_elements ~w(noframes noscript style)
+  @raw_text_elements ~w(noframes style)
 
   @impl true
   def process({:character, text}, state) do
@@ -86,6 +86,21 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
       |> push_element("title", attrs)
       |> Map.put(:original_mode, :in_head)
       |> Map.put(:mode, :text)
+
+    {:ok, state}
+  end
+
+  # <noscript> with scripting enabled: treat as RAWTEXT (content is raw text)
+  def process({:start_tag, "noscript", attrs, _self_closing}, %{scripting: true} = state) do
+    {:ok, switch_to_text_mode(state, "noscript", attrs)}
+  end
+
+  # <noscript> with scripting disabled: push element, enter in_head_noscript mode
+  def process({:start_tag, "noscript", attrs, _self_closing}, state) do
+    state =
+      state
+      |> push_element("noscript", attrs)
+      |> Map.put(:mode, :in_head_noscript)
 
     {:ok, state}
   end

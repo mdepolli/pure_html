@@ -37,7 +37,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       update_af_entry: 3,
       get_attr: 2,
       html_integration_point?: 1,
-      determine_mode_from_stack: 3,
+      determine_mode_from_stack: 4,
       has_table_ancestor?: 2
     ]
 
@@ -48,7 +48,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
-  @head_elements ~w(base basefont bgsound link meta noframes noscript script style template title)
+  @head_elements ~w(base basefont bgsound link meta noframes script style template title)
   @table_context ~w(table tbody thead tfoot tr)
   @table_sections ~w(tbody thead tfoot)
   @table_cells ~w(td th)
@@ -486,6 +486,45 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     else
       do_process_html_start_tag_head_context("template", attrs, state)
     end
+  end
+
+  # <noscript> with scripting enabled: process using "in head" rules (RAWTEXT)
+  defp do_process_html_start_tag(
+         "noscript",
+         attrs,
+         self_closing,
+         %{scripting: true, mode: mode} = state
+       )
+       when mode in [:in_template, :in_body, :in_table, :in_select, :in_select_in_table] do
+    if find_ref(state, "body") || mode == :in_template do
+      process_start_tag(state, "noscript", attrs, self_closing)
+    else
+      state
+      |> ensure_html()
+      |> ensure_head()
+      |> maybe_reopen_head()
+      |> process_start_tag("noscript", attrs, self_closing)
+    end
+  end
+
+  defp do_process_html_start_tag("noscript", attrs, self_closing, %{scripting: true} = state) do
+    if find_ref(state, "body") do
+      process_start_tag(state, "noscript", attrs, self_closing)
+    else
+      state
+      |> ensure_html()
+      |> ensure_head()
+      |> maybe_reopen_head()
+      |> process_start_tag("noscript", attrs, self_closing)
+    end
+  end
+
+  # <noscript> with scripting disabled: reconstruct AF, push element (parsed as HTML)
+  defp do_process_html_start_tag("noscript", attrs, _, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> push_element("noscript", attrs)
   end
 
   # Head elements in body modes
@@ -1279,10 +1318,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
            stack: stack,
            elements: elements,
            context_element: context_element,
+           scripting: scripting,
            template_mode_stack: template_mode_stack
          } = state
        ) do
-    mode = determine_mode_from_stack(stack, elements, context_element)
+    mode = determine_mode_from_stack(stack, elements, context_element, scripting)
     %{state | mode: mode, template_mode_stack: Enum.drop(template_mode_stack, 1)}
   end
 
