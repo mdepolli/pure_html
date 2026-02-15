@@ -66,7 +66,9 @@ defmodule PureHTML.Tokenizer do
     # XML infoset coercion mode - applies transformations for XML compatibility
     xml_violation_mode: false,
     # Whether the EOF token has already been emitted
-    eof_emitted: false
+    eof_emitted: false,
+    # Scripting flag: when true, <noscript> content is RAWTEXT; when false, parsed as HTML
+    scripting: true
   ]
 
   # Guards

@@ -26,7 +26,7 @@ defmodule PureHTML.TreeBuilder do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       add_child_to_stack: 2,
-      determine_mode_from_stack: 3
+      determine_mode_from_stack: 4
     ]
 
   alias PureHTML.Tokenizer

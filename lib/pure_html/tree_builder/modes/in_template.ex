@@ -34,7 +34,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
       find_ref: 2,
       pop_until_tag: 2,
       clear_af_to_marker: 1,
-      determine_mode_from_stack: 3
+      determine_mode_from_stack: 4
     ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -187,7 +187,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
       determine_mode_from_stack(
         state.stack,
         state.elements,
-        state.context_element
+        state.context_element,
+        state.scripting
       )
 
     {:reprocess, %{state | mode: mode}}
