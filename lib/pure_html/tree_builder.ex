@@ -298,11 +298,17 @@ defmodule PureHTML.TreeBuilder do
     mode = determine_mode_from_stack(state.stack, state.elements, context)
     state = %{state | mode: mode}
 
-    # Step 5: Run the normal build loop
+    # Step 5: If the context element is a form element, set the form element pointer
+    state =
+      if namespace == nil and tag == "form",
+        do: %{state | form_element: make_ref()},
+        else: state
+
+    # Step 6: Run the normal build loop
     {_doctype, state, _comments} =
       build_loop(tokenizer, {nil, state, []})
 
-    # Step 6: Return children of the html element
+    # Step 7: Return children of the html element
     finalize_fragment(state, html_ref)
   end
 
