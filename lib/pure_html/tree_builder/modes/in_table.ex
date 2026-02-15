@@ -54,15 +54,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @ignored_end_tags ~w(body caption col colgroup html tbody td tfoot th thead tr)
 
   @impl true
-  def process(token, %{stack: [ref | _], elements: elements} = state) do
-    # If top of stack is foreign content (svg/math), delegate to in_body
-    # which has proper foreign content handling
-    case elements[ref] do
-      %{tag: {ns, _}} when ns in [:svg, :math] -> InBody.process(token, state)
-      _ -> process_dispatch(token, state)
-    end
-  end
-
   def process(token, state), do: process_dispatch(token, state)
 
   # In template context with table-related modes, most tokens go through normal
@@ -424,12 +415,24 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp ensure_colgroup(state), do: state
 
-  defp ensure_tbody(%{stack: [ref | _], elements: elements} = state) do
+  defp ensure_tbody(%{stack: [ref | _], elements: elements, context_element: ctx} = state) do
     case elements[ref].tag do
-      tag when tag in @table_sections -> state
-      # In template context, template is the table context boundary - create tbody there too
-      tag when tag in ["table", "template"] -> push_element(state, "tbody", [])
-      _ -> state
+      tag when tag in @table_sections ->
+        state
+
+      # Fragment mode: at html root with table body context, skip tbody creation.
+      # The context element is already a tbody/thead/tfoot so content belongs there.
+      "html" ->
+        case ctx do
+          {_, ctx_tag} when ctx_tag in ["tbody", "thead", "tfoot"] -> state
+          _ -> push_element(state, "tbody", [])
+        end
+
+      tag when tag in ["table", "template"] ->
+        push_element(state, "tbody", [])
+
+      _ ->
+        state
     end
   end
 
@@ -437,22 +440,29 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
     {new_stack, closed_refs, _stored_parent_ref} = do_close_table(stack, [], elements)
-    new_af = reject_refs_from_af(af, closed_refs)
-    new_tms = Enum.drop(tms, 1)
-    mode = List.first(new_tms, :in_body)
 
-    # Pop any orphaned formatting element from stack top (removed from AF by AA)
-    {final_stack, current_parent_ref} =
-      pop_orphaned_formatting_element(new_stack, new_af, elements)
-
-    %{
+    # Fragment case: if nothing was actually closed (hit html boundary),
+    # keep the current state unchanged
+    if closed_refs == [] do
       state
-      | stack: final_stack,
-        af: new_af,
-        mode: mode,
-        template_mode_stack: new_tms,
-        current_parent_ref: current_parent_ref
-    }
+    else
+      new_af = reject_refs_from_af(af, closed_refs)
+      new_tms = Enum.drop(tms, 1)
+      mode = List.first(new_tms, :in_body)
+
+      # Pop any orphaned formatting element from stack top (removed from AF by AA)
+      {final_stack, current_parent_ref} =
+        pop_orphaned_formatting_element(new_stack, new_af, elements)
+
+      %{
+        state
+        | stack: final_stack,
+          af: new_af,
+          mode: mode,
+          template_mode_stack: new_tms,
+          current_parent_ref: current_parent_ref
+      }
+    end
   end
 
   defp pop_orphaned_formatting_element([], _af, _elements), do: {[], nil}

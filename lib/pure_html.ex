@@ -55,11 +55,21 @@ defmodule PureHTML do
       [{:doctype, "html", nil, nil}, {"html", [], [{"head", [], []}, {"body", [], []}]}]
 
   """
-  @spec parse(String.t()) :: [term()]
-  def parse(html) when is_binary(html) do
-    html
-    |> Tokenizer.new()
-    |> TreeBuilder.build()
+  @spec parse(String.t(), keyword()) :: [term()]
+  def parse(html, opts \\ []) when is_binary(html) do
+    case Keyword.get(opts, :context) do
+      nil ->
+        html
+        |> Tokenizer.new()
+        |> TreeBuilder.build()
+
+      context ->
+        {ns, tag} = parse_context(context)
+
+        html
+        |> Tokenizer.new(fragment_tokenizer_opts(ns, tag))
+        |> TreeBuilder.build_fragment(ns, tag)
+    end
   end
 
   @doc """
@@ -254,4 +264,41 @@ defmodule PureHTML do
 
   """
   defdelegate attribute(html, selector, name), to: Query
+
+  # --------------------------------------------------------------------------
+  # Fragment parsing helpers
+  # --------------------------------------------------------------------------
+
+  @raw_text_elements ~w(style xmp iframe noembed noframes noscript)
+  @rcdata_elements ~w(title textarea)
+
+  defp parse_context(context) do
+    case String.split(context, " ", parts: 2) do
+      ["svg", tag] -> {:svg, tag}
+      ["math", tag] -> {:math, tag}
+      [tag] -> {nil, tag}
+    end
+  end
+
+  # Foreign elements always use :data state — the tokenizer state rules
+  # only apply to HTML namespace context elements.
+  defp fragment_tokenizer_opts(ns, _tag) when ns in [:svg, :math], do: []
+
+  defp fragment_tokenizer_opts(_ns, tag) when tag in @rcdata_elements do
+    [initial_state: :rcdata]
+  end
+
+  defp fragment_tokenizer_opts(_ns, "script") do
+    [initial_state: :script_data]
+  end
+
+  defp fragment_tokenizer_opts(_ns, "plaintext") do
+    [initial_state: :plaintext]
+  end
+
+  defp fragment_tokenizer_opts(_ns, tag) when tag in @raw_text_elements do
+    [initial_state: :rawtext]
+  end
+
+  defp fragment_tokenizer_opts(_ns, _tag), do: []
 end

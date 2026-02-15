@@ -104,6 +104,11 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     Enum.map_join(nodes, "", &serialize_node(&1, 0))
   end
 
+  defp serialize_node(text, depth) when is_binary(text) do
+    indent = "| " <> String.duplicate("  ", depth)
+    "#{indent}\"#{text}\"\n"
+  end
+
   defp serialize_node({:doctype, name, public_id, system_id}, _depth) do
     if (public_id == "" or public_id == nil) and (system_id == "" or system_id == nil) do
       "| <!DOCTYPE #{name}>\n"

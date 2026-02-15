@@ -1,5 +1,9 @@
 # Claude Code Instructions
 
+## WHATWG Spec Compliance
+
+WHATWG spec compliance is the top priority — above passing tests. Never assume previously written code is correct just because it makes tests pass. If code violates the WHATWG spec, correcting it is an immediate priority, even if it causes test regressions that need to be resolved separately. If a test passes while the implementation is non-compliant, make it pass by being compliant instead. Sometimes spec-compliant changes may cause regressions — keep the compliant code and make the tests pass by improving existing code elsewhere.
+
 ## Code Style
 
 - Always fix compile warnings as soon as they appear

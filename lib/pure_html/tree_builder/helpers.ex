@@ -317,8 +317,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   defp do_close_to_select([ref | rest], elements) do
     case elements[ref].tag do
-      "select" -> {rest, elements[ref].parent_ref}
-      _ -> do_close_to_select(rest, elements)
+      "select" ->
+        {rest, elements[ref].parent_ref}
+
+      # Fragment case: html root is a scope boundary — stop here
+      "html" ->
+        {[ref], elements[ref].ref}
+
+      _ ->
+        do_close_to_select(rest, elements)
     end
   end
 
@@ -398,6 +405,12 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Returns the foreign namespace (:svg or :math) if the current element is in
   a foreign namespace, or nil if in HTML namespace.
   """
+  # Adjusted current node: in fragment mode with 1 element on stack,
+  # the context element is the adjusted current node per WHATWG spec.
+  def foreign_namespace(%{stack: [_single], context_element: {ns, _}})
+      when ns in [:svg, :math],
+      do: ns
+
   def foreign_namespace(%{stack: [ref | _], elements: elements}) do
     case elements[ref].tag do
       {:svg, _} -> :svg
@@ -407,6 +420,49 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   def foreign_namespace(%{stack: []}), do: nil
+
+  @doc """
+  Returns true if the current element is an HTML integration point.
+
+  HTML integration points are foreign elements where content is parsed as HTML:
+  - SVG: foreignObject, desc, title
+  - MathML: mi, mo, mn, ms, mtext
+  - MathML: annotation-xml with encoding="text/html" or "application/xhtml+xml"
+  """
+  @html_integration_encodings ["text/html", "application/xhtml+xml"]
+
+  def html_integration_point?(%{stack: [], elements: _}), do: false
+
+  # Adjusted current node: in fragment mode with 1 element on stack,
+  # check the context element instead.
+  def html_integration_point?(%{stack: [_single], context_element: {:svg, tag}})
+      when tag in ~w(foreignObject desc title),
+      do: true
+
+  def html_integration_point?(%{stack: [_single], context_element: {:math, tag}})
+      when tag in ~w(mi mo mn ms mtext),
+      do: true
+
+  def html_integration_point?(%{stack: [ref | _], elements: elements}) do
+    elem = elements[ref]
+
+    case elem.tag do
+      {:svg, tag} when tag in ~w(foreignObject desc title) ->
+        true
+
+      {:math, "annotation-xml"} ->
+        case get_attr(elem.attrs, "encoding") do
+          nil -> false
+          enc -> String.downcase(enc) in @html_integration_encodings
+        end
+
+      {:math, tag} when tag in ~w(mi mo mn ms mtext) ->
+        true
+
+      _ ->
+        false
+    end
+  end
 
   # --------------------------------------------------------------------------
   # Scope Checking (ref-only stack + elements map)
@@ -429,21 +485,40 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Checks if an element with the given tag is in the specified scope.
   Scope types: :default, :table, :select, :button
   """
-  def in_scope?(%{stack: stack, elements: elements}, tag, scope_type) do
+  def in_scope?(
+        %{stack: stack, elements: elements, context_element: context_element},
+        tag,
+        scope_type
+      ) do
     check_foreign = scope_type in @scopes_with_foreign_boundaries
-    do_in_scope?(stack, tag, @scope_boundaries[scope_type], elements, check_foreign)
+
+    do_in_scope?(
+      stack,
+      tag,
+      @scope_boundaries[scope_type],
+      elements,
+      check_foreign,
+      context_element
+    )
   end
 
-  defp do_in_scope?([], _tag, _boundaries, _elements, _check_foreign), do: false
+  defp do_in_scope?([], _tag, _boundaries, _elements, _check_foreign, nil), do: false
 
-  defp do_in_scope?([ref | rest], tag, boundaries, elements, check_foreign) do
+  # Fragment case: the walk went past all elements without hitting a boundary.
+  # This only happens for select scope (where html is NOT a boundary).
+  # Check the context element tag as a fallback.
+  defp do_in_scope?([], tag, _boundaries, _elements, _check_foreign, {_ns, ctx_tag}) do
+    ctx_tag == tag
+  end
+
+  defp do_in_scope?([ref | rest], tag, boundaries, elements, check_foreign, context) do
     elem_tag = elements[ref].tag
 
     cond do
       elem_tag == tag -> true
       elem_tag in boundaries -> false
       check_foreign and foreign_scope_boundary?(elem_tag) -> false
-      true -> do_in_scope?(rest, tag, boundaries, elements, check_foreign)
+      true -> do_in_scope?(rest, tag, boundaries, elements, check_foreign, context)
     end
   end
 
@@ -493,9 +568,20 @@ defmodule PureHTML.TreeBuilder.Helpers do
     elem = elements[ref]
 
     case elem.tag do
-      ^tag -> {:found, rest, [ref | popped], elem.parent_ref}
-      "template" -> :not_found
-      _ -> do_pop_until_tag(rest, tag, [ref | popped], elements)
+      ^tag ->
+        {:found, rest, [ref | popped], elem.parent_ref}
+
+      "template" ->
+        :not_found
+
+      _ ->
+        # Skip foster-parented elements from AF removal — they're logically
+        # outside the table and should stay in AF for reconstruction.
+        # Consistent with close_table's do_close_table behavior.
+        new_popped =
+          if elem[:foster_parent_ref], do: popped, else: [ref | popped]
+
+        do_pop_until_tag(rest, tag, new_popped, elements)
     end
   end
 
@@ -771,4 +857,83 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   def needs_foster_parenting?(_), do: true
+
+  # --------------------------------------------------------------------------
+  # Insertion Mode Reset
+  # --------------------------------------------------------------------------
+
+  # Map for determining insertion mode from stack element tags.
+  # Per WHATWG spec "reset the insertion mode appropriately" algorithm.
+  @tag_to_mode %{
+    "template" => :in_template,
+    "tbody" => :in_table_body,
+    "thead" => :in_table_body,
+    "tfoot" => :in_table_body,
+    "tr" => :in_row,
+    "td" => :in_cell,
+    "th" => :in_cell,
+    "caption" => :in_caption,
+    "colgroup" => :in_column_group,
+    "table" => :in_table,
+    "body" => :in_body,
+    "frameset" => :in_frameset,
+    "head" => :in_head,
+    "html" => :before_head,
+    "select" => :in_select
+  }
+
+  @doc """
+  Determines the appropriate insertion mode by walking the stack of open elements.
+
+  Used by the "reset the insertion mode appropriately" algorithm. When a
+  `context_element` is provided (fragment parsing), it is used as the fallback
+  when the bottom of the stack is reached.
+  """
+  def determine_mode_from_stack(stack, elements, context_element) do
+    do_determine_mode(stack, elements, context_element)
+  end
+
+  # Empty stack, no fragment context
+  defp do_determine_mode([], _elements, nil), do: :in_body
+
+  # Empty stack with fragment context — use the context element
+  defp do_determine_mode([], _elements, {_ns, tag}) do
+    Map.get(@tag_to_mode, tag, :in_body)
+  end
+
+  # Last node in stack + fragment context: per spec, set node to context element
+  defp do_determine_mode([_ref], _elements, {_ns, _tag} = context) do
+    do_determine_mode([], nil, context)
+  end
+
+  defp do_determine_mode([ref | rest], elements, context_element) do
+    tag = elements[ref].tag
+
+    case Map.get(@tag_to_mode, tag) do
+      nil ->
+        do_determine_mode(rest, elements, context_element)
+
+      # Per HTML5 spec: if select and table ancestor exists, use in_select_in_table
+      :in_select ->
+        if has_table_ancestor?(rest, elements) do
+          :in_select_in_table
+        else
+          :in_select
+        end
+
+      mode ->
+        mode
+    end
+  end
+
+  @doc false
+  def has_table_ancestor?([], _elements), do: false
+
+  def has_table_ancestor?([ref | rest], elements) do
+    case elements[ref].tag do
+      "table" -> true
+      "template" -> false
+      _ -> has_table_ancestor?(rest, elements)
+    end
+  end
 end

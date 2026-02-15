@@ -23,7 +23,11 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [in_scope?: 3, pop_until_tag: 2, clear_af_to_marker: 1, foreign_namespace: 1]
+    only: [
+      in_scope?: 3,
+      pop_until_tag: 2,
+      clear_af_to_marker: 1
+    ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -53,20 +57,14 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   end
 
   # Cell-closing start tags: close cell, reprocess
-  # But first check if we're in foreign content - if so, delegate to in_body
-  def process({:start_tag, tag, _, _} = token, state) when tag in @cell_closing_start_tags do
-    if foreign_namespace(state) do
-      # In foreign content, let in_body handle it (may push as foreign element)
-      InBody.process(token, state)
-    else
-      case close_cell(state) do
-        {:ok, new_state} ->
-          {:reprocess, new_state}
+  def process({:start_tag, tag, _, _}, state) when tag in @cell_closing_start_tags do
+    case close_cell(state) do
+      {:ok, new_state} ->
+        {:reprocess, new_state}
 
-        :not_found ->
-          # Cell not in scope, ignore
-          {:ok, state}
-      end
+      :not_found ->
+        # Cell not in scope, ignore
+        {:ok, state}
     end
   end
 

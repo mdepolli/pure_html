@@ -7,9 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Fragment parsing via `PureHTML.parse/2` with `context:` option
+  - Implements the WHATWG "parsing HTML fragments" algorithm (used by `innerHTML`)
+  - Context format matches html5lib tests: `"div"`, `"body"`, `"svg path"`, `"math mtext"`
+  - Returns children directly (no `<html>/<head>/<body>` wrappers)
+- Tree construction dispatcher per WHATWG spec
+  - Centralized foreign content routing replaces per-mode ad-hoc checks
+  - Adjusted current node handling for fragment parsing contexts
+  - Integration point exceptions for MathML text and HTML integration points
+
 ### Fixed
 
 - Compile warnings in Query module: grouped `apply_combinators/3` clauses and removed duplicate `adjacent_sibling_matches/3`
+- `in_table_body` delegation now calls `InTable.process` directly instead of switching modes, preserving tree construction dispatcher context for foreign content
+- Foster-parented elements no longer incorrectly removed from active formatting list during `pop_until_tag`
+- Table structure elements (tbody/thead/tfoot/caption/colgroup) handled correctly at foreign integration points in all table-related modes
+- Fragment tokenizer no longer sets `last_start_tag`, so end tags in escaped script/rawtext/rcdata contexts are correctly treated as character tokens
+
+### Current Status
+
+- **All 9,028 tests passing (100%)**
+  - Tokenizer: 7,036 tests
+  - Tree construction: 1,668 tests (192 fragment tests)
+  - Encoding: 82 tests
+  - Serializer: 40 tests
+  - Properties: 4
 
 ## [0.2.0] - 2026-01-20
 
@@ -120,7 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active formatting reconstruction for void elements in table context
 - Row mode foster parenting with in_body rules delegation
 
-### Current Status
+### Status at Release
 
 - **All 8,634 html5lib tests passing (100%)**
   - Tokenizer: 7,036 tests

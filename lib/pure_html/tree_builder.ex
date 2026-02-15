@@ -24,10 +24,17 @@ defmodule PureHTML.TreeBuilder do
   """
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3]
+    only: [
+      add_text_to_stack: 2,
+      add_child_to_stack: 2,
+      foster_parent: 2,
+      update_af_entry: 3,
+      determine_mode_from_stack: 3
+    ]
 
   alias PureHTML.Tokenizer
   alias PureHTML.TreeBuilder.Modes
+  alias PureHTML.TreeBuilder.Modes.InBody
 
   # --------------------------------------------------------------------------
   # Type Definitions
@@ -177,6 +184,8 @@ defmodule PureHTML.TreeBuilder do
       quirks_mode: false,
       # Foster parenting flag (when true, elements inserted via foster_parent)
       foster_parenting: false,
+      # Fragment parsing context element - {namespace, tag} or nil
+      context_element: nil,
 
       # === DOM Structure ===
       # Element storage: ref => %{ref, tag, attrs, parent_ref, children}
@@ -201,7 +210,7 @@ defmodule PureHTML.TreeBuilder do
     in_head: Modes.InHead,
     in_head_noscript: Modes.InHeadNoscript,
     after_head: Modes.AfterHead,
-    in_body: Modes.InBody,
+    in_body: InBody,
     text: Modes.Text,
     in_table: Modes.InTable,
     in_table_text: Modes.InTableText,
@@ -246,6 +255,58 @@ defmodule PureHTML.TreeBuilder do
       {name, public, system} ->
         [{:doctype, name, public, system} | pre_comments] ++ [html_node] ++ post_nodes
     end
+  end
+
+  @doc """
+  Builds a fragment from a tokenizer using the given context element.
+
+  Implements the WHATWG "parsing HTML fragments" algorithm. The context element
+  determines the initial insertion mode and parser behavior.
+
+  Returns a list of child nodes (no `<html>/<head>/<body>` wrappers).
+  """
+  @spec build_fragment(Tokenizer.t(), atom() | nil, String.t()) :: [document_node()]
+  def build_fragment(%Tokenizer{} = tokenizer, namespace, tag) do
+    context = {namespace, tag}
+
+    # Step 1: Create an html element and push it onto the stack
+    html_ref = make_ref()
+
+    html_elem = %{
+      ref: html_ref,
+      tag: "html",
+      attrs: [],
+      children: [],
+      parent_ref: nil
+    }
+
+    elements = %{html_ref => html_elem}
+
+    # Step 2: Only html goes on the stack per WHATWG spec.
+    # The context element is used via the "adjusted current node" concept.
+    stack = [html_ref]
+
+    # Step 3: Set up initial state with context element
+    template_mode_stack = if tag == "template", do: [:in_template], else: []
+
+    state = %State{
+      stack: stack,
+      elements: elements,
+      current_parent_ref: html_ref,
+      context_element: context,
+      template_mode_stack: template_mode_stack
+    }
+
+    # Step 4: Reset the insertion mode appropriately
+    mode = determine_mode_from_stack(state.stack, state.elements, context)
+    state = %{state | mode: mode}
+
+    # Step 5: Run the normal build loop
+    {_doctype, state, _comments} =
+      build_loop(tokenizer, {nil, state, []})
+
+    # Step 6: Return children of the html element
+    finalize_fragment(state, html_ref)
   end
 
   defp build_loop(tokenizer, acc) do
@@ -315,30 +376,41 @@ defmodule PureHTML.TreeBuilder do
     end)
   end
 
-  defp update_tokenizer_context(tokenizer, {_, %State{stack: stack, elements: elements}, _}) do
-    # We're in foreign content when the current element (top of stack) is foreign
-    in_foreign = current_element_is_foreign?(stack, elements)
+  defp update_tokenizer_context(
+         tokenizer,
+         {_, %State{stack: stack, elements: elements, context_element: context_element}, _}
+       ) do
+    # Per spec: the adjusted current node is the context element if the parser
+    # was created for fragment parsing and the stack has only one element.
+    in_foreign = adjusted_current_node_is_foreign?(stack, elements, context_element)
     Tokenizer.set_foreign_content(tokenizer, in_foreign)
   end
 
-  # Check if the current element is in foreign content for tokenizer purposes.
+  # Check if the adjusted current node is in foreign content for tokenizer purposes.
+  # Per spec: in fragment mode with one element on the stack, the adjusted current
+  # node is the context element instead of the stack top.
   # Returns false for HTML integration points (where content should be parsed as HTML).
   @svg_html_integration_points ~w(foreignObject desc title)
   @mathml_html_integration_points ~w(mi mo mn ms mtext)
 
-  defp current_element_is_foreign?([ref | _], elements) do
+  defp adjusted_current_node_is_foreign?([_single], _elements, {ns, tag})
+       when ns in [:svg, :math] do
+    tag_is_foreign?({ns, tag})
+  end
+
+  defp adjusted_current_node_is_foreign?([ref | _], elements, _context) do
     case elements[ref] do
-      # SVG HTML integration points - parse as HTML
-      %{tag: {:svg, tag}} when tag in @svg_html_integration_points -> false
-      # MathML text integration points - parse as HTML
-      %{tag: {:math, tag}} when tag in @mathml_html_integration_points -> false
-      # Other foreign elements
-      %{tag: {ns, _}} when ns in [:svg, :math] -> true
+      %{tag: {ns, tag}} when ns in [:svg, :math] -> tag_is_foreign?({ns, tag})
       _ -> false
     end
   end
 
-  defp current_element_is_foreign?([], _), do: false
+  defp adjusted_current_node_is_foreign?([], _, _), do: false
+
+  defp tag_is_foreign?({:svg, tag}) when tag in @svg_html_integration_points, do: false
+  defp tag_is_foreign?({:math, tag}) when tag in @mathml_html_integration_points, do: false
+  defp tag_is_foreign?({ns, _}) when ns in [:svg, :math], do: true
+  defp tag_is_foreign?(_), do: false
 
   defp process_token(
          {:doctype, name, public_id, system_id, force_quirks},
@@ -402,19 +474,182 @@ defmodule PureHTML.TreeBuilder do
   defp limited_quirks_public_id?("-//W3C//DTD HTML 4.01 Transitional//" <> _), do: true
   defp limited_quirks_public_id?(_), do: false
 
-  # Dispatch token to the appropriate mode module or fall back to existing process/2
+  # Tree construction dispatcher per WHATWG spec.
+  # Before routing to any insertion mode, checks the adjusted current node.
+  # If foreign (and no integration point exception for the token type),
+  # routes to foreign content rules instead.
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#tree-construction-dispatcher
   defp dispatch(token, %State{mode: mode} = state) when is_map_key(@mode_modules, mode) do
+    result =
+      if use_foreign_content_rules?(token, state) do
+        process_foreign_content(token, state)
+      else
+        dispatch_to_insertion_mode(token, mode, state)
+      end
+
+    case result do
+      {:ok, new_state} -> new_state
+      {:reprocess, new_state} -> dispatch(token, new_state)
+      {:reprocess_with, new_state, new_token} -> dispatch(new_token, new_state)
+    end
+  end
+
+  defp dispatch_to_insertion_mode(token, mode, %{stack: [_ | _]} = state) do
     module = Map.fetch!(@mode_modules, mode)
 
-    case module.process(token, state) do
-      {:ok, new_state} ->
-        new_state
+    if module != InBody and adjusted_current_node_is_foreign?(state) do
+      InBody.process(token, state)
+    else
+      module.process(token, state)
+    end
+  end
 
-      {:reprocess, new_state} ->
-        dispatch(token, new_state)
+  defp dispatch_to_insertion_mode(token, mode, state) do
+    module = Map.fetch!(@mode_modules, mode)
+    module.process(token, state)
+  end
 
-      {:reprocess_with, new_state, new_token} ->
-        dispatch(new_token, new_state)
+  defp adjusted_current_node_is_foreign?(state) do
+    match?({ns, _} when ns in [:svg, :math], adjusted_current_node_tag(state))
+  end
+
+  # Per WHATWG spec, process using the current insertion mode (NOT foreign content)
+  # when any of these conditions is true:
+  # 1. Stack is empty
+  # 2. Adjusted current node is in HTML namespace
+  # 3. Adjusted current node is MathML text integration point AND token is
+  #    a start tag (not mglyph/malignmark)
+  # 4. Adjusted current node is MathML text integration point AND token is character
+  # 5. Adjusted current node is annotation-xml AND token is start tag "svg"
+  # 6. Adjusted current node is HTML integration point AND token is start tag
+  # 7. Adjusted current node is HTML integration point AND token is character
+  # 8. Token is EOF
+  # Otherwise, use foreign content rules.
+  defp use_foreign_content_rules?(_token, %{stack: []}), do: false
+  defp use_foreign_content_rules?({:eof}, _state), do: false
+
+  defp use_foreign_content_rules?(token, state) do
+    case adjusted_current_node_tag(state) do
+      {ns, _} when ns in [:svg, :math] ->
+        not insertion_mode_exception?(token, adjusted_current_node_tag(state), state)
+
+      _ ->
+        false
+    end
+  end
+
+  defp adjusted_current_node_tag(%{stack: [_single], context_element: {_, _} = ctx}), do: ctx
+
+  defp adjusted_current_node_tag(%{stack: [ref | _], elements: elements}),
+    do: elements[ref].tag
+
+  @mathml_text_integration_points ~w(mi mo mn ms mtext)
+
+  # Condition 3: MathML text integration point + start tag (not mglyph/malignmark)
+  defp insertion_mode_exception?({:start_tag, tag, _, _}, {:math, mtag}, _state)
+       when mtag in @mathml_text_integration_points and tag not in ~w(mglyph malignmark),
+       do: true
+
+  # Condition 4: MathML text integration point + character
+  defp insertion_mode_exception?({:character, _}, {:math, mtag}, _state)
+       when mtag in @mathml_text_integration_points,
+       do: true
+
+  # Condition 5: annotation-xml + start tag "svg"
+  defp insertion_mode_exception?({:start_tag, "svg", _, _}, {:math, "annotation-xml"}, _state),
+    do: true
+
+  # Condition 6: HTML integration point (SVG) + start tag
+  defp insertion_mode_exception?({:start_tag, _, _, _}, {:svg, tag}, _state)
+       when tag in @svg_html_integration_points,
+       do: true
+
+  # Condition 7: HTML integration point (SVG) + character
+  defp insertion_mode_exception?({:character, _}, {:svg, tag}, _state)
+       when tag in @svg_html_integration_points,
+       do: true
+
+  # Condition 6: HTML integration point (MathML annotation-xml with encoding) + start tag
+  defp insertion_mode_exception?({:start_tag, _, _, _}, {:math, "annotation-xml"}, state),
+    do: annotation_xml_is_html_integration_point?(state)
+
+  # Condition 7: HTML integration point (MathML annotation-xml with encoding) + character
+  defp insertion_mode_exception?({:character, _}, {:math, "annotation-xml"}, state),
+    do: annotation_xml_is_html_integration_point?(state)
+
+  defp insertion_mode_exception?(_, _, _), do: false
+
+  defp annotation_xml_is_html_integration_point?(%{stack: [ref | _], elements: elements}) do
+    attrs = elements[ref].attrs || []
+
+    case Enum.find(attrs, fn {name, _} -> name == "encoding" end) do
+      {_, enc} -> String.downcase(enc) in ["text/html", "application/xhtml+xml"]
+      nil -> false
+    end
+  end
+
+  defp annotation_xml_is_html_integration_point?(_), do: false
+
+  # --------------------------------------------------------------------------
+  # Foreign content processing
+  # Per WHATWG spec: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
+  # --------------------------------------------------------------------------
+
+  # Start tags: delegate to InBody which has foreign content start tag handling
+  # (breakout tags, foreign element insertion) via dispatch_start_tag.
+  defp process_foreign_content({:start_tag, _, _, _} = token, state) do
+    InBody.process(token, state)
+  end
+
+  # End tags: walk the stack per spec. Match foreign elements by tag name,
+  # fall through to insertion mode when reaching an HTML element.
+  defp process_foreign_content({:end_tag, tag}, %{stack: stack} = state) do
+    foreign_content_end_tag(tag, stack, 0, state)
+  end
+
+  # Characters: delegate to InBody (inserts text, sets frameset_not_ok)
+  defp process_foreign_content({:character, _} = token, state) do
+    InBody.process(token, state)
+  end
+
+  # Comments: insert directly
+  defp process_foreign_content({:comment, text}, state) do
+    {:ok, add_child_to_stack(state, {:comment, text})}
+  end
+
+  # DOCTYPE: parse error, ignore
+  defp process_foreign_content({:doctype, _, _, _, _}, state), do: {:ok, state}
+
+  # Error tokens: ignore
+  defp process_foreign_content({:error, _}, state), do: {:ok, state}
+
+  # Foreign content end tag algorithm per WHATWG spec:
+  # Walk down the stack from current node. If a foreign element's tag matches
+  # (case-insensitive), pop until it's popped. If an HTML element is reached,
+  # process using the current insertion mode's rules instead.
+  defp foreign_content_end_tag(_tag, [], _count, state), do: {:ok, state}
+
+  defp foreign_content_end_tag(tag, [ref | rest], count, %{elements: elements} = state) do
+    case elements[ref].tag do
+      {_ns, etag} ->
+        if String.downcase(etag) == tag do
+          new_stack = Enum.drop(state.stack, count + 1)
+
+          parent_ref =
+            case new_stack do
+              [r | _] -> r
+              [] -> nil
+            end
+
+          {:ok, %{state | stack: new_stack, current_parent_ref: parent_ref}}
+        else
+          foreign_content_end_tag(tag, rest, count + 1, state)
+        end
+
+      _html_tag ->
+        # Reached an HTML element — process using insertion mode rules
+        module = Map.fetch!(@mode_modules, state.mode)
+        module.process({:end_tag, tag}, state)
     end
   end
 
@@ -439,6 +674,38 @@ defmodule PureHTML.TreeBuilder do
       # No html element - create minimal structure
       {"html", [], [{"head", [], []}, {"body", [], []}]}
     end
+  end
+
+  # Finalize fragment: return children as output tuples.
+  # For html context, ensure head and body exist just like normal parsing.
+  defp finalize_fragment(%State{elements: elements, context_element: {_, "html"}}, html_ref) do
+    elements
+    |> build_tree_from_elements(html_ref)
+    |> ensure_head()
+    |> ensure_body()
+    |> Map.get(:children)
+    |> Enum.map(&convert_to_tuples/1)
+  end
+
+  defp finalize_fragment(%State{elements: elements}, html_ref) do
+    html_elem = elements[html_ref]
+    children = Enum.reverse(html_elem.children)
+
+    Enum.map(children, &finalize_fragment_child(&1, elements))
+  end
+
+  defp finalize_fragment_child(child_ref, elements) when is_reference(child_ref) do
+    elements
+    |> build_tree_from_elements(child_ref)
+    |> convert_to_tuples()
+  end
+
+  defp finalize_fragment_child(text, _elements) when is_binary(text), do: text
+  defp finalize_fragment_child({:comment, _} = comment, _elements), do: comment
+
+  defp finalize_fragment_child({tag, attrs, kids}, _elements)
+       when is_binary(tag) or is_tuple(tag) do
+    {tag, Enum.sort(attrs), Enum.reverse(kids)}
   end
 
   # Find the html element ref

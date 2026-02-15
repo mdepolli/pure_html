@@ -33,6 +33,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
       pop_until_one_of: 2
     ]
 
+  alias PureHTML.TreeBuilder.Modes.InTable
+
   # Table body elements
   @table_body_tags ~w(tbody tfoot thead)
 
@@ -46,14 +48,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   @table_body_context_tags ~w(tbody tfoot thead template html)
 
   @impl true
-  # Character tokens: process using in_table rules
-  def process({:character, _}, state) do
-    {:reprocess, %{state | mode: :in_table}}
+  # Character tokens: process using in_table rules (delegation)
+  def process({:character, _} = token, state) do
+    delegate_to_in_table(token, state)
   end
 
-  # Comments: process using in_table rules
-  def process({:comment, _}, state) do
-    {:reprocess, %{state | mode: :in_table}}
+  # Comments: process using in_table rules (delegation)
+  def process({:comment, _} = token, state) do
+    delegate_to_in_table(token, state)
   end
 
   # DOCTYPE: parse error, ignore
@@ -94,9 +96,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
     end
   end
 
-  # Other start tags: process using in_table rules
-  def process({:start_tag, _, _, _}, state) do
-    {:reprocess, %{state | mode: :in_table}}
+  # Other start tags: process using in_table rules (delegation, not mode switch).
+  # Per WHATWG spec, "process the token using the rules for in_table" is a
+  # delegation for one token. The tree construction dispatcher handles foreign
+  # content routing for subsequent tokens.
+  def process({:start_tag, _, _, _} = token, state) do
+    delegate_to_in_table(token, state)
   end
 
   # End tag: tbody, tfoot, thead - close if in scope
@@ -125,9 +130,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
     {:ok, state}
   end
 
-  # Other end tags: process using in_table rules
-  def process({:end_tag, _}, state) do
-    {:reprocess, %{state | mode: :in_table}}
+  # Other end tags: process using in_table rules (delegation)
+  def process({:end_tag, _} = token, state) do
+    delegate_to_in_table(token, state)
   end
 
   # Error tokens: ignore
@@ -136,6 +141,26 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
+
+  # Per WHATWG spec: "Process the token using the rules for the 'in table'
+  # insertion mode" is a delegation — call InTable for one token. Restore mode
+  # to in_table_body only when InTable consumed the token without changing mode.
+  # If InTable changed the mode (e.g., to :in_select_in_table, :in_head), or
+  # said reprocess, respect that decision.
+  defp delegate_to_in_table(token, state) do
+    case InTable.process(token, %{state | mode: :in_table}) do
+      {:ok, %{mode: :in_table} = new_state} ->
+        {:ok, %{new_state | mode: :in_table_body}}
+
+      # InTable switched to in_table_text for character processing.
+      # Fix original_mode so in_table_text returns to in_table_body.
+      {:reprocess, %{mode: :in_table_text, original_mode: :in_table} = new_state} ->
+        {:reprocess, %{new_state | original_mode: :in_table_body}}
+
+      other ->
+        other
+    end
+  end
 
   # Clear stack to table body context (tbody, tfoot, thead, template, html)
   defp clear_to_table_body_context(state) do

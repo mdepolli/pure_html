@@ -34,7 +34,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       merge_html_attrs: 2,
       reject_refs_from_af: 2,
       update_af_entry: 3,
-      get_attr: 2
+      get_attr: 2,
+      determine_mode_from_stack: 3,
+      has_table_ancestor?: 2
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -90,24 +92,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
   @ruby_elements ~w(rb rt rtc rp)
   @newline_skipping_elements ~w(pre textarea listing)
-
-  # Map for determining insertion mode from stack element tags
-  @tag_to_mode %{
-    "template" => :in_template,
-    "tbody" => :in_table,
-    "thead" => :in_table,
-    "tfoot" => :in_table,
-    "tr" => :in_table,
-    "td" => :in_body,
-    "th" => :in_body,
-    "caption" => :in_body,
-    "table" => :in_table,
-    "body" => :in_body,
-    "frameset" => :in_frameset,
-    "head" => :in_head,
-    "html" => :before_head,
-    "select" => :in_select
-  }
 
   # Scope boundary guards
   @scope_boundaries ~w(applet caption html table td th marquee object template)
@@ -332,6 +316,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, state}
   end
 
+  # Per spec: "If the stack of open elements has only one element on it, ignore
+  # the token. (fragment case)"
+  def process({:start_tag, "body", _, _}, %{stack: [_]} = state) do
+    {:ok, state}
+  end
+
   def process({:start_tag, "body", attrs, _}, state) do
     state =
       state
@@ -388,7 +378,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       is_nil(ns) or html_integration_point?(state) ->
         do_process_html_start_tag(tag, attrs, self_closing, state)
 
-      html_breakout_tag?(tag) ->
+      html_breakout_tag?(tag) or (tag == "font" and font_breakout_tag?(attrs)) ->
         handle_html_breakout_tag(state, tag, attrs, self_closing)
 
       true ->
@@ -510,20 +500,29 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Frameset in body mode with frameset_ok
-  # Per HTML5 spec: if template on stack, ignore the token
+  # Per HTML5 spec: ignore if only one element on stack (fragment case),
+  # or if second element is not body, or if template on stack
   defp do_process_html_start_tag(
          "frameset",
          attrs,
          _,
-         %{mode: :in_body, frameset_ok: true} = state
+         %{mode: :in_body, frameset_ok: true, stack: stack} = state
        ) do
-    if find_ref(state, "template") do
-      state
-    else
-      state
-      |> close_body_for_frameset()
-      |> push_element("frameset", attrs)
-      |> set_mode(:in_frameset)
+    cond do
+      length(stack) <= 1 ->
+        state
+
+      find_ref(state, "template") ->
+        state
+
+      not second_element_is_body?(stack, state.elements) ->
+        state
+
+      true ->
+        state
+        |> close_body_for_frameset()
+        |> push_element("frameset", attrs)
+        |> set_mode(:in_frameset)
     end
   end
 
@@ -598,7 +597,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Col in other contexts - ignored (col only valid inside colgroup)
   defp do_process_html_start_tag("col", _, _, state), do: state
 
-  # Table structure in body mode (ignored)
+  # Table structure in body mode (ignored per spec: parse error)
   defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state)
        when tag in @table_structure_elements do
     state
@@ -614,9 +613,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_af_marker()
   end
 
-  # Table structure in table mode
-  defp do_process_html_start_tag(tag, attrs, _, %{mode: :in_table} = state)
-       when tag in @table_structure_elements do
+  # Table structure in table-related modes: create if table context exists
+  @table_related_modes [:in_table, :in_table_body, :in_row, :in_cell, :in_caption]
+
+  defp do_process_html_start_tag(tag, attrs, _, %{mode: mode} = state)
+       when tag in @table_structure_elements and mode in @table_related_modes do
     if find_ref(state, "table") do
       state
       |> clear_to_table_context()
@@ -629,9 +630,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Tr - requires table context
   # In :in_body mode without table, this is a parse error - ignore
   # In table-related modes (:in_table, etc.) or with table on stack, create tr
-  @table_related_modes [:in_table, :in_table_body, :in_row, :in_cell, :in_caption]
   defp do_process_html_start_tag("tr", attrs, _, %{mode: mode} = state) do
-    if find_ref(state, "table") || mode in @table_related_modes do
+    if find_ref(state, "table") ||
+         (mode in @table_related_modes and not has_foreign_on_stack?(state)) do
       state
       |> in_body()
       |> clear_to_table_body_context()
@@ -954,6 +955,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp html_integration_point?(%{stack: [], elements: _}), do: false
 
+  # Adjusted current node: in fragment mode with 1 element on stack,
+  # check the context element instead.
+  defp html_integration_point?(%{
+         stack: [_single],
+         context_element: {:svg, tag}
+       })
+       when tag in ~w(foreignObject desc title),
+       do: true
+
+  defp html_integration_point?(%{
+         stack: [_single],
+         context_element: {:math, tag}
+       })
+       when tag in ~w(mi mo mn ms mtext),
+       do: true
+
   defp html_integration_point?(%{stack: [ref | _], elements: elements}) do
     elem = elements[ref]
 
@@ -975,6 +992,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
+  # Adjusted current node: in fragment mode with 1 element on stack,
+  # check the context element instead.
+  defp mathml_text_integration_point?(%{stack: [_single], context_element: {:math, tag}})
+       when tag in ~w(mi mo mn ms mtext),
+       do: true
+
   defp mathml_text_integration_point?(%{stack: [ref | _], elements: elements}) do
     case elements[ref].tag do
       {:math, tag} when tag in ~w(mi mo mn ms mtext) -> true
@@ -989,6 +1012,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                          p pre ruby s small span strong strike sub sup table tt u ul var)
 
   defp html_breakout_tag?(tag), do: tag in @html_breakout_tags
+
+  # Per WHATWG spec: <font> is a breakout tag only when it has color, face, or size attributes
+  defp font_breakout_tag?(attrs) do
+    Enum.any?(attrs, fn {name, _} -> name in ~w(color face size) end)
+  end
 
   defp close_foreign_content(%{stack: stack, elements: elements} = state) do
     # Pop all foreign elements from the stack
@@ -1213,6 +1241,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
+  # Per spec: "the second element on the stack" means second from the bottom
+  defp second_element_is_body?(stack, elements) do
+    case Enum.at(stack, -2) do
+      nil -> false
+      ref -> elements[ref].tag == "body"
+    end
+  end
+
   defp close_body_for_frameset(%{stack: stack, elements: elements} = state) do
     {new_stack, new_elements, parent_ref} = do_close_body_for_frameset(stack, elements)
     %{state | stack: new_stack, elements: new_elements, current_parent_ref: parent_ref}
@@ -1253,46 +1289,31 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp reset_insertion_mode(
-         %{stack: stack, elements: elements, template_mode_stack: template_mode_stack} = state
+         %{
+           stack: stack,
+           elements: elements,
+           context_element: context_element,
+           template_mode_stack: template_mode_stack
+         } = state
        ) do
-    mode = determine_mode_from_stack(stack, elements)
+    mode = determine_mode_from_stack(stack, elements, context_element)
     %{state | mode: mode, template_mode_stack: Enum.drop(template_mode_stack, 1)}
-  end
-
-  defp determine_mode_from_stack([], _elements), do: :in_body
-
-  defp determine_mode_from_stack([ref | rest], elements) do
-    tag = elements[ref].tag
-
-    case Map.get(@tag_to_mode, tag) do
-      nil ->
-        determine_mode_from_stack(rest, elements)
-
-      # Per HTML5 spec: if select and table ancestor exists, use in_select_in_table
-      :in_select ->
-        if has_table_ancestor?(rest, elements) do
-          :in_select_in_table
-        else
-          :in_select
-        end
-
-      mode ->
-        mode
-    end
-  end
-
-  defp has_table_ancestor?([], _elements), do: false
-
-  defp has_table_ancestor?([ref | rest], elements) do
-    case elements[ref].tag do
-      "table" -> true
-      "template" -> false
-      _ -> has_table_ancestor?(rest, elements)
-    end
   end
 
   # Check if there's a table ancestor that would trigger foster-parenting
   # when we're inside foreign content (SVG/MathML integration point)
+  # Check if there are any foreign (SVG/MathML) elements on the stack.
+  # Used to determine if table structure handling should be skipped when
+  # processing HTML tokens at integration points.
+  defp has_foreign_on_stack?(%{stack: stack, elements: elements}) do
+    Enum.any?(stack, fn ref ->
+      case elements[ref].tag do
+        {ns, _} when ns in [:svg, :math] -> true
+        _ -> false
+      end
+    end)
+  end
+
   defp has_table_ancestor_for_foster?(%{stack: stack, elements: elements}) do
     do_has_table_ancestor_for_foster?(stack, elements)
   end

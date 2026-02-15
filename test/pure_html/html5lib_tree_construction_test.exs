@@ -2,15 +2,14 @@ defmodule PureHTML.Html5libTreeConstructionTest do
   use ExUnit.Case, async: true
 
   alias PureHTML.Test.Html5libTreeConstructionTests, as: H5
-  alias PureHTML.{Tokenizer, TreeBuilder}
 
   for path <- H5.list_test_files() do
     filename = Path.basename(path, ".dat")
 
     describe filename do
       for {test, index} <- Enum.with_index(H5.parse_file(path)) do
-        # Skip fragment tests and script-off tests (we assume scripting enabled)
-        if test.document_fragment == nil and not test.script_off do
+        # Skip script-off tests (we assume scripting enabled)
+        if not test.script_off do
           @tag :html5lib
           @tag :tree_construction
           @tag test_file: filename
@@ -20,9 +19,13 @@ defmodule PureHTML.Html5libTreeConstructionTest do
             test = unquote(Macro.escape(test))
 
             document =
-              test.data
-              |> Tokenizer.new()
-              |> TreeBuilder.build()
+              case test.document_fragment do
+                nil ->
+                  PureHTML.parse(test.data)
+
+                context ->
+                  PureHTML.parse(test.data, context: context)
+              end
 
             actual = H5.serialize_document(document) |> String.trim_trailing("\n")
             expected = test.document |> String.trim_trailing("\n")
