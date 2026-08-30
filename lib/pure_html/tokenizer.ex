@@ -2440,8 +2440,9 @@ defmodule PureHTML.Tokenizer do
     parse_error(state)
   end
 
-  defp check_numeric_char_ref(state, cp) when is_map_key(@windows_1252, cp) do
-    # control-character-reference parse error
+  defp check_numeric_char_ref(state, cp) when cp in 0x80..0x9F do
+    # control-character-reference parse error (C1 controls, including those
+    # not in the Windows-1252 replacement table: 0x81, 0x8D, 0x8F, 0x90, 0x9D)
     parse_error(state)
   end
 

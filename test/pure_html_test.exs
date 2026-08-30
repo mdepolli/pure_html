@@ -102,6 +102,17 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 1
     end
+
+    test "counts a C1 control numeric character reference as a parse error" do
+      # Arrange
+      html = "<!DOCTYPE html><html><body>FOO&#x0081;ZOO</body></html>"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
