@@ -2267,26 +2267,24 @@ defmodule PureHTML.Tokenizer do
     continue(state, input: rest, buffer: "", state: :numeric_character_reference)
   end
 
-  defp step(%{state: :character_reference, input: <<?&, _::binary>> = input} = state) do
-    with {chars, rest} <- Entities.lookup(input),
-         true <- consumable_entity?(state.return_state, input, rest) do
-      # Check for missing-semicolon-after-character-reference
-      matched_len = byte_size(input) - byte_size(rest)
-      <<matched::binary-size(^matched_len), _::binary>> = input
+  defp step(%{state: :character_reference, input: <<?&, next, _::binary>> = input} = state)
+       when is_ascii_alpha(next) or is_ascii_digit(next) do
+    case Entities.lookup(input) do
+      {chars, rest} ->
+        consume_named_entity(state, input, chars, rest)
 
-      state =
-        if String.ends_with?(matched, ";") do
-          state
-        else
-          parse_error(state)
-        end
-
-      flush_char_ref(state, chars, rest)
-    else
-      _ ->
+      nil ->
+        # unknown-named-character-reference parse error
         <<_, after_amp::binary>> = input
-        flush_char_ref(state, "&", after_amp)
+
+        state
+        |> parse_error()
+        |> flush_char_ref("&", after_amp)
     end
+  end
+
+  defp step(%{state: :character_reference, input: <<?&, rest::binary>>} = state) do
+    flush_char_ref(state, "&", rest)
   end
 
   # Numeric character reference state
@@ -2776,6 +2774,25 @@ defmodule PureHTML.Tokenizer do
 
   defp flush_char_ref(state, chars, rest) do
     emit_char(state, chars, input: rest, state: state.return_state, return_state: nil)
+  end
+
+  defp consume_named_entity(state, input, chars, rest) do
+    if consumable_entity?(state.return_state, input, rest) do
+      matched_len = byte_size(input) - byte_size(rest)
+      <<matched::binary-size(^matched_len), _::binary>> = input
+
+      state =
+        if String.ends_with?(matched, ";") do
+          state
+        else
+          parse_error(state)
+        end
+
+      flush_char_ref(state, chars, rest)
+    else
+      <<_, after_amp::binary>> = input
+      flush_char_ref(state, "&", after_amp)
+    end
   end
 
   # Per HTML5 spec: in attribute values, legacy entities (no semicolon) followed

@@ -80,6 +80,17 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 1
     end
+
+    test "counts an unknown named character reference as a parse error" do
+      # Arrange
+      html = "<!DOCTYPE html><html><body>&AMp;</body></html>"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
