@@ -503,7 +503,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp handle_html_breakout_tag(state, tag, attrs, self_closing) do
-    state = close_foreign_content(state)
+    # Per spec: HTML start tag in foreign content is a parse error, then pop
+    # until an HTML/integration-point element and reprocess.
+    state =
+      state
+      |> parse_error()
+      |> close_foreign_content()
 
     if needs_foster_parenting?(state) do
       {state, _ref} = foster_parent(state, {:push, tag, attrs})

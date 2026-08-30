@@ -69,6 +69,17 @@ defmodule PureHTMLTest do
       assert nodes == []
       assert error_count >= 1
     end
+
+    test "counts an HTML start tag in SVG foreign content as a parse error" do
+      # Arrange
+      html = "<p>"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg svg")
+
+      # Assert
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
