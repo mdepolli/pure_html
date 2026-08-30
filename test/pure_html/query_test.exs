@@ -36,6 +36,35 @@ defmodule PureHTML.QueryTest do
              ]
     end
 
+    test "finds nested elements" do
+      html = PureHTML.parse("<div><div><p class='deep'>Deep</p></div></div>")
+
+      assert Query.find(html, ".deep") == [{"p", [{"class", "deep"}], ["Deep"]}]
+    end
+
+    test "returns empty list when no matches" do
+      html = PureHTML.parse("<div><p>Hello</p></div>")
+
+      assert Query.find(html, ".nonexistent") == []
+    end
+
+    test "works with single node input" do
+      node = {"div", [], [{"p", [{"class", "inner"}], ["Hello"]}]}
+
+      assert Query.find(node, ".inner") == [{"p", [{"class", "inner"}], ["Hello"]}]
+    end
+
+    test "finds universal selector" do
+      html = [{"div", [], [{"p", [], ["Hello"]}]}]
+
+      assert Query.find(html, "*") == [
+               {"div", [], [{"p", [], ["Hello"]}]},
+               {"p", [], ["Hello"]}
+             ]
+    end
+  end
+
+  describe "find/2 attribute selectors" do
     test "finds elements by attribute existence" do
       html = PureHTML.parse("<div><a href='/link'>Link</a><span>Text</span></div>")
 
@@ -75,7 +104,9 @@ defmodule PureHTML.QueryTest do
                {"a", [{"href", "https://example.com"}], ["Example"]}
              ]
     end
+  end
 
+  describe "find/2 selector lists" do
     test "finds elements with selector list" do
       html = PureHTML.parse("<div><p>Para</p><span>Span</span><a>Link</a></div>")
 
@@ -84,37 +115,9 @@ defmodule PureHTML.QueryTest do
                {"span", [], ["Span"]}
              ]
     end
+  end
 
-    test "finds nested elements" do
-      html = PureHTML.parse("<div><div><p class='deep'>Deep</p></div></div>")
-
-      assert Query.find(html, ".deep") == [{"p", [{"class", "deep"}], ["Deep"]}]
-    end
-
-    test "returns empty list when no matches" do
-      html = PureHTML.parse("<div><p>Hello</p></div>")
-
-      assert Query.find(html, ".nonexistent") == []
-    end
-
-    test "works with single node input" do
-      node = {"div", [], [{"p", [{"class", "inner"}], ["Hello"]}]}
-
-      assert Query.find(node, ".inner") == [{"p", [{"class", "inner"}], ["Hello"]}]
-    end
-
-    test "finds universal selector" do
-      html = [{"div", [], [{"p", [], ["Hello"]}]}]
-
-      # Should find div and p
-      assert Query.find(html, "*") == [
-               {"div", [], [{"p", [], ["Hello"]}]},
-               {"p", [], ["Hello"]}
-             ]
-    end
-
-    # Combinator tests
-
+  describe "find/2 combinators" do
     test "child combinator (>) selects direct children only" do
       html = PureHTML.parse("<div><p>Direct</p><span><p>Nested</p></span></div>")
       assert Query.find(html, "div > p") == [{"p", [], ["Direct"]}]
@@ -154,7 +157,6 @@ defmodule PureHTML.QueryTest do
         </article>
         """)
 
-      # article > section > p
       assert Query.find(html, "article > section > p") == [{"p", [], ["Content"]}]
     end
 
@@ -170,7 +172,6 @@ defmodule PureHTML.QueryTest do
         </div>
         """)
 
-      # descendant then child
       assert Query.find(html, ".container article > p") == [
                {"p", [{"class", "intro"}], ["Intro"]},
                {"p", [], ["Body"]}
@@ -184,7 +185,6 @@ defmodule PureHTML.QueryTest do
 
     test "general sibling skips non-element nodes" do
       html = PureHTML.parse("<div><h1>Title</h1>Some text<p>Para</p></div>")
-      # Should still find p even though there's text between h1 and p
       assert Query.find(html, "h1 ~ p") == [{"p", [], ["Para"]}]
     end
 
@@ -206,9 +206,9 @@ defmodule PureHTML.QueryTest do
       html = PureHTML.parse("<form><input type='text'><input type='email'></form>")
       assert Query.find(html, "form > [type=email]") == [{"input", [{"type", "email"}], []}]
     end
+  end
 
-    # Real-world scraping patterns with combinators
-
+  describe "find/2 scraping patterns" do
     test "table row cells" do
       html =
         PureHTML.parse("""
@@ -252,7 +252,6 @@ defmodule PureHTML.QueryTest do
         </article>
         """)
 
-      # Only direct p children of article
       assert Query.find(html, "article > p") == [
                {"p", [], ["Main content"]},
                {"p", [], ["Related content"]}
@@ -301,7 +300,6 @@ defmodule PureHTML.QueryTest do
 
     test "works with selector list (returns first match of first selector)" do
       html = PureHTML.parse("<div><span>Span</span><p>Para</p></div>")
-      # Selectors are evaluated in order: "p" first, then "span"
       assert Query.find_one(html, "p, span") == {"p", [], ["Para"]}
       assert Query.find_one(html, "span, p") == {"span", [], ["Span"]}
     end
@@ -314,9 +312,9 @@ defmodule PureHTML.QueryTest do
     test "returns nil for empty tree" do
       assert Query.find_one([], "p") == nil
     end
+  end
 
-    # Common scraping patterns
-
+  describe "find_one/2 scraping patterns" do
     test "get page title" do
       html =
         PureHTML.parse("""
@@ -345,18 +343,6 @@ defmodule PureHTML.QueryTest do
 
       main = Query.find_one(html, "main.content")
       assert {"main", [{"class", "content"}], _children} = main
-    end
-  end
-
-  describe "PureHTML.query_one/2 delegation" do
-    test "delegates to Query.find_one/2" do
-      html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
-      assert PureHTML.query_one(html, "li") == {"li", [], ["A"]}
-    end
-
-    test "returns nil when no match" do
-      html = PureHTML.parse("<div><p>Hello</p></div>")
-      assert PureHTML.query_one(html, ".missing") == nil
     end
   end
 
@@ -405,22 +391,6 @@ defmodule PureHTML.QueryTest do
     end
   end
 
-  describe "PureHTML.query/2 delegation" do
-    test "delegates to Query.find/2" do
-      html = PureHTML.parse("<div><p class='intro'>Hello</p></div>")
-
-      assert PureHTML.query(html, ".intro") == [{"p", [{"class", "intro"}], ["Hello"]}]
-    end
-  end
-
-  describe "PureHTML.children/2 delegation" do
-    test "delegates to Query.children/2" do
-      node = {"div", [], [{"p", [], ["Hello"]}]}
-
-      assert PureHTML.children(node) == [{"p", [], ["Hello"]}]
-    end
-  end
-
   describe "text/2" do
     test "extracts text from simple element" do
       html = PureHTML.parse("<p>Hello</p>")
@@ -432,6 +402,46 @@ defmodule PureHTML.QueryTest do
       assert Query.text(html) == "Hello World"
     end
 
+    test "works with single node" do
+      node = {"p", [], ["Hello ", {"strong", [], ["World"]}]}
+      assert Query.text(node) == "Hello World"
+    end
+
+    test "ignores comments" do
+      html = [{"div", [], ["Hello", {:comment, "ignored"}, "World"]}]
+      assert Query.text(html) == "HelloWorld"
+    end
+
+    test "ignores doctype" do
+      html = [{:doctype, "html", nil, nil}, {"html", [], [{"body", [], ["Hello"]}]}]
+      assert Query.text(html) == "Hello"
+    end
+
+    test "returns empty string for empty tree" do
+      assert Query.text([]) == ""
+    end
+
+    test "handles foreign elements" do
+      node = {{:svg, "text"}, [], ["SVG Text"]}
+      assert Query.text(node) == "SVG Text"
+    end
+
+    test "excludes namespaced script and style by default" do
+      # Arrange
+      html = [
+        {{:svg, "text"}, [], ["Hello"]},
+        {{:svg, "script"}, [], ["alert(1)"]},
+        {{:svg, "style"}, [], [".foo{}"]}
+      ]
+
+      # Act + Assert
+      assert Query.text(html) == "Hello"
+      assert Query.text(html, include_script: true) == "Helloalert(1)"
+      assert Query.text(html, include_style: true) == "Hello.foo{}"
+    end
+  end
+
+  describe "text/2 options" do
     test "extracts text with separator" do
       html = PureHTML.parse("<p>Hello<strong>World</strong></p>")
       assert Query.text(html, separator: " ") == "Hello World"
@@ -487,46 +497,6 @@ defmodule PureHTML.QueryTest do
       |> then(&assert &1 == "DirectText")
     end
 
-    test "works with single node" do
-      node = {"p", [], ["Hello ", {"strong", [], ["World"]}]}
-      assert Query.text(node) == "Hello World"
-    end
-
-    test "ignores comments" do
-      html = [{"div", [], ["Hello", {:comment, "ignored"}, "World"]}]
-      assert Query.text(html) == "HelloWorld"
-    end
-
-    test "ignores doctype" do
-      html = [{:doctype, "html", nil, nil}, {"html", [], [{"body", [], ["Hello"]}]}]
-      assert Query.text(html) == "Hello"
-    end
-
-    test "returns empty string for empty tree" do
-      assert Query.text([]) == ""
-    end
-
-    test "handles foreign elements" do
-      node = {{:svg, "text"}, [], ["SVG Text"]}
-      assert Query.text(node) == "SVG Text"
-    end
-
-    test "excludes namespaced script and style by default" do
-      # Arrange
-      html = [
-        {{:svg, "text"}, [], ["Hello"]},
-        {{:svg, "script"}, [], ["alert(1)"]},
-        {{:svg, "style"}, [], [".foo{}"]}
-      ]
-
-      # Act + Assert
-      assert Query.text(html) == "Hello"
-      assert Query.text(html, include_script: true) == "Helloalert(1)"
-      assert Query.text(html, include_style: true) == "Hello.foo{}"
-    end
-
-    # :strip option tests
-
     test "strip: true removes leading/trailing whitespace from segments" do
       html = PureHTML.parse("<p>  Hello  </p>")
       assert Query.text(html, strip: true) == "Hello"
@@ -566,9 +536,9 @@ defmodule PureHTML.QueryTest do
       html = PureHTML.parse("<p>  Hello  </p>")
       assert Query.text(html) == "  Hello  "
     end
+  end
 
-    # Complex real-world scenarios
-
+  describe "text/2 scraping patterns" do
     test "scraping workflow: query then extract text" do
       html =
         PureHTML.parse("""
@@ -676,18 +646,6 @@ defmodule PureHTML.QueryTest do
     end
   end
 
-  describe "PureHTML.text/2 delegation" do
-    test "delegates to Query.text/2" do
-      html = PureHTML.parse("<p>Hello <strong>World</strong></p>")
-      assert PureHTML.text(html) == "Hello World"
-    end
-
-    test "delegates with options" do
-      html = PureHTML.parse("<ul><li>A</li><li>B</li></ul>")
-      assert PureHTML.text(html, separator: ", ") == "A, B"
-    end
-  end
-
   describe "attr/2" do
     test "extracts attribute from element" do
       node = {"a", [{"href", "/home"}, {"class", "link"}], ["Home"]}
@@ -769,9 +727,9 @@ defmodule PureHTML.QueryTest do
       html = PureHTML.parse("<div><a>Link without href</a></div>")
       assert Query.attribute(html, "a", "href") == []
     end
+  end
 
-    # Real-world scraping scenarios
-
+  describe "attribute/3 scraping patterns" do
     test "scraping all links from a page" do
       html =
         PureHTML.parse("""
@@ -821,27 +779,6 @@ defmodule PureHTML.QueryTest do
 
       ids = Query.attribute(html, "li", "data-id")
       assert ids == ["1", "2", "3"]
-    end
-  end
-
-  describe "PureHTML.attr/2 delegation" do
-    test "delegates to Query.attr/2" do
-      node = {"a", [{"href", "/home"}], ["Home"]}
-      assert PureHTML.attr(node, "href") == "/home"
-    end
-  end
-
-  describe "PureHTML.attribute/2 delegation" do
-    test "delegates to Query.attribute/2" do
-      nodes = [{"a", [{"href", "/one"}], []}, {"a", [{"href", "/two"}], []}]
-      assert PureHTML.attribute(nodes, "href") == ["/one", "/two"]
-    end
-  end
-
-  describe "PureHTML.attribute/3 delegation" do
-    test "delegates to Query.attribute/3" do
-      html = PureHTML.parse("<div><a href='/link'>Link</a></div>")
-      assert PureHTML.attribute(html, "a", "href") == ["/link"]
     end
   end
 end
