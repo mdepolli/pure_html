@@ -113,6 +113,17 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 1
     end
+
+    test "counts a trailing solidus on a non-void HTML start tag as a parse error" do
+      # Arrange
+      html = "<ms/>"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html, context: "math ms")
+
+      # Assert
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

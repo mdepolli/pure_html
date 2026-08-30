@@ -893,14 +893,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  defp do_process_html_start_tag(tag, attrs, _, state) do
+  defp do_process_html_start_tag(tag, attrs, self_closing, state) do
     state
     |> in_body()
     |> reconstruct_active_formatting()
     |> maybe_close_same(tag)
+    |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
+
+  defp maybe_parse_error_unacknowledged_self_closing(state, tag, true)
+       when tag not in @void_elements do
+    parse_error(state)
+  end
+
+  defp maybe_parse_error_unacknowledged_self_closing(state, _tag, _self_closing), do: state
 
   # Helper function for form handling (separate to allow grouping of do_process_html_start_tag clauses)
   defp do_process_html_start_tag_form(attrs, state) do
