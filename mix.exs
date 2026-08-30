@@ -34,10 +34,10 @@ defmodule PureHTML.MixProject do
   defp extra_applications(env) when env in [:dev, :test], do: [:tools, :runtime_tools]
   defp extra_applications(_), do: []
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      # Dev/Test
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.0", only: [:test]}
