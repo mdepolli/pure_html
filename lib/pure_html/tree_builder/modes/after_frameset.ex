@@ -19,13 +19,14 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_child_to_stack: 2, add_text_to_stack: 2, extract_whitespace: 1]
+    only: [add_child_to_stack: 2, add_text_to_stack: 2, extract_whitespace: 1, parse_error: 1]
 
   @impl true
   def process({:character, text}, state) do
     case extract_whitespace(text) do
-      "" -> {:ok, state}
-      whitespace -> {:ok, add_text_to_stack(state, whitespace)}
+      "" -> {:ok, parse_error(state)}
+      ^text -> {:ok, add_text_to_stack(state, text)}
+      whitespace -> {:ok, state |> parse_error() |> add_text_to_stack(whitespace)}
     end
   end
 
@@ -35,7 +36,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
@@ -53,8 +54,13 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
     {:ok, %{state | mode: :after_after_frameset}}
   end
 
+  # EOF: stop parsing
+  def process(:eof, state) do
+    {:ok, state}
+  end
+
   def process(_token, state) do
     # Anything else: parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 end

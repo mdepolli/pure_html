@@ -81,6 +81,30 @@ defmodule PureHTML do
   end
 
   @doc """
+  Parses HTML and returns both the document tree and the parse error count.
+
+  Same as `parse/2` but returns `{nodes, error_count}`.
+  """
+  @spec parse_with_errors(String.t(), keyword()) :: {[term()], non_neg_integer()}
+  def parse_with_errors(html, opts \\ []) when is_binary(html) do
+    scripting = Keyword.get(opts, :scripting, true)
+
+    case Keyword.get(opts, :context) do
+      nil ->
+        html
+        |> Tokenizer.new(scripting: scripting)
+        |> TreeBuilder.build_with_errors(scripting)
+
+      context ->
+        {ns, tag} = parse_context(context)
+
+        html
+        |> Tokenizer.new(fragment_tokenizer_opts(ns, tag, scripting))
+        |> TreeBuilder.build_fragment_with_errors(ns, tag, scripting)
+    end
+  end
+
+  @doc """
   Converts parsed HTML nodes back to an HTML string.
 
   ## Options

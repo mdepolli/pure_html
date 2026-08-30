@@ -29,15 +29,17 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
       push_element: 3,
       pop_element: 1,
       current_tag: 1,
-      extract_whitespace: 1
+      extract_whitespace: 1,
+      parse_error: 1
     ]
 
   @impl true
-  # Whitespace: insert, non-whitespace: ignore
+  # Whitespace: insert, non-whitespace: parse error, ignore
   def process({:character, text}, state) do
     case extract_whitespace(text) do
-      "" -> {:ok, state}
-      whitespace -> {:ok, add_text_to_stack(state, whitespace)}
+      "" -> {:ok, parse_error(state)}
+      ^text -> {:ok, add_text_to_stack(state, text)}
+      whitespace -> {:ok, state |> parse_error() |> add_text_to_stack(whitespace)}
     end
   end
 
@@ -48,7 +50,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Start tag: html - process using in_body rules (merge attrs)
@@ -74,7 +76,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # Other start tags: parse error, ignore
   def process({:start_tag, _tag, _attrs, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # End tag: frameset
@@ -100,12 +102,16 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # Other end tags: parse error, ignore
   def process({:end_tag, _tag}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
-  # EOF: stop parsing
+  # EOF: parse error if current node is not html
   def process(:eof, state) do
-    {:ok, state}
+    if current_tag(state) != "html" do
+      {:ok, parse_error(state)}
+    else
+      {:ok, state}
+    end
   end
 
   # Error tokens: ignore

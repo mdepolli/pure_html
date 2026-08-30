@@ -28,7 +28,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     only: [
       push_element: 3,
       set_mode: 2,
-      set_frameset_ok: 2
+      set_frameset_ok: 2,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.Modes.InHead
@@ -60,7 +61,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
@@ -93,6 +94,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   def process({:start_tag, tag, _attrs, _self_closing} = token, state)
       when tag in @head_elements do
     # Parse error, but process using "in head" rules
+    state = parse_error(state)
     # Per spec: push head onto stack, process in in_head, then remove head from stack
     state = push_head_onto_stack(state)
     {result, state} = InHead.process(token, state)
@@ -109,7 +111,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:end_tag, "template"}, state) do
@@ -124,7 +126,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # EOF: reprocess in in_body (without inserting implied body)

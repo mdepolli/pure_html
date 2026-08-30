@@ -17,7 +17,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [extract_whitespace: 1, add_text_to_stack: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [extract_whitespace: 1, add_text_to_stack: 2, parse_error: 1]
 
   @impl true
   def process({:comment, text}, state) do
@@ -27,14 +28,14 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:character, text}, state) do
     case extract_whitespace(text) do
       "" ->
         # Non-whitespace: parse error, ignore
-        {:ok, state}
+        {:ok, parse_error(state)}
 
       ^text ->
         # All whitespace: process using "in body" rules (insert to body)
@@ -52,8 +53,13 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
     {:reprocess, %{state | original_mode: :after_after_frameset, mode: :in_head}}
   end
 
+  # EOF: stop parsing
+  def process(:eof, state) do
+    {:ok, state}
+  end
+
   def process(_token, state) do
     # Anything else: parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 end

@@ -15,7 +15,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterbody
   """
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, find_ref: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [add_text_to_stack: 2, find_ref: 2, parse_error: 1]
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
@@ -26,7 +26,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
       {:ok, add_text_to_stack(state, text)}
     else
       # Non-whitespace: parse error, switch to in_body and reprocess
-      {:reprocess, %{state | mode: :in_body}}
+      {:reprocess, %{parse_error(state) | mode: :in_body}}
     end
   end
 
@@ -37,7 +37,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
@@ -62,7 +62,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
 
   def process(_token, state) do
     # Anything else: parse error, switch to "in body", reprocess
-    {:reprocess, %{state | mode: :in_body}}
+    {:reprocess, %{parse_error(state) | mode: :in_body}}
   end
 
   # Add comment as last child of html element.

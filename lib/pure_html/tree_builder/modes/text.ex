@@ -17,7 +17,7 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, current_tag: 1, pop_element: 1]
+    only: [add_text_to_stack: 2, current_tag: 1, pop_element: 1, parse_error: 1]
 
   @impl true
   def process({:character, text}, state) do
@@ -31,13 +31,13 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
       {:ok, close_current_element(state)}
     else
       # End tag doesn't match - parse error, ignore
-      {:ok, state}
+      {:ok, parse_error(state)}
     end
   end
 
   def process(:eof, state) do
     # EOF in text mode - parse error, close element and reprocess
-    {:reprocess, close_current_element(state)}
+    {:reprocess, state |> parse_error() |> close_current_element()}
   end
 
   def process(_token, state) do

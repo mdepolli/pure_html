@@ -30,6 +30,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def special_elements, do: @special_elements
 
+  @doc false
+  def parse_error(%{error_count: n} = state), do: %{state | error_count: n + 1}
+
   # --------------------------------------------------------------------------
   # Element Creation
   # --------------------------------------------------------------------------
@@ -471,6 +474,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @scope_boundaries %{
     default: ~w(applet caption html table td th marquee object template),
+    list_item: ~w(applet caption html table td th marquee object template ol ul),
     table: ~w(html table template),
     select: ~w(optgroup option),
     button: ~w(applet caption html table td th marquee object template button)
@@ -480,7 +484,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @mathml_scope_boundaries ~w(annotation-xml mi mn mo ms mtext)
 
   # Scope types that include foreign elements as boundaries per HTML5 spec
-  @scopes_with_foreign_boundaries [:default, :button]
+  @scopes_with_foreign_boundaries [:default, :button, :list_item]
 
   @doc """
   Checks if an element with the given tag is in the specified scope.

@@ -16,7 +16,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [extract_whitespace: 1, add_text_to_stack: 2]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [extract_whitespace: 1, add_text_to_stack: 2, parse_error: 1]
 
   @impl true
   def process({:comment, text}, state) do
@@ -26,14 +27,14 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:character, text}, state) do
     case extract_whitespace(text) do
       "" ->
         # Non-whitespace: parse error, switch to in_body, reprocess
-        {:reprocess, %{state | mode: :in_body}}
+        {:reprocess, %{parse_error(state) | mode: :in_body}}
 
       ^text ->
         # All whitespace: insert directly (staying in after_after_body mode)
@@ -53,6 +54,6 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
 
   def process(_token, state) do
     # Anything else: parse error, switch to "in body", reprocess
-    {:reprocess, %{state | mode: :in_body}}
+    {:reprocess, %{parse_error(state) | mode: :in_body}}
   end
 end

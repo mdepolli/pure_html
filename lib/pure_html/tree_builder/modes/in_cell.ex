@@ -26,7 +26,8 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
     only: [
       in_scope?: 3,
       pop_until_tag: 2,
-      clear_af_to_marker: 1
+      clear_af_to_marker: 1,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -53,18 +54,18 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Cell-closing start tags: close cell, reprocess
+  # Per spec: "If not in table scope, parse error; ignore."
   def process({:start_tag, tag, _, _}, state) when tag in @cell_closing_start_tags do
     case close_cell(state) do
       {:ok, new_state} ->
         {:reprocess, new_state}
 
       :not_found ->
-        # Cell not in scope, ignore
-        {:ok, state}
+        {:ok, parse_error(state)}
     end
   end
 
@@ -74,19 +75,20 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   end
 
   # End tag: td or th - close cell, switch to in_row
+  # Per spec: "If not in table scope, parse error; ignore."
   def process({:end_tag, tag}, state) when tag in ["td", "th"] do
     case close_cell_for_tag(state, tag) do
       {:ok, new_state} ->
         {:ok, %{new_state | mode: :in_row}}
 
       :not_found ->
-        {:ok, state}
+        {:ok, parse_error(state)}
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Cell-closing end tags: close cell if TARGET tag is in table scope, reprocess
@@ -101,8 +103,8 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
           {:ok, state}
       end
     else
-      # Target not in scope, ignore
-      {:ok, state}
+      # Per spec: "parse error; ignore."
+      {:ok, parse_error(state)}
     end
   end
 

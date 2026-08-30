@@ -43,7 +43,7 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
 
     %{
       data: Map.get(sections, "data", ""),
-      errors: Map.get(sections, "errors", []),
+      errors: Map.get(sections, "errors", []) ++ Map.get(sections, "new-errors", []),
       document: Map.get(sections, "document", ""),
       document_fragment: Map.get(sections, "document-fragment"),
       script_off: Map.has_key?(sections, "script-off"),

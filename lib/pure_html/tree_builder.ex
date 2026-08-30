@@ -26,7 +26,8 @@ defmodule PureHTML.TreeBuilder do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       add_child_to_stack: 2,
-      determine_mode_from_stack: 4
+      determine_mode_from_stack: 4,
+      parse_error: 1
     ]
 
   alias PureHTML.Tokenizer
@@ -152,7 +153,8 @@ defmodule PureHTML.TreeBuilder do
             elements: %{element_ref() => element()},
             current_parent_ref: element_ref() | nil,
             document_children: [child()],
-            post_html_nodes: [child()]
+            post_html_nodes: [child()],
+            error_count: non_neg_integer()
           }
 
     defstruct [
@@ -192,7 +194,9 @@ defmodule PureHTML.TreeBuilder do
       # Top-level document children (comments before <html>)
       document_children: [],
       # Post-html nodes (comments after </html>)
-      post_html_nodes: []
+      post_html_nodes: [],
+      # Parse error count (tokenizer + tree construction errors)
+      error_count: 0
     ]
   end
 
@@ -238,6 +242,21 @@ defmodule PureHTML.TreeBuilder do
   """
   @spec build(Tokenizer.t(), boolean()) :: [document_node()]
   def build(%Tokenizer{} = tokenizer, scripting \\ true) do
+    {nodes, _error_count} = do_build(tokenizer, scripting)
+    nodes
+  end
+
+  @doc """
+  Builds a document from a tokenizer, returning both nodes and parse error count.
+
+  Same as `build/2` but returns `{nodes, error_count}`.
+  """
+  @spec build_with_errors(Tokenizer.t(), boolean()) :: {[document_node()], non_neg_integer()}
+  def build_with_errors(%Tokenizer{} = tokenizer, scripting \\ true) do
+    do_build(tokenizer, scripting)
+  end
+
+  defp do_build(tokenizer, scripting) do
     {doctype, state, pre_html_comments} =
       build_loop(tokenizer, {nil, %State{scripting: scripting}, []})
 
@@ -245,13 +264,16 @@ defmodule PureHTML.TreeBuilder do
     pre_comments = Enum.reverse(pre_html_comments)
     post_nodes = Enum.reverse(state.post_html_nodes)
 
-    case doctype do
-      nil ->
-        pre_comments ++ [html_node] ++ post_nodes
+    nodes =
+      case doctype do
+        nil ->
+          pre_comments ++ [html_node] ++ post_nodes
 
-      {name, public, system} ->
-        [{:doctype, name, public, system} | pre_comments] ++ [html_node] ++ post_nodes
-    end
+        {name, public, system} ->
+          [{:doctype, name, public, system} | pre_comments] ++ [html_node] ++ post_nodes
+      end
+
+    {nodes, state.error_count}
   end
 
   @doc """
@@ -264,6 +286,22 @@ defmodule PureHTML.TreeBuilder do
   """
   @spec build_fragment(Tokenizer.t(), atom() | nil, String.t(), boolean()) :: [document_node()]
   def build_fragment(%Tokenizer{} = tokenizer, namespace, tag, scripting \\ true) do
+    {children, _error_count} = do_build_fragment(tokenizer, namespace, tag, scripting)
+    children
+  end
+
+  @doc """
+  Builds a fragment from a tokenizer, returning both children and parse error count.
+
+  Same as `build_fragment/4` but returns `{children, error_count}`.
+  """
+  @spec build_fragment_with_errors(Tokenizer.t(), atom() | nil, String.t(), boolean()) ::
+          {[document_node()], non_neg_integer()}
+  def build_fragment_with_errors(%Tokenizer{} = tokenizer, namespace, tag, scripting \\ true) do
+    do_build_fragment(tokenizer, namespace, tag, scripting)
+  end
+
+  defp do_build_fragment(tokenizer, namespace, tag, scripting) do
     context = {namespace, tag}
 
     # Step 1: Create an html element and push it onto the stack
@@ -310,7 +348,7 @@ defmodule PureHTML.TreeBuilder do
       build_loop(tokenizer, {nil, state, []})
 
     # Step 7: Return children of the html element
-    finalize_fragment(state, html_ref)
+    {finalize_fragment(state, html_ref), state.error_count}
   end
 
   defp build_loop(tokenizer, acc) do
@@ -319,12 +357,16 @@ defmodule PureHTML.TreeBuilder do
 
     case Tokenizer.next_token(tokenizer) do
       nil ->
-        acc
+        merge_tokenizer_errors(acc, tokenizer)
 
       {token, tokenizer} ->
         acc = process_token(token, acc)
         build_loop(tokenizer, acc)
     end
+  end
+
+  defp merge_tokenizer_errors({doctype, state, comments}, %Tokenizer{error_count: n}) do
+    {doctype, %{state | error_count: state.error_count + n}, comments}
   end
 
   defp update_tokenizer_context(
@@ -367,12 +409,22 @@ defmodule PureHTML.TreeBuilder do
          {:doctype, name, public_id, system_id, force_quirks},
          {_, %State{mode: :initial} = state, comments}
        ) do
+    # Per spec: parse error if name != "html", public_id is not missing,
+    # or system_id is not missing and != "about:legacy-compat"
+    state =
+      if doctype_is_parse_error?(name, public_id, system_id, force_quirks),
+        do: parse_error(state),
+        else: state
+
     # Determine quirks mode per HTML5 spec
     quirks = should_set_quirks_mode?(name, public_id, system_id, force_quirks)
     {{name, public_id, system_id}, %{state | mode: :before_html, quirks_mode: quirks}, comments}
   end
 
-  defp process_token({:doctype, _, _, _, _}, acc), do: acc
+  # DOCTYPE outside initial mode: parse error, ignore
+  defp process_token({:doctype, _, _, _, _}, {doctype, state, comments}) do
+    {doctype, parse_error(state), comments}
+  end
 
   defp process_token({:comment, text}, {doctype, %State{stack: []} = state, comments}) do
     {doctype, state, [{:comment, text} | comments]}
@@ -417,6 +469,28 @@ defmodule PureHTML.TreeBuilder do
 
   # Standard HTML5 DOCTYPE
   defp should_set_quirks_mode?(_name, _public_id, _system_id, _force_quirks), do: false
+
+  # Per WHATWG spec: DOCTYPE is a parse error if name != "html", public_id is not
+  # missing, or system_id is not missing and != "about:legacy-compat".
+  defp doctype_is_parse_error?(name, _public, _system, true = _force_quirks)
+       when name != "html",
+       do: true
+
+  defp doctype_is_parse_error?(name, _public, _system, _force_quirks)
+       when name != "html",
+       do: true
+
+  defp doctype_is_parse_error?(_name, public, _system, _force_quirks)
+       when is_binary(public),
+       do: true
+
+  defp doctype_is_parse_error?(_name, _public, system, _force_quirks)
+       when is_binary(system) and system != "about:legacy-compat",
+       do: true
+
+  defp doctype_is_parse_error?(_name, _public, _system, true = _force_quirks), do: true
+
+  defp doctype_is_parse_error?(_name, _public, _system, _force_quirks), do: false
 
   # Limited quirks public IDs (with system ID present, these are NOT full quirks)
   defp limited_quirks_public_id?("-//W3C//DTD XHTML 1.0 Frameset//" <> _), do: true
@@ -567,7 +641,7 @@ defmodule PureHTML.TreeBuilder do
   end
 
   # DOCTYPE: parse error, ignore
-  defp process_foreign_content({:doctype, _, _, _, _}, state), do: {:ok, state}
+  defp process_foreign_content({:doctype, _, _, _, _}, state), do: {:ok, parse_error(state)}
 
   # Error tokens: ignore
   defp process_foreign_content({:error, _}, state), do: {:ok, state}

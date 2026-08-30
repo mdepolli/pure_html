@@ -34,7 +34,8 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
       pop_element: 1,
       current_tag: 1,
       split_whitespace: 1,
-      merge_html_attrs: 2
+      merge_html_attrs: 2,
+      parse_error: 1
     ]
 
   @void_head_elements ~w(base basefont bgsound link meta)
@@ -65,12 +66,12 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:start_tag, "html", attrs, _self_closing}, state) do
-    # Process using "in body" rules - merge attrs to html element, stay in in_head
-    {:ok, merge_html_attrs(state, attrs)}
+    # Process using "in body" rules - parse error, then merge attrs to html element
+    {:ok, state |> parse_error() |> merge_html_attrs(attrs)}
   end
 
   def process({:start_tag, tag, attrs, _self_closing}, state)
@@ -124,7 +125,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:end_tag, "head"}, state) do
@@ -145,7 +146,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process(_token, state) do

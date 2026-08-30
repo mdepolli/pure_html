@@ -22,7 +22,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [in_scope?: 3, pop_until_tag: 2]
+  import PureHTML.TreeBuilder.Helpers, only: [in_scope?: 3, pop_until_tag: 2, parse_error: 1]
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -45,11 +45,13 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
-  # Table-related start tags: close caption, reprocess
+  # Table-related start tags: parse error, close caption, reprocess
   def process({:start_tag, tag, _, _}, state) when tag in @table_tags do
+    state = parse_error(state)
+
     case close_caption(state) do
       {:ok, new_state} ->
         {:reprocess, new_state}
@@ -72,12 +74,15 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
         {:ok, %{new_state | mode: :in_table}}
 
       :not_found ->
-        {:ok, state}
+        # Parse error, ignore
+        {:ok, parse_error(state)}
     end
   end
 
-  # End tag: table - close caption, reprocess
+  # End tag: table - parse error, close caption, reprocess
   def process({:end_tag, "table"}, state) do
+    state = parse_error(state)
+
     case close_caption(state) do
       {:ok, new_state} ->
         {:reprocess, new_state}
@@ -89,7 +94,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Other end tags: process using in_body rules

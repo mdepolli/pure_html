@@ -9,7 +9,8 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   See: https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
   """
 
-  import PureHTML.TreeBuilder.Helpers, only: [new_element: 3, insert_after_in_list: 3]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [new_element: 3, insert_after_in_list: 3, parse_error: 1]
 
   # Scope boundaries for the "in scope" check
   @scope_boundaries ~w(
@@ -43,19 +44,31 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   defp outer_loop(%{af: af} = state, subject, fallback, iteration) do
     case locate_formatting_element(state, subject) do
       :not_in_af ->
+        # Per spec: "If there is no such element, then this is a parse error"
+        # On first iteration, run "any other end tag" steps via the fallback
+        state = parse_error(state)
         if iteration == 0, do: fallback.(state, subject), else: state
 
       {:not_in_stack, af_idx} ->
+        # Per spec: "parse error; remove the element from the list; return"
+        state = parse_error(state)
         %{state | af: List.delete_at(af, af_idx)}
 
       :not_in_scope ->
-        state
+        # Per spec: "parse error; return"
+        parse_error(state)
 
       {:no_furthest_block, af_idx, stack_idx} ->
+        # Per spec step 9: "If formatting element is not the current node,
+        # then this is a parse error. (But do not return.)"
+        state = if stack_idx > 0, do: parse_error(state), else: state
         pop_to_formatting_element(state, af_idx, stack_idx)
 
       {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx} ->
+        # Per spec step 9: "If formatting element is not the current node,
+        # then this is a parse error." (Always true when furthest block exists.)
         state
+        |> parse_error()
         |> process_with_furthest_block({af_idx, fe_ref, fe_tag, fe_attrs}, stack_idx, fb_idx)
         |> outer_loop(subject, fallback, iteration + 1)
     end

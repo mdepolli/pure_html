@@ -34,7 +34,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
       find_ref: 2,
       pop_until_tag: 2,
       clear_af_to_marker: 1,
-      determine_mode_from_stack: 4
+      determine_mode_from_stack: 4,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -61,7 +62,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Void head elements: add directly to stack
@@ -167,31 +168,33 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # Other end tags: parse error, ignore
   def process({:end_tag, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
-  # EOF: if no template on stack, stop. Otherwise clean up template stack.
-  def process(:eof, %{template_mode_stack: []} = state) do
-    {:ok, state}
-  end
-
+  # EOF: per spec, if there is no template element on the stack of open elements,
+  # stop parsing. Otherwise, this is a parse error.
   def process(:eof, state) do
-    {_, state} = pop_until_tag(state, "template")
+    if find_ref(state, "template") == nil do
+      {:ok, state}
+    else
+      state = parse_error(state)
+      {_, state} = pop_until_tag(state, "template")
 
-    state = clear_af_to_marker(state)
+      state = clear_af_to_marker(state)
 
-    %{template_mode_stack: [_ | rest_tms]} = state
-    state = %{state | template_mode_stack: rest_tms}
+      %{template_mode_stack: [_ | rest_tms]} = state
+      state = %{state | template_mode_stack: rest_tms}
 
-    mode =
-      determine_mode_from_stack(
-        state.stack,
-        state.elements,
-        state.context_element,
-        state.scripting
-      )
+      mode =
+        determine_mode_from_stack(
+          state.stack,
+          state.elements,
+          state.context_element,
+          state.scripting
+        )
 
-    {:reprocess, %{state | mode: mode}}
+      {:reprocess, %{state | mode: mode}}
+    end
   end
 
   # Error tokens: ignore

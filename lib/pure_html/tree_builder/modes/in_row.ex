@@ -31,7 +31,8 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
       push_af_marker: 1,
       in_scope?: 3,
       pop_until_tag: 2,
-      pop_until_one_of: 2
+      pop_until_one_of: 2,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -63,7 +64,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Start tag: th, td - insert cell, switch to in_cell
@@ -79,13 +80,14 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   end
 
   # Row-closing start tags: close row, reprocess
+  # Per spec: "If not in table scope, parse error; ignore."
   def process({:start_tag, tag, _, _}, state) when tag in @row_closing_start_tags do
     case close_row(state) do
       {:ok, new_state} ->
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, state}
+        {:ok, parse_error(state)}
     end
   end
 
@@ -108,40 +110,45 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   end
 
   # End tag: tr - close row, switch to in_table_body
+  # Per spec: "If not in scope, parse error; ignore."
   def process({:end_tag, "tr"}, state) do
     case close_row(state) do
       {:ok, new_state} ->
         {:ok, %{new_state | mode: :in_table_body}}
 
       :not_found ->
-        {:ok, state}
+        {:ok, parse_error(state)}
     end
   end
 
   # End tag: table - close row, reprocess
+  # Per spec: "If not in scope, parse error; ignore."
   def process({:end_tag, "table"}, state) do
     case close_row(state) do
       {:ok, new_state} ->
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, state}
+        {:ok, parse_error(state)}
     end
   end
 
   # Table body end tags: close row if in scope, reprocess
+  # Per spec: "If not in table scope, parse error; ignore."
   def process({:end_tag, tag}, state) when tag in @table_body_end_tags do
-    with true <- in_scope?(state, tag, :table),
-         {:ok, new_state} <- close_row(state) do
-      {:reprocess, new_state}
+    if in_scope?(state, tag, :table) do
+      case close_row(state) do
+        {:ok, new_state} -> {:reprocess, new_state}
+        :not_found -> {:ok, parse_error(state)}
+      end
     else
-      _ -> {:ok, state}
+      {:ok, parse_error(state)}
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Other end tags: process using in_table rules

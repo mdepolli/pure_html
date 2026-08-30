@@ -16,6 +16,12 @@ defmodule PureHTML.Html5libTreeConstructionTest do
           end
 
         for {scripting, label} <- scripting_modes do
+          opts =
+            case test.document_fragment do
+              nil -> [scripting: scripting]
+              context -> [scripting: scripting, context: context]
+            end
+
           @tag :html5lib
           @tag :tree_construction
           @tag test_file: filename
@@ -23,20 +29,16 @@ defmodule PureHTML.Html5libTreeConstructionTest do
           @tag test_id: "#{filename}:#{index}"
           @tag scripting: String.to_atom(label)
           test "##{index} [script-#{label}]: #{String.slice(test.data, 0, 40)}" do
-            test = unquote(Macro.escape(test))
-            scripting = unquote(scripting)
+            data = unquote(test.data)
+            expected_document = unquote(test.document)
+            opts = unquote(Macro.escape(opts))
 
-            document =
-              case test.document_fragment do
-                nil ->
-                  PureHTML.parse(test.data, scripting: scripting)
-
-                context ->
-                  PureHTML.parse(test.data, context: context, scripting: scripting)
-              end
+            # Error counts are collected but not asserted yet. About 30% of
+            # html5lib tests still mismatch; tree output is the pass criterion.
+            {document, _error_count} = PureHTML.parse_with_errors(data, opts)
 
             actual = H5.serialize_document(document) |> String.trim_trailing("\n")
-            expected = test.document |> String.trim_trailing("\n")
+            expected = expected_document |> String.trim_trailing("\n")
 
             assert actual == expected
           end

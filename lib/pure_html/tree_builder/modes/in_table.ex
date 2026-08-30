@@ -43,7 +43,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       reject_refs_from_af: 2,
       needs_foster_parenting?: 1,
       update_af_entry: 3,
-      get_attr: 3
+      get_attr: 3,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -90,7 +91,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # DOCTYPE: parse error, ignore
   defp process_in_table({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Start tag: caption
@@ -149,8 +150,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:reprocess, state}
   end
 
-  # Start tag: nested table - close current table, reprocess
+  # Start tag: nested table - parse error, close current table, reprocess
   defp process_in_table({:start_tag, "table", _, _}, state) do
+    state = parse_error(state)
+
     if in_scope?(state, "table", :table) do
       state = close_table(state)
       {:reprocess, state}
@@ -171,26 +174,26 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: input - check for type=hidden
+  # Per spec: "Parse error." for both hidden and non-hidden cases in table.
   defp process_in_table({:start_tag, "input", attrs, _}, state) do
     type = attrs |> get_attr("type", "") |> String.downcase()
 
     if type == "hidden" do
-      # Insert directly, no foster parenting
+      # Per spec: "Parse error." Insert directly, no foster parenting.
+      state = parse_error(state)
       {:ok, add_child_to_stack(state, {"input", attrs, []})}
     else
-      # Foster parent
+      # Foster parent (parse error handled by foster parenting path)
+      state = parse_error(state)
       {new_state, _} = foster_parent(state, {:element, {"input", attrs, []}})
       {:ok, new_state}
     end
   end
 
-  # Start tag: form - special handling per HTML5 spec
-  # In table mode, if form_element is null and no template on stack:
-  # 1. Insert the form element (directly to table, not foster-parented)
-  # 2. Set form_element pointer to that element
-  # 3. Pop the element immediately (it stays in tree but not on stack)
+  # Start tag: form - Per spec: "Parse error."
   defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
-    # Only if no form element pointer and no template in stack
+    state = parse_error(state)
+
     if find_ref(state, "template") do
       {:ok, state}
     else
@@ -202,48 +205,52 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
+  # Per spec: "Parse error." Form element pointer already set, ignore.
   defp process_in_table({:start_tag, "form", _, _}, state) do
-    # Form element pointer already set, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
-  # SVG and math: foster parent as foreign elements
+  # SVG and math: per spec "Parse error." Foster parent as foreign elements.
   defp process_in_table({:start_tag, tag, attrs, self_closing}, state)
        when tag in ["svg", "math"] do
+    state = parse_error(state)
     ns = if tag == "svg", do: :svg, else: :math
     {new_state, _} = foster_parent(state, {:push_foreign, ns, tag, attrs, self_closing})
     {:ok, new_state}
   end
 
-  # Select: foster parent and push in_select_in_table mode
+  # Select: per spec "Parse error." Foster parent and push in_select_in_table mode.
   defp process_in_table({:start_tag, "select", attrs, _}, state) do
+    state = parse_error(state)
     {new_state, _ref} = foster_parent(state, {:push, "select", attrs})
     {:ok, set_mode(new_state, :in_select_in_table)}
   end
 
-  # Frameset/frame: parse error, ignore (table sets frameset_ok to false)
+  # Frameset/frame: per spec "Parse error. Ignore the token."
   defp process_in_table({:start_tag, tag, _, _}, state) when tag in ["frameset", "frame"] do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
-  # Other start tags: check if foster parenting is needed
-  # Per HTML5 spec, enable foster parenting then process using in_body rules
-  # "Appropriate insertion location" checks if current node is table context
+  # Other start tags: per spec "Parse error. Enable foster parenting, process
+  # the token using the rules for the 'in body' insertion mode."
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @formatting_element_tags ~w(a b big code em font i nobr s small strike strong tt u)
   @adopt_on_duplicate ~w(a nobr)
   @implicit_close_elements ~w(li dd dt)
 
   defp process_in_table({:start_tag, tag, attrs, self_closing}, state) do
+    state = parse_error(state)
     process_other_start_tag(tag, attrs, self_closing, state)
   end
 
   # End tag: table
+  # Per spec: "If the stack of open elements does not have a table element in table scope,
+  # this is a parse error; ignore the token."
   defp process_in_table({:end_tag, "table"}, state) do
     if in_scope?(state, "table", :table) do
       {:ok, close_table(state)}
     else
-      {:ok, state}
+      {:ok, parse_error(state)}
     end
   end
 
@@ -254,11 +261,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Ignored end tags: parse error, ignore
   defp process_in_table({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
-  # </br> special case: foster parent a <br> element (per HTML5 spec, </br> is treated as <br>)
+  # </br> special case: per spec "Parse error." Foster parent a <br> element.
   defp process_in_table({:end_tag, "br"}, state) do
+    state = parse_error(state)
     {new_state, _} = foster_parent(state, {:element, {"br", [], []}})
     {:ok, new_state}
   end
@@ -269,10 +277,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:ok, close_select_in_scope(state)}
   end
 
-  # </p> special case: check if p is in button scope
-  # If p is in scope (possibly above table due to foster parenting), close it
-  # Otherwise, foster parent an empty p element
+  # </p> special case: per spec "Parse error." Check if p is in button scope.
   defp process_in_table({:end_tag, "p"}, state) do
+    state = parse_error(state)
+
     if in_scope?(state, "p", :button) do
       # Let in_body handle closing the p
       InBody.process({:end_tag, "p"}, state)
@@ -283,8 +291,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
-  # Other end tags: process via in_body
+  # Other end tags: per spec "Parse error. Process using in_body rules."
   defp process_in_table({:end_tag, _} = token, state) do
+    state = parse_error(state)
     InBody.process(token, state)
   end
 
@@ -380,7 +389,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp do_process_character(_, text, state) do
-    # Character tokens not in table context: delegate to in_body
+    # Per spec: "Parse error." Character tokens not in table context: delegate to in_body
+    state = parse_error(state)
     InBody.process({:character, text}, state)
   end
 

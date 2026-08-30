@@ -32,7 +32,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
       add_child_to_stack: 2,
       pop_element: 1,
       current_tag: 1,
-      split_whitespace: 1
+      split_whitespace: 1,
+      parse_error: 1
     ]
 
   @impl true
@@ -62,7 +63,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Start tag: html - process using in_body rules
@@ -96,13 +97,14 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     if current_tag(state) == "colgroup" do
       {:ok, pop_colgroup(state)}
     else
-      {:ok, state}
+      # Parse error, ignore
+      {:ok, parse_error(state)}
     end
   end
 
   # End tag: col - parse error, ignore
   def process({:end_tag, "col"}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # End tag: template - process using in_head rules

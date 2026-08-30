@@ -19,7 +19,8 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [add_child_to_stack: 2, push_element: 3]
+  import PureHTML.TreeBuilder.Helpers,
+    only: [add_child_to_stack: 2, push_element: 3, parse_error: 1]
 
   # HTML5 ASCII whitespace characters
   @html5_whitespace ~c[ \t\n\r\f]
@@ -45,7 +46,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
@@ -65,7 +66,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process(_token, state) do

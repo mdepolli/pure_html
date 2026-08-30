@@ -40,7 +40,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
       current_tag: 1,
       in_scope?: 3,
       find_ref: 2,
-      foreign_namespace: 1
+      foreign_namespace: 1,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -73,7 +74,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # Start tag: html - process using in_body rules
@@ -104,6 +105,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # Start tag: select (nested) - parse error, close select
   def process({:start_tag, "select", _, _}, state) do
+    state = parse_error(state)
+
     if find_ref(state, "select") do
       {:ok, close_select(state)}
     else
@@ -111,9 +114,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     end
   end
 
-  # Start tag: input, textarea - close select, reprocess
+  # Start tag: input, textarea - parse error, close select, reprocess
   def process({:start_tag, tag, _, _}, state)
       when tag in ["input", "textarea"] do
+    state = parse_error(state)
+
     if in_scope?(state, "select", :select) do
       state = close_select(state)
       {:reprocess, state}
@@ -151,7 +156,7 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Table elements in in_select: parse error, ignore per HTML5 spec
   # Note: in_select_in_table mode handles these differently (closes select)
   def process({:start_tag, tag, _, _}, state) when tag in @table_elements_to_ignore do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   # SVG and Math - create namespaced elements
@@ -171,13 +176,17 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:ok, push_foreign_element(state, :math, "math", attrs)}
   end
 
-  # Any other start tag: insert (browsers insert elements for compatibility)
+  # Any other start tag: per spec "Parse error."
   def process({:start_tag, tag, attrs, self_closing}, state) do
+    state = parse_error(state)
     {ns, state} = resolve_namespace_and_close_foreign(state, tag)
     {:ok, insert_element_in_select(state, ns, tag, attrs, self_closing)}
   end
 
-  # End tag: optgroup (with parent context)
+  # End tag: optgroup
+  # Per spec: "If the current node is an option whose parent is an optgroup, pop both."
+  # "If the current node is an optgroup, pop."
+  # "Otherwise, parse error; ignore."
   def process({:end_tag, "optgroup"}, %{stack: [_, parent_ref | _], elements: elements} = state) do
     case {current_tag(state), elements[parent_ref].tag} do
       {"option", "optgroup"} ->
@@ -187,30 +196,36 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
         {:ok, pop_element(state)}
 
       _ ->
-        {:ok, state}
+        {:ok, parse_error(state)}
     end
   end
 
-  # End tag: optgroup (fallback)
+  # End tag: optgroup (fallback - single element stack)
   def process({:end_tag, "optgroup"}, state) do
-    if current_tag(state) == "optgroup", do: {:ok, pop_element(state)}, else: {:ok, state}
+    if current_tag(state) == "optgroup" do
+      {:ok, pop_element(state)}
+    else
+      {:ok, parse_error(state)}
+    end
   end
 
   # End tag: option
+  # Per spec: "If the current node is an option element, pop. Otherwise, parse error; ignore."
   def process({:end_tag, "option"}, state) do
     if current_tag(state) == "option" do
       {:ok, pop_element(state)}
     else
-      {:ok, state}
+      {:ok, parse_error(state)}
     end
   end
 
   # End tag: select
+  # Per spec: "If not in select scope, parse error; ignore."
   def process({:end_tag, "select"}, state) do
     if in_scope?(state, "select", :select) do
       {:ok, close_select(state)}
     else
-      {:ok, state}
+      {:ok, parse_error(state)}
     end
   end
 
@@ -219,8 +234,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:reprocess, %{state | mode: :in_head}}
   end
 
-  # End tag for formatting elements: use adoption agency if element is inside select
+  # End tag for formatting elements: parse error, use adoption agency if element is inside select
   def process({:end_tag, tag}, state) when tag in @formatting_elements do
+    state = parse_error(state)
+
     if formatting_element_in_select?(state, tag) do
       # Run adoption agency for formatting elements inside select
       {:ok, AdoptionAgency.run(state, tag, &close_formatting_in_select/2)}
@@ -230,9 +247,10 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     end
   end
 
-  # Any other end tag: handle foreign content or close matching HTML element
-  # Per spec: parse error, ignore. But browsers close matching elements for compat.
+  # Any other end tag: parse error, handle foreign content or close matching HTML element
   def process({:end_tag, tag}, state) do
+    state = parse_error(state)
+
     case foreign_namespace(state) do
       nil ->
         # Not in foreign content - try to close matching HTML element

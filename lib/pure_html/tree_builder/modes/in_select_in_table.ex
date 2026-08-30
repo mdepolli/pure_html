@@ -22,7 +22,8 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
     only: [
       in_scope?: 3,
       find_ref: 2,
-      close_select: 1
+      close_select: 1,
+      parse_error: 1
     ]
 
   alias PureHTML.TreeBuilder.Modes.InSelect
@@ -30,9 +31,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
   @table_elements ~w(caption table tbody tfoot thead tr td th)
 
   @impl true
-  # Start tags for table elements: close select and reprocess
+  # Start tags for table elements: parse error, close select and reprocess
   # Per spec, just close select - no scope check needed (we're already in in_select_in_table)
   def process({:start_tag, tag, _, _}, state) when tag in @table_elements do
+    state = parse_error(state)
+
     if find_ref(state, "select") do
       state = close_select(state)
       {:reprocess, state}
@@ -41,9 +44,11 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
     end
   end
 
-  # End tags for table elements: close select and reprocess if in table scope
+  # End tags for table elements: parse error, close select and reprocess if in table scope
   # Per spec, check if tag is in table scope, then close select (no select scope check)
   def process({:end_tag, tag}, state) when tag in @table_elements do
+    state = parse_error(state)
+
     if in_scope?(state, tag, :table) && find_ref(state, "select") do
       state = close_select(state)
       {:reprocess, state}
