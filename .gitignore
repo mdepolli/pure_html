@@ -10,6 +10,9 @@
 # Where third-party dependencies like ExDoc output generated docs.
 /doc/
 
+# Dev specs and plans
+/docs/
+
 # Temporary files, for example, from tests.
 /tmp/
 
@@ -25,8 +28,28 @@ fprof.trace
 # Ignore package tarball (built via "mix hex.build").
 pure_html-*.tar
 
-# Elixir LS
-.expert
+# Local git worktrees
+.worktrees/
 
 # Claude Code
 .claude/
+CLAUDE.md
+
+# Grok Build (local skills, workflows, session state)
+.grok/
+
+# Elixir LS
+/.expert/
+
+# macOS Finder metadata
+.DS_Store
+
+# Local environment files (API keys for the benchmark runners)
+.env
+.env.*
+.envrc
+mise.toml
+mise.local.toml
+
+# Generated analysis output
+xref_graph.dot
