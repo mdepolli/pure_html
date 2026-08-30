@@ -511,6 +511,20 @@ defmodule PureHTML.QueryTest do
       assert Query.text(node) == "SVG Text"
     end
 
+    test "excludes namespaced script and style by default" do
+      # Arrange
+      html = [
+        {{:svg, "text"}, [], ["Hello"]},
+        {{:svg, "script"}, [], ["alert(1)"]},
+        {{:svg, "style"}, [], [".foo{}"]}
+      ]
+
+      # Act + Assert
+      assert Query.text(html) == "Hello"
+      assert Query.text(html, include_script: true) == "Helloalert(1)"
+      assert Query.text(html, include_style: true) == "Hello.foo{}"
+    end
+
     # :strip option tests
 
     test "strip: true removes leading/trailing whitespace from segments" do

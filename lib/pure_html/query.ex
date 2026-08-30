@@ -336,7 +336,9 @@ defmodule PureHTML.Query do
   defp extract_text_from_node({:doctype, _, _, _}, _opts), do: []
 
   defp extract_text_from_node({"script", _, _}, %{include_script: false}), do: []
+  defp extract_text_from_node({{_ns, "script"}, _, _}, %{include_script: false}), do: []
   defp extract_text_from_node({"style", _, _}, %{include_style: false}), do: []
+  defp extract_text_from_node({{_ns, "style"}, _, _}, %{include_style: false}), do: []
 
   defp extract_text_from_node({"input", attrs, _}, %{include_inputs: true}) do
     case List.keyfind(attrs, "value", 0) do
@@ -354,17 +356,6 @@ defmodule PureHTML.Query do
   end
 
   defp extract_text_from_node({_tag, _attrs, children}, %{deep: false}) do
-    Enum.filter(children, &is_binary/1)
-  end
-
-  defp extract_text_from_node({{_ns, "script"}, _, _}, %{include_script: false}), do: []
-  defp extract_text_from_node({{_ns, "style"}, _, _}, %{include_style: false}), do: []
-
-  defp extract_text_from_node({{_ns, _tag}, _attrs, children}, %{deep: true} = opts) do
-    extract_text(children, opts)
-  end
-
-  defp extract_text_from_node({{_ns, _tag}, _attrs, children}, %{deep: false}) do
     Enum.filter(children, &is_binary/1)
   end
 
@@ -396,7 +387,6 @@ defmodule PureHTML.Query do
   end
 
   defp get_attrs({_tag, attrs, _children}) when is_list(attrs), do: attrs
-  defp get_attrs({{_ns, _tag}, attrs, _children}) when is_list(attrs), do: attrs
   defp get_attrs(_), do: nil
 
   defp extract_value({_, value}), do: value
