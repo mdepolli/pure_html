@@ -395,39 +395,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, parse_error(state)}
   end
 
-  # Per spec: "Parse error." then "If there is a template element on the stack, ignore"
-  def process({:start_tag, "body", _, _}, %{template_mode_stack: [_ | _]} = state) do
-    {:ok, parse_error(state)}
-  end
-
-  # Per spec: "Parse error." then "If the stack of open elements has only one element
-  # on it, ignore the token. (fragment case)"
-  def process({:start_tag, "body", _, _}, %{stack: [_]} = state) do
-    {:ok, parse_error(state)}
-  end
-
-  # Per spec: "Parse error." Then merge attributes and set frameset-not-ok.
   def process({:start_tag, "body", attrs, _}, state) do
     state =
-      state
-      |> parse_error()
-      |> ensure_html()
-      |> ensure_head()
-      |> close_head()
-      |> then(fn
-        %{mode: :after_head} = s ->
-          s
-          |> push_element("body", attrs)
-          |> set_mode(:in_body)
-          |> set_frameset_not_ok()
+      if foreign_namespace(state) do
+        # HTML start tag in foreign content: parse error, then insertion-mode rules.
+        state |> parse_error() |> close_foreign_content()
+      else
+        state
+      end
 
-        s ->
-          s
-          |> merge_body_attrs(attrs)
-          |> set_frameset_not_ok()
-      end)
-
-    {:ok, state}
+    {:ok, process_html_body_start_tag(state, attrs)}
   end
 
   def process({:start_tag, "svg", attrs, self_closing}, state) do
@@ -446,6 +423,38 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     ns = foreign_namespace(state)
     state = dispatch_start_tag(state, ns, tag, attrs, self_closing)
     {:ok, state}
+  end
+
+  # Per spec: "Parse error." then "If there is a template element on the stack, ignore"
+  defp process_html_body_start_tag(%{template_mode_stack: [_ | _]} = state, _attrs) do
+    parse_error(state)
+  end
+
+  # Per spec: "Parse error." then "If the stack of open elements has only one element
+  # on it, ignore the token. (fragment case)"
+  defp process_html_body_start_tag(%{stack: [_]} = state, _attrs) do
+    parse_error(state)
+  end
+
+  # Per spec: "Parse error." Then merge attributes and set frameset-not-ok.
+  defp process_html_body_start_tag(state, attrs) do
+    state
+    |> parse_error()
+    |> ensure_html()
+    |> ensure_head()
+    |> close_head()
+    |> then(fn
+      %{mode: :after_head} = s ->
+        s
+        |> push_element("body", attrs)
+        |> set_mode(:in_body)
+        |> set_frameset_not_ok()
+
+      s ->
+        s
+        |> merge_body_attrs(attrs)
+        |> set_frameset_not_ok()
+    end)
   end
 
   # Dispatch start tag to the appropriate handler based on namespace and context
