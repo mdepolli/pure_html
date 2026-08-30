@@ -626,7 +626,15 @@ defmodule PureHTML.TreeBuilder do
 
   # End tags: walk the stack per spec. Match foreign elements by tag name,
   # fall through to insertion mode when reaching an HTML element.
+  # First step: if the current node's tag name does not match, parse error.
   defp process_foreign_content({:end_tag, tag}, %{stack: stack} = state) do
+    state =
+      if current_node_matches_end_tag?(state, tag) do
+        state
+      else
+        parse_error(state)
+      end
+
     foreign_content_end_tag(tag, stack, 0, state)
   end
 
@@ -673,6 +681,16 @@ defmodule PureHTML.TreeBuilder do
       foreign_content_end_tag(tag, rest, count + 1, state)
     end
   end
+
+  defp current_node_matches_end_tag?(%{stack: [ref | _], elements: elements}, tag) do
+    case elements[ref].tag do
+      {_ns, etag} -> String.downcase(etag) == tag
+      etag when is_binary(etag) -> etag == tag
+      _ -> false
+    end
+  end
+
+  defp current_node_matches_end_tag?(%{stack: []}, _tag), do: false
 
   # --------------------------------------------------------------------------
   # Finalization

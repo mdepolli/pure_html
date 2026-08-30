@@ -91,6 +91,17 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 1
     end
+
+    test "counts a stray SVG end tag in an SVG fragment as a parse error" do
+      # Arrange
+      html = "</svg>X"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg svg")
+
+      # Assert
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
