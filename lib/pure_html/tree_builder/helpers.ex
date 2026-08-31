@@ -480,9 +480,12 @@ defmodule PureHTML.TreeBuilder.Helpers do
     default: ~w(applet caption html table td th marquee object template),
     list_item: ~w(applet caption html table td th marquee object template ol ul),
     table: ~w(html table template),
-    select: ~w(optgroup option),
     button: ~w(applet caption html table td th marquee object template button)
   }
+
+  # Select scope walks through these HTML elements and stops at any other type.
+  # Spec: "all element types except optgroup and option in the HTML namespace."
+  @select_scope_passthrough ~w(optgroup option)
 
   # Foreign scope boundaries per HTML5 spec (MathML tags are lowercase)
   @mathml_scope_boundaries ~w(annotation-xml mi mn mo ms mtext)
@@ -494,6 +497,14 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Checks if an element with the given tag is in the specified scope.
   Scope types: :default, :table, :select, :button
   """
+  def in_scope?(
+        %{stack: stack, elements: elements, context_element: context_element},
+        tag,
+        :select
+      ) do
+    do_in_select_scope?(stack, tag, elements, context_element)
+  end
+
   def in_scope?(
         %{stack: stack, elements: elements, context_element: context_element},
         tag,
@@ -513,9 +524,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   defp do_in_scope?([], _tag, _boundaries, _elements, _check_foreign, nil), do: false
 
-  # Fragment case: the walk went past all elements without hitting a boundary.
-  # This only happens for select scope (where html is NOT a boundary).
-  # Check the context element tag as a fallback.
   defp do_in_scope?([], tag, _boundaries, _elements, _check_foreign, {_ns, ctx_tag}) do
     ctx_tag == tag
   end
@@ -530,6 +538,28 @@ defmodule PureHTML.TreeBuilder.Helpers do
       true -> do_in_scope?(rest, tag, boundaries, elements, check_foreign, context)
     end
   end
+
+  defp do_in_select_scope?([], _tag, _elements, _context), do: false
+
+  defp do_in_select_scope?([ref | rest], tag, elements, context) do
+    elem_tag = select_scope_node_tag(ref, rest, elements, context)
+
+    cond do
+      elem_tag == tag ->
+        true
+
+      elem_tag in @select_scope_passthrough ->
+        do_in_select_scope?(rest, tag, elements, context)
+
+      true ->
+        false
+    end
+  end
+
+  # Fragment parsing: the last stack node is treated as the context element,
+  # matching "reset the insertion mode appropriately".
+  defp select_scope_node_tag(_ref, [], _elements, {_ns, ctx_tag}), do: ctx_tag
+  defp select_scope_node_tag(ref, _rest, elements, _context), do: elements[ref].tag
 
   # Check if a tag is a foreign scope boundary (for default/button scope)
   # SVG: compare case-insensitively (stored with camelCase like foreignObject)

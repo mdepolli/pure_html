@@ -211,6 +211,25 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 3
     end
+
+    test "closes select when the current node is option" do
+      # Arrange
+      html = "<select><option>x</select>hello"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"select", [], [{"option", [], ["x"]}]}, "hello"]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
