@@ -200,6 +200,17 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 4
     end
+
+    test "counts EOF in script HTML comment-like text as a parse error" do
+      # Arrange
+      html = ~s[FOO<script type="text/plain">'<!-- <sCrIpt>'</script>BAR]
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do

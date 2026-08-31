@@ -203,14 +203,28 @@ defmodule PureHTML.Tokenizer do
     :script_data_double_escaped_dash_dash
   ]
 
+  # EOF in these states is eof-in-script-html-comment-like-text.
+  # next_token short-circuits step/1 for @eof_flush_states, so count it here.
+  @script_comment_like_eof_states [
+    :script_data_escaped,
+    :script_data_escaped_dash,
+    :script_data_escaped_dash_dash,
+    :script_data_double_escaped,
+    :script_data_double_escaped_dash,
+    :script_data_double_escaped_dash_dash
+  ]
+
   def next_token(%__MODULE__{input: "", state: s, pending_chars: []} = state)
       when s in @eof_flush_states do
+    state = maybe_eof_in_script_comment(state)
     {:eof, %{state | eof_emitted: true}}
   end
 
   def next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
       when s in @eof_flush_states do
     # Flush pending chars at EOF, defer :eof token for next call
+    state = maybe_eof_in_script_comment(state)
+
     {flush_pending(pending, state.xml_violation_mode),
      %{state | pending_chars: [], deferred_token: :eof, eof_emitted: true}}
   end
@@ -264,6 +278,12 @@ defmodule PureHTML.Tokenizer do
     chars = if xml_violation_mode, do: coerce_chars_for_xml(chars), else: chars
     {:character, chars}
   end
+
+  defp maybe_eof_in_script_comment(%{state: s} = state)
+       when s in @script_comment_like_eof_states,
+       do: parse_error(state)
+
+  defp maybe_eof_in_script_comment(state), do: state
 
   # XML infoset coercion for characters:
   # - U+FFFF (noncharacter) → U+FFFD (replacement character)
