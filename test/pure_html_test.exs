@@ -136,6 +136,21 @@ defmodule PureHTMLTest do
       assert nodes == [{{:svg, "foo"}, [], []}]
       assert error_count == 3
     end
+
+    test "counts a table start tag inside MathML text as a parse error" do
+      # Arrange
+      html = "<math><mo><tr>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "td")
+
+      # Assert
+      assert [
+               {{:math, "math"}, [], [{{:math, "mo"}, [], []}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

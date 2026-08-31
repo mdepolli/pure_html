@@ -810,8 +810,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       |> ensure_tbody()
       |> push_element("tr", attrs)
     else
-      # Parse error, ignore - no table context and not in table mode
-      state
+      parse_error(state)
     end
   end
 
