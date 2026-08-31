@@ -21,7 +21,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3]
+    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3, parse_error: 2]
 
   @impl true
   # Character tokens: collect into pending list
@@ -52,8 +52,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
       else
         # html5lib counts one foster-parenting-character parse error per
         # character token; we coalesce text, so increment per codepoint.
-        state = %{state | error_count: state.error_count + String.length(text)}
-        foster_parent_with_formatting(state, text)
+        state
+        |> parse_error(String.length(text))
+        |> foster_parent_with_formatting(text)
       end
 
     %{state | pending_table_text: ""}

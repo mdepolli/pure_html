@@ -31,7 +31,11 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def special_elements, do: @special_elements
 
   @doc false
-  def parse_error(%{error_count: n} = state), do: %{state | error_count: n + 1}
+  def parse_error(state, count \\ 1)
+
+  def parse_error(%{error_count: n} = state, count) when is_integer(count) and count >= 0 do
+    %{state | error_count: n + count}
+  end
 
   # --------------------------------------------------------------------------
   # Element Creation
