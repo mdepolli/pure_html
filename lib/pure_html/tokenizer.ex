@@ -66,7 +66,9 @@ defmodule PureHTML.Tokenizer do
     # Scripting flag: when true, <noscript> content is RAWTEXT; when false, parsed as HTML
     scripting: true,
     # Parse error count
-    error_count: 0
+    error_count: 0,
+    # Set while building an end tag that saw attributes; counted once at emit.
+    end_tag_has_attributes: false
   ]
 
   # Guards
@@ -2498,6 +2500,8 @@ defmodule PureHTML.Tokenizer do
 
   # Specialized emit/2 for common pattern: input: rest (88% of calls)
   defp emit(%{token: {:start_tag, tag, _, false}} = state, input: new_input) do
+    state = maybe_end_tag_with_attributes(state)
+
     next =
       next_state_for_tag(
         tag,
@@ -2509,6 +2513,8 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp emit(%{token: {:start_tag, tag, _, false}} = state, []) do
+    state = maybe_end_tag_with_attributes(state)
+
     next =
       next_state_for_tag(
         tag,
@@ -2521,6 +2527,8 @@ defmodule PureHTML.Tokenizer do
 
   # Fallback for start tags with other updates
   defp emit(%{token: {:start_tag, tag, _, false}} = state, updates) do
+    state = maybe_end_tag_with_attributes(state)
+
     next_state =
       next_state_for_tag(
         tag,
@@ -2534,17 +2542,32 @@ defmodule PureHTML.Tokenizer do
 
   # Non-start-tag: common pattern
   defp emit(state, input: new_input) do
+    state = maybe_end_tag_with_attributes(state)
     {:emit, state.token, %{state | state: :data, token: nil, input: new_input}}
   end
 
   defp emit(state, []) do
+    state = maybe_end_tag_with_attributes(state)
     {:emit, state.token, %{state | state: :data, token: nil}}
   end
 
   # Fallback for non-start-tag with other updates
   defp emit(state, updates) do
+    state = maybe_end_tag_with_attributes(state)
     all_updates = Keyword.merge([state: :data, token: nil], updates)
     {:emit, state.token, struct!(state, all_updates)}
+  end
+
+  # Spec: "When an end tag token is emitted with attributes, that is an
+  # end-tag-with-attributes parse error."
+  defp maybe_end_tag_with_attributes(
+         %{token: {:end_tag, _}, end_tag_has_attributes: true} = state
+       ) do
+    parse_error(%{state | end_tag_has_attributes: false})
+  end
+
+  defp maybe_end_tag_with_attributes(state) do
+    %{state | end_tag_has_attributes: false}
   end
 
   # In foreign content (SVG/MathML), title should NOT switch to RCDATA mode
@@ -2593,8 +2616,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp start_new_attribute(%{token: {:end_tag, _}} = state, _initial_char) do
-    # end-tag-with-attributes parse error
-    parse_error(state)
+    %{state | end_tag_has_attributes: true}
   end
 
   defp start_new_attribute(state, _), do: state

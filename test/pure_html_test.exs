@@ -230,6 +230,17 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "counts an end tag with attributes as one parse error" do
+      # Arrange
+      html = "<!DOCTYPE html><html><head></head><body><p></p class=\"a\" id=\"b\"></body></html>"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
