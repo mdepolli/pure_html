@@ -52,9 +52,14 @@ defmodule PureHTMLTest do
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["hello"]}]}]}
+             ] = nodes
+
       assert error_count == 0
     end
 
@@ -67,7 +72,7 @@ defmodule PureHTMLTest do
 
       # Assert
       assert nodes == []
-      assert error_count >= 1
+      assert error_count == 1
     end
 
     test "counts an HTML start tag in SVG foreign content as a parse error" do
@@ -75,21 +80,23 @@ defmodule PureHTMLTest do
       html = "<p>"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg svg")
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg svg")
 
       # Assert
+      assert nodes == [{"p", [], []}]
       assert error_count == 1
     end
 
     test "counts an unknown named character reference as a parse error" do
       # Arrange
-      html = "<!DOCTYPE html><html><body>&AMp;</body></html>"
+      html = "&AMp;"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
-      assert error_count == 1
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["&AMp;"]}]}] = nodes
+      assert error_count == 2
     end
 
     test "counts a stray SVG end tag in an SVG fragment as a parse error" do
@@ -97,21 +104,23 @@ defmodule PureHTMLTest do
       html = "</svg>X"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg svg")
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg svg")
 
       # Assert
+      assert nodes == ["X"]
       assert error_count == 1
     end
 
     test "counts a C1 control numeric character reference as a parse error" do
       # Arrange
-      html = "<!DOCTYPE html><html><body>FOO&#x0081;ZOO</body></html>"
+      html = "FOO&#x0081;ZOO"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
-      assert error_count == 1
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["FOO\u{81}ZOO"]}]}] = nodes
+      assert error_count == 2
     end
 
     test "counts a trailing solidus on a non-void HTML start tag as a parse error" do
@@ -119,9 +128,10 @@ defmodule PureHTMLTest do
       html = "<ms/>"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html, context: "math ms")
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "math ms")
 
       # Assert
+      assert nodes == [{"ms", [], []}]
       assert error_count == 2
     end
 
@@ -149,16 +159,17 @@ defmodule PureHTMLTest do
       assert error_count == 1
     end
 
-    test "counts a table start tag inside MathML text as a parse error" do
+    test "counts a tr start tag inside MathML in a td fragment as a parse error" do
       # Arrange
-      html = "<math><mo><tr>"
+      html = "<math><tr><td><mo><tr>"
 
       # Act
       {nodes, error_count} = PureHTML.parse_with_errors(html, context: "td")
 
       # Assert
       assert [
-               {{:math, "math"}, [], [{{:math, "mo"}, [], []}]}
+               {{:math, "math"}, [],
+                [{{:math, "tr"}, [], [{{:math, "td"}, [], [{{:math, "mo"}, [], []}]}]}]}
              ] = nodes
 
       assert error_count == 2
@@ -166,14 +177,14 @@ defmodule PureHTMLTest do
 
     test "counts an ignored tbody start tag inside MathML as a parse error" do
       # Arrange
-      html = "<math><mo><tbody>"
+      html = "<math><thead><mo><tbody>"
 
       # Act
       {nodes, error_count} = PureHTML.parse_with_errors(html, context: "thead")
 
       # Assert
       assert [
-               {{:math, "math"}, [], [{{:math, "mo"}, [], []}]}
+               {{:math, "math"}, [], [{{:math, "thead"}, [], [{{:math, "mo"}, [], []}]}]}
              ] = nodes
 
       assert error_count == 3
@@ -184,9 +195,37 @@ defmodule PureHTMLTest do
       html = "<body><table><tr><td><svg><td><foreignObject><span></td>Foo"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     "Foo",
+                     {"table", [],
+                      [
+                        {"tbody", [],
+                         [
+                           {"tr", [],
+                            [
+                              {"td", [],
+                               [
+                                 {{:svg, "svg"}, [],
+                                  [
+                                    {{:svg, "td"}, [],
+                                     [{{:svg, "foreignObject"}, [], [{"span", [], []}]}]}
+                                  ]}
+                               ]}
+                            ]}
+                         ]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
       assert error_count == 6
     end
 
@@ -195,9 +234,30 @@ defmodule PureHTMLTest do
       html = "<table><tr><td><svg><desc><td></desc><circle>"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"tbody", [],
+                         [
+                           {"tr", [],
+                            [
+                              {"td", [], [{{:svg, "svg"}, [], [{{:svg, "desc"}, [], []}]}]},
+                              {"td", [], [{"circle", [], []}]}
+                            ]}
+                         ]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
       assert error_count == 4
     end
 
@@ -206,9 +266,21 @@ defmodule PureHTMLTest do
       html = ~s[FOO<script type="text/plain">'<!-- <sCrIpt>'</script>BAR]
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     "FOO",
+                     {"script", [{"type", "text/plain"}], ["'<!-- <sCrIpt>'</script>BAR"]}
+                   ]}
+                ]}
+             ] = nodes
+
       assert error_count == 3
     end
 
@@ -236,9 +308,14 @@ defmodule PureHTMLTest do
       html = "<!DOCTYPE html><html><head></head><body><p></p class=\"a\" id=\"b\"></body></html>"
 
       # Act
-      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], []}]}]}
+             ] = nodes
+
       assert error_count == 1
     end
   end
