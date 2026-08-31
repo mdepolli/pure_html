@@ -777,6 +777,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Table cells
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @table_cells do
+    state = if current_tag(state) in @table_cells, do: state, else: parse_error(state)
+
     state
     |> in_body()
     |> clear_to_table_row_context()

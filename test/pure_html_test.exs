@@ -189,6 +189,17 @@ defmodule PureHTMLTest do
       # Assert
       assert error_count == 6
     end
+
+    test "counts a cell start tag inside an SVG integration point as a parse error" do
+      # Arrange
+      html = "<table><tr><td><svg><desc><td></desc><circle>"
+
+      # Act
+      {_nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert error_count == 4
+    end
   end
 
   describe "query/2" do
