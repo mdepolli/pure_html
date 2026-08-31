@@ -397,8 +397,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   def process({:start_tag, "body", attrs, _}, state) do
     state =
-      if foreign_namespace(state) do
+      if foreign_namespace(state) && not html_integration_point?(state) do
         # HTML start tag in foreign content: parse error, then insertion-mode rules.
+        # HTML integration points (e.g. svg desc) already use in-body rules.
         state |> parse_error() |> close_foreign_content()
       else
         state

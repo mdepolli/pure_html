@@ -137,6 +137,18 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "does not count a foreign-content error for body inside an SVG integration point" do
+      # Arrange
+      html = "<body>X"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "svg desc")
+
+      # Assert
+      assert nodes == ["X"]
+      assert error_count == 1
+    end
+
     test "counts a table start tag inside MathML text as a parse error" do
       # Arrange
       html = "<math><mo><tr>"
