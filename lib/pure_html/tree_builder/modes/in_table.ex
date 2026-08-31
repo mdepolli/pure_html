@@ -178,13 +178,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp process_in_table({:start_tag, "input", attrs, _}, state) do
     type = attrs |> get_attr("type", "") |> String.downcase()
 
+    state = parse_error(state)
+
     if type == "hidden" do
-      # Per spec: "Parse error." Insert directly, no foster parenting.
-      state = parse_error(state)
+      # Per spec: insert directly, no foster parenting.
       {:ok, add_child_to_stack(state, {"input", attrs, []})}
     else
-      # Foster parent (parse error handled by foster parenting path)
-      state = parse_error(state)
       {new_state, _} = foster_parent(state, {:element, {"input", attrs, []}})
       {:ok, new_state}
     end

@@ -26,7 +26,9 @@ defmodule PureHTML.TreeBuilder do
   import PureHTML.TreeBuilder.Helpers,
     only: [
       add_child_to_stack: 2,
+      current_tag: 1,
       determine_mode_from_stack: 4,
+      get_attr: 2,
       parse_error: 1
     ]
 
@@ -472,25 +474,10 @@ defmodule PureHTML.TreeBuilder do
 
   # Per WHATWG spec: DOCTYPE is a parse error if name != "html", public_id is not
   # missing, or system_id is not missing and != "about:legacy-compat".
-  defp doctype_is_parse_error?(name, _public, _system, true = _force_quirks)
-       when name != "html",
-       do: true
-
-  defp doctype_is_parse_error?(name, _public, _system, _force_quirks)
-       when name != "html",
-       do: true
-
-  defp doctype_is_parse_error?(_name, public, _system, _force_quirks)
-       when is_binary(public),
-       do: true
-
-  defp doctype_is_parse_error?(_name, _public, system, _force_quirks)
-       when is_binary(system) and system != "about:legacy-compat",
-       do: true
-
-  defp doctype_is_parse_error?(_name, _public, _system, true = _force_quirks), do: true
-
-  defp doctype_is_parse_error?(_name, _public, _system, _force_quirks), do: false
+  defp doctype_is_parse_error?(name, public, system, force_quirks) do
+    name != "html" or is_binary(public) or
+      (is_binary(system) and system != "about:legacy-compat") or force_quirks
+  end
 
   # Limited quirks public IDs (with system ID present, these are NOT full quirks)
   defp limited_quirks_public_id?("-//W3C//DTD XHTML 1.0 Frameset//" <> _), do: true
@@ -605,9 +592,9 @@ defmodule PureHTML.TreeBuilder do
   defp insertion_mode_exception?(_, _, _), do: false
 
   defp annotation_xml_is_html_integration_point?(%{stack: [ref | _], elements: elements}) do
-    case List.keyfind(elements[ref].attrs || [], "encoding", 0) do
-      {_, enc} -> String.downcase(enc) in ["text/html", "application/xhtml+xml"]
+    case get_attr(elements[ref].attrs || [], "encoding") do
       nil -> false
+      enc -> String.downcase(enc) in ["text/html", "application/xhtml+xml"]
     end
   end
 
@@ -679,15 +666,13 @@ defmodule PureHTML.TreeBuilder do
     end
   end
 
-  defp current_node_matches_end_tag?(%{stack: [ref | _], elements: elements}, tag) do
-    case elements[ref].tag do
+  defp current_node_matches_end_tag?(state, tag) do
+    case current_tag(state) do
       {_ns, etag} -> String.downcase(etag) == tag
-      etag when is_binary(etag) -> etag == tag
+      ^tag -> true
       _ -> false
     end
   end
-
-  defp current_node_matches_end_tag?(%{stack: []}, _tag), do: false
 
   # --------------------------------------------------------------------------
   # Finalization

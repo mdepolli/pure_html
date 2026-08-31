@@ -525,19 +525,22 @@ defmodule PureHTML.TreeBuilder.Helpers do
   defp do_in_scope?([], _tag, _boundaries, _elements, _check_foreign, nil), do: false
 
   defp do_in_scope?([], tag, _boundaries, _elements, _check_foreign, {_ns, ctx_tag}) do
-    ctx_tag == tag
+    scope_tag_match?(ctx_tag, tag)
   end
 
   defp do_in_scope?([ref | rest], tag, boundaries, elements, check_foreign, context) do
     elem_tag = elements[ref].tag
 
     cond do
-      elem_tag == tag -> true
+      scope_tag_match?(elem_tag, tag) -> true
       elem_tag in boundaries -> false
       check_foreign and foreign_scope_boundary?(elem_tag) -> false
       true -> do_in_scope?(rest, tag, boundaries, elements, check_foreign, context)
     end
   end
+
+  defp scope_tag_match?(elem_tag, tags) when is_list(tags), do: elem_tag in tags
+  defp scope_tag_match?(elem_tag, tag), do: elem_tag == tag
 
   defp do_in_select_scope?([], _tag, _elements, _context), do: false
 
