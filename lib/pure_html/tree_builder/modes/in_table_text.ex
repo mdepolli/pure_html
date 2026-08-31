@@ -21,7 +21,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3, parse_error: 1]
+    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3]
 
   @impl true
   # Character tokens: collect into pending list
@@ -50,11 +50,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
         # Whitespace only: insert normally
         add_text_to_stack(state, text)
       else
-        # Per spec: "this is a parse error"
-        # Contains non-whitespace: foster parent with active formatting reconstruction
-        state
-        |> parse_error()
-        |> foster_parent_with_formatting(text)
+        # html5lib counts one foster-parenting-character parse error per
+        # character token; we coalesce text, so increment per codepoint.
+        state = %{state | error_count: state.error_count + String.length(text)}
+        foster_parent_with_formatting(state, text)
       end
 
     %{state | pending_table_text: ""}

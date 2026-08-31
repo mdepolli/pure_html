@@ -27,6 +27,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
       in_scope?: 3,
       pop_until_tag: 2,
       clear_af_to_marker: 1,
+      current_tag: 1,
       parse_error: 1
     ]
 
@@ -137,11 +138,18 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   # Close specific cell tag if in table scope
   defp close_cell_for_tag(state, tag) do
-    with true <- in_scope?(state, tag, :table),
-         {:ok, new_state} <- pop_until_tag(state, tag) do
-      {:ok, clear_af_to_marker(%{new_state | mode: :in_row})}
+    if in_scope?(state, tag, :table) do
+      state = if current_tag(state) != tag, do: parse_error(state), else: state
+
+      case pop_until_tag(state, tag) do
+        {:ok, new_state} ->
+          {:ok, clear_af_to_marker(%{new_state | mode: :in_row})}
+
+        {:not_found, _} ->
+          :not_found
+      end
     else
-      _ -> :not_found
+      :not_found
     end
   end
 end
