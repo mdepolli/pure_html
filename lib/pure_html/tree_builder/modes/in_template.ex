@@ -197,9 +197,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     end
   end
 
-  # Error tokens: ignore
-  def process({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------

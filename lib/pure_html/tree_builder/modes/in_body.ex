@@ -368,9 +368,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, generate_implied_end_tags_thoroughly(state)}
   end
 
-  # Error tokens - ignore
-  def process({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Start tags
   # --------------------------------------------------------------------------

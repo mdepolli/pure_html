@@ -16,7 +16,6 @@ defmodule PureHTML.TreeBuilder.InsertionMode do
           | {:end_tag, String.t()}
           | {:character, String.t()}
           | {:comment, String.t()}
-          | {:error, atom()}
           | :eof
 
   @type result ::

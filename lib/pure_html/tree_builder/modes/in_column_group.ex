@@ -122,9 +122,6 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     close_colgroup_or_ignore(state)
   end
 
-  # Error tokens: ignore
-  def process({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------

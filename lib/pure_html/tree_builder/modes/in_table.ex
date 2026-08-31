@@ -302,9 +302,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     {:reprocess, %{state | mode: :in_body}}
   end
 
-  # Error tokens: ignore
-  defp process_in_table({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------

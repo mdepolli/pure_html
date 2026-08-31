@@ -651,9 +651,6 @@ defmodule PureHTML.TreeBuilder do
   # DOCTYPE: parse error, ignore
   defp process_foreign_content({:doctype, _, _, _, _}, state), do: {:ok, parse_error(state)}
 
-  # Error tokens: ignore
-  defp process_foreign_content({:error, _}, state), do: {:ok, state}
-
   # Foreign content end tag algorithm per WHATWG spec:
   # Walk down the stack from current node. If a foreign element's tag matches
   # (case-insensitive), pop until it's popped. If an HTML element is reached,

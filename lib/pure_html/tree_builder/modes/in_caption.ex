@@ -107,9 +107,6 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
     {:reprocess, %{state | mode: :in_body}}
   end
 
-  # Error tokens: ignore
-  def process({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------

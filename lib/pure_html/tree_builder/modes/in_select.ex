@@ -268,9 +268,6 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     {:ok, state}
   end
 
-  # Error tokens: ignore
-  def process({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------

@@ -113,7 +113,4 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
       {:ok, state}
     end
   end
-
-  # Error tokens: ignore
-  def process({:error, _}, state), do: {:ok, state}
 end

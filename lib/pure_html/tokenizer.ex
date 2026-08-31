@@ -18,7 +18,6 @@ defmodule PureHTML.Tokenizer do
   - `{:end_tag, name}`
   - `{:comment, data}`
   - `{:character, data}`
-  - `{:error, code}` (parse errors)
 
   """
 
@@ -32,7 +31,6 @@ defmodule PureHTML.Tokenizer do
           | {:end_tag, String.t()}
           | {:comment, String.t()}
           | {:character, String.t()}
-          | {:error, atom()}
           | :eof
 
   # The tokenizer state struct
@@ -53,8 +51,6 @@ defmodule PureHTML.Tokenizer do
     :attr_value,
     # for appropriate end tag checks
     :last_start_tag,
-    # accumulated errors (emitted with tokens)
-    :errors,
     # pending character data (for coalescing)
     :pending_chars,
     # deferred token (to emit after flushing pending chars)
@@ -80,6 +76,8 @@ defmodule PureHTML.Tokenizer do
   defguardp is_ascii_digit(c) when c in ?0..?9
   defguardp is_ascii_whitespace(c) when c in ~c[\t\n\f ]
   defguardp is_ascii_hex_digit(c) when c in ?0..?9 or c in ?a..?f or c in ?A..?F
+  defguardp is_surrogate(cp) when cp in 0xD800..0xDFFF
+  defguardp is_outside_unicode_range(cp) when cp > 0x10FFFF
 
   # Match "doctype" case-insensitively using bitwise OR with 0x20 to force lowercase
   # "doctype" as 56-bit integer: 0x646F6374797065
@@ -134,7 +132,6 @@ defmodule PureHTML.Tokenizer do
       attr_name: "",
       attr_value: "",
       last_start_tag: last_start_tag,
-      errors: [],
       pending_chars: [],
       deferred_token: nil,
       xml_violation_mode: xml_violation_mode,
@@ -185,7 +182,7 @@ defmodule PureHTML.Tokenizer do
   # EOF already emitted — signal end of token stream
   def next_token(%__MODULE__{eof_emitted: true}), do: nil
 
-  # States where EOF should flush pending chars and terminate.
+  # States where EOF should flush pending chars and terminate without a parse error.
   # Excludes "less_than_sign" states which have implicit pending '<' to emit via step.
   @eof_flush_states [
     :data,
@@ -194,39 +191,12 @@ defmodule PureHTML.Tokenizer do
     :plaintext,
     :script_data,
     :script_data_escape_start,
-    :script_data_escape_start_dash,
-    :script_data_escaped,
-    :script_data_escaped_dash,
-    :script_data_escaped_dash_dash,
-    :script_data_double_escaped,
-    :script_data_double_escaped_dash,
-    :script_data_double_escaped_dash_dash
+    :script_data_escape_start_dash
   ]
 
-  # EOF in these states is eof-in-script-html-comment-like-text.
-  # next_token short-circuits step/1 for @eof_flush_states, so count it here.
-  @script_comment_like_eof_states [
-    :script_data_escaped,
-    :script_data_escaped_dash,
-    :script_data_escaped_dash_dash,
-    :script_data_double_escaped,
-    :script_data_double_escaped_dash,
-    :script_data_double_escaped_dash_dash
-  ]
-
-  def next_token(%__MODULE__{input: "", state: s, pending_chars: []} = state)
+  def next_token(%__MODULE__{input: "", state: s} = state)
       when s in @eof_flush_states do
-    state = maybe_eof_in_script_comment(state)
-    {:eof, %{state | eof_emitted: true}}
-  end
-
-  def next_token(%__MODULE__{input: "", state: s, pending_chars: pending} = state)
-      when s in @eof_flush_states do
-    # Flush pending chars at EOF, defer :eof token for next call
-    state = maybe_eof_in_script_comment(state)
-
-    {flush_pending(pending, state.xml_violation_mode),
-     %{state | pending_chars: [], deferred_token: :eof, eof_emitted: true}}
+    emit_eof(state)
   end
 
   def next_token(%__MODULE__{} = state) do
@@ -278,12 +248,6 @@ defmodule PureHTML.Tokenizer do
     chars = if xml_violation_mode, do: coerce_chars_for_xml(chars), else: chars
     {:character, chars}
   end
-
-  defp maybe_eof_in_script_comment(%{state: s} = state)
-       when s in @script_comment_like_eof_states,
-       do: parse_error(state)
-
-  defp maybe_eof_in_script_comment(state), do: state
 
   # XML infoset coercion for characters:
   # - U+FFFF (noncharacter) → U+FFFD (replacement character)
@@ -2450,12 +2414,12 @@ defmodule PureHTML.Tokenizer do
     parse_error(state)
   end
 
-  defp check_numeric_char_ref(state, cp) when cp > 0x10FFFF do
+  defp check_numeric_char_ref(state, cp) when is_outside_unicode_range(cp) do
     # character-reference-outside-unicode-range parse error
     parse_error(state)
   end
 
-  defp check_numeric_char_ref(state, cp) when cp >= 0xD800 and cp <= 0xDFFF do
+  defp check_numeric_char_ref(state, cp) when is_surrogate(cp) do
     # surrogate-character-reference parse error
     parse_error(state)
   end
@@ -2477,75 +2441,9 @@ defmodule PureHTML.Tokenizer do
     parse_error(state)
   end
 
+  # Noncharacters: U+FDD0..U+FDEF, plus U+FFFE/U+FFFF in each of the 17 planes.
   defp check_numeric_char_ref(state, cp)
-       when cp in [
-              0xFDD0,
-              0xFDD1,
-              0xFDD2,
-              0xFDD3,
-              0xFDD4,
-              0xFDD5,
-              0xFDD6,
-              0xFDD7,
-              0xFDD8,
-              0xFDD9,
-              0xFDDA,
-              0xFDDB,
-              0xFDDC,
-              0xFDDD,
-              0xFDDE,
-              0xFDDF,
-              0xFDE0,
-              0xFDE1,
-              0xFDE2,
-              0xFDE3,
-              0xFDE4,
-              0xFDE5,
-              0xFDE6,
-              0xFDE7,
-              0xFDE8,
-              0xFDE9,
-              0xFDEA,
-              0xFDEB,
-              0xFDEC,
-              0xFDED,
-              0xFDEE,
-              0xFDEF,
-              0xFFFE,
-              0xFFFF,
-              0x1FFFE,
-              0x1FFFF,
-              0x2FFFE,
-              0x2FFFF,
-              0x3FFFE,
-              0x3FFFF,
-              0x4FFFE,
-              0x4FFFF,
-              0x5FFFE,
-              0x5FFFF,
-              0x6FFFE,
-              0x6FFFF,
-              0x7FFFE,
-              0x7FFFF,
-              0x8FFFE,
-              0x8FFFF,
-              0x9FFFE,
-              0x9FFFF,
-              0xAFFFE,
-              0xAFFFF,
-              0xBFFFE,
-              0xBFFFF,
-              0xCFFFE,
-              0xCFFFF,
-              0xDFFFE,
-              0xDFFFF,
-              0xEFFFE,
-              0xEFFFF,
-              0xFFFFE,
-              0xFFFFF,
-              0x10FFFE,
-              0x10FFFF
-            ] do
+       when cp in 0xFDD0..0xFDEF or rem(cp, 0x10000) in [0xFFFE, 0xFFFF] do
     # noncharacter-character-reference parse error
     parse_error(state)
   end
@@ -2558,8 +2456,8 @@ defmodule PureHTML.Tokenizer do
 
   # Convert numeric character reference codepoint to UTF-8 char (per HTML5 spec)
   defp codepoint_to_char(0), do: <<0xFFFD::utf8>>
-  defp codepoint_to_char(cp) when cp > 0x10FFFF, do: <<0xFFFD::utf8>>
-  defp codepoint_to_char(cp) when cp >= 0xD800 and cp <= 0xDFFF, do: <<0xFFFD::utf8>>
+  defp codepoint_to_char(cp) when is_outside_unicode_range(cp), do: <<0xFFFD::utf8>>
+  defp codepoint_to_char(cp) when is_surrogate(cp), do: <<0xFFFD::utf8>>
   defp codepoint_to_char(cp) when is_map_key(@windows_1252, cp), do: <<@windows_1252[cp]::utf8>>
   defp codepoint_to_char(cp), do: <<cp::utf8>>
 
@@ -2798,17 +2696,11 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp consume_named_entity(state, input, chars, rest) do
-    if consumable_entity?(state.return_state, input, rest) do
-      matched_len = byte_size(input) - byte_size(rest)
-      <<matched::binary-size(^matched_len), _::binary>> = input
+    has_semicolon? = entity_has_semicolon?(input, rest)
 
-      state =
-        if String.ends_with?(matched, ";") do
-          state
-        else
-          parse_error(state)
-        end
-
+    if consumable_entity?(state.return_state, has_semicolon?, rest) do
+      # missing-semicolon-after-character-reference parse error
+      state = if has_semicolon?, do: state, else: parse_error(state)
       flush_char_ref(state, chars, rest)
     else
       <<_, after_amp::binary>> = input
@@ -2816,14 +2708,18 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  # Per HTML5 spec: in attribute values, legacy entities (no semicolon) followed
-  # by = or alphanumeric should NOT be consumed (to preserve URLs like ?a=1&lang=en)
-  defp consumable_entity?(return_state, input, rest)
-       when is_attribute_value_state(return_state) do
+  # The matched text is the prefix of input that Entities.lookup consumed.
+  # Legacy references like "&amp" match without a terminating semicolon.
+  defp entity_has_semicolon?(input, rest) do
     matched_len = byte_size(input) - byte_size(rest)
     <<matched::binary-size(^matched_len), _::binary>> = input
-    has_semicolon? = String.ends_with?(matched, ";")
+    String.ends_with?(matched, ";")
+  end
 
+  # Per HTML5 spec: in attribute values, legacy entities (no semicolon) followed
+  # by = or alphanumeric should NOT be consumed (to preserve URLs like ?a=1&lang=en)
+  defp consumable_entity?(return_state, has_semicolon?, rest)
+       when is_attribute_value_state(return_state) do
     legacy_follows_problematic_char? =
       case rest do
         <<?=, _::binary>> -> true

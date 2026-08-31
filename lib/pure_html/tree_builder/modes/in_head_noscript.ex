@@ -96,9 +96,6 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
     InHead.process(:eof, state)
   end
 
-  # Error tokens: ignore
-  def process({:error, _}, state), do: {:ok, state}
-
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
