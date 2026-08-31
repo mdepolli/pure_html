@@ -263,6 +263,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     if has_template_on_stack?(state) do
       state =
         state
+        |> generate_implied_end_tags_thoroughly()
+        |> parse_error_unless_current("template")
         |> close_html_template()
         |> clear_af_to_marker()
         |> reset_insertion_mode()

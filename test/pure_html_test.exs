@@ -318,6 +318,32 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "counts a mismatched template end tag as a parse error" do
+      # Arrange
+      html = "<div><template><div><span></template><b>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"div", [],
+                      [
+                        {"template", [], [{:content, [{"div", [], [{"span", [], []}]}]}]},
+                        {"b", [], []}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do
