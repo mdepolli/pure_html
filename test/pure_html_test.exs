@@ -163,6 +163,21 @@ defmodule PureHTMLTest do
 
       assert error_count == 2
     end
+
+    test "counts an ignored tbody start tag inside MathML as a parse error" do
+      # Arrange
+      html = "<math><mo><tbody>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "thead")
+
+      # Assert
+      assert [
+               {{:math, "math"}, [], [{{:math, "mo"}, [], []}]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do

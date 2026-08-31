@@ -795,7 +795,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       |> clear_to_table_context()
       |> push_element(tag, attrs)
     else
-      state
+      parse_error(state)
     end
   end
 
