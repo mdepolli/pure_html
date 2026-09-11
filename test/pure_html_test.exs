@@ -344,6 +344,25 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "counts EOF with an open select containing a template as a parse error" do
+      # Arrange
+      html = "<select><template>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"select", [], [{"template", [], [content: []]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do

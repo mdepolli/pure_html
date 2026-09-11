@@ -263,9 +263,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     end
   end
 
-  # EOF: stop parsing
+  # EOF: process using "in body" rules
   def process(:eof, state) do
-    {:ok, state}
+    {:reprocess, %{state | mode: :in_body}}
   end
 
   # --------------------------------------------------------------------------
