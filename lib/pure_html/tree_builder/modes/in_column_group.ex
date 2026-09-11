@@ -117,9 +117,9 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     close_colgroup_or_ignore(state)
   end
 
-  # EOF: close colgroup if possible, or stop
+  # EOF: process using "in body" rules
   def process(:eof, state) do
-    close_colgroup_or_ignore(state)
+    {:reprocess, %{state | mode: :in_body}}
   end
 
   # --------------------------------------------------------------------------

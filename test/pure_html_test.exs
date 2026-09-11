@@ -389,6 +389,31 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "counts EOF in a template inside colgroup as a parse error" do
+      # Arrange
+      html = "<table><colgroup><template><col>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"colgroup", [], [{"template", [], [content: [{"col", [], []}]]}]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do
