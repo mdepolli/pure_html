@@ -506,6 +506,10 @@ defmodule PureHTML.TreeBuilder do
     end
   end
 
+  defp dispatch_to_insertion_mode(:eof, mode, state) do
+    Map.fetch!(@mode_modules, mode).process(:eof, state)
+  end
+
   defp dispatch_to_insertion_mode(token, mode, %{stack: [_ | _]} = state) do
     module = Map.fetch!(@mode_modules, mode)
 

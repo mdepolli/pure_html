@@ -361,12 +361,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     {:ok, close_any_other_end_tag(state, tag)}
   end
 
-  # EOF: per spec, if there are unexpected elements still open, parse error.
-  # Then generate implied end tags thoroughly and stop.
-  def process(:eof, state) do
-    state = maybe_parse_error_for_unclosed_body(state)
-    {:ok, generate_implied_end_tags_thoroughly(state)}
+  # EOF: if a template is still open, use "in template" (which parse-errors and
+  # reprocesses EOF after popping the template).
+  def process(:eof, %{template_mode_stack: [_ | _]} = state) do
+    if has_template_on_stack?(state) do
+      {:reprocess, %{state | mode: :in_template}}
+    else
+      eof_in_body(state)
+    end
   end
+
+  def process(:eof, state), do: eof_in_body(state)
 
   # --------------------------------------------------------------------------
   # Start tags
@@ -1437,6 +1442,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp maybe_skip_leading_newline(_state, text), do: text
+
+  defp eof_in_body(state) do
+    state = maybe_parse_error_for_unclosed_body(state)
+    {:ok, generate_implied_end_tags_thoroughly(state)}
+  end
 
   # --------------------------------------------------------------------------
   # Parse error helpers
