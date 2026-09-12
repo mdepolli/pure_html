@@ -490,6 +490,29 @@ defmodule PureHTMLTest do
 
       assert error_count == 6
     end
+
+    test "counts a tr start tag after non-table template content as a parse error" do
+      # Arrange
+      html = "<body><template></div><div>Foo</div><template></template><tr></tr>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"template", [],
+                      [content: [{"div", [], ["Foo"]}, {"template", [], [content: []]}]]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 5
+    end
   end
 
   describe "query/2" do

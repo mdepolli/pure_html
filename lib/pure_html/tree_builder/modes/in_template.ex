@@ -134,7 +134,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   # If so, tr is "bogus" and should be ignored (test #77 scenario)
   def process({:start_tag, "tr", _, _}, state) do
     if template_has_non_table_content?(state) do
-      {:ok, state}
+      {:ok, parse_error(state)}
     else
       {:reprocess, switch_template_mode(state, :in_table_body)}
     end
