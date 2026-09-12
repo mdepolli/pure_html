@@ -513,6 +513,25 @@ defmodule PureHTMLTest do
 
       assert error_count == 5
     end
+
+    test "counts foster-parented characters in a template colgroup per character" do
+      # Arrange
+      html = "<body><template><col>Hello"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"template", [], [content: [{"col", [], []}]]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 7
+    end
   end
 
   describe "query/2" do

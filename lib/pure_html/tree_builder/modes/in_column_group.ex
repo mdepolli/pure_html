@@ -33,26 +33,33 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
       pop_element: 1,
       current_tag: 1,
       split_whitespace: 1,
-      parse_error: 1
+      parse_error: 1,
+      parse_error: 2
     ]
 
   @impl true
   # Whitespace: insert
   def process({:character, text}, state) do
     case split_whitespace(text) do
-      {"", _non_ws} ->
-        # Non-whitespace: close colgroup, reprocess
-        close_colgroup_or_ignore(state)
+      {"", non_ws} ->
+        if current_tag(state) == "colgroup" do
+          close_colgroup_or_ignore(state)
+        else
+          {:ok, parse_error(state, String.length(non_ws))}
+        end
 
       {ws, ""} ->
         # All whitespace: insert
         {:ok, add_text_to_stack(state, ws)}
 
-      {ws, _non_ws} ->
-        # Mixed: insert whitespace, then close colgroup and reprocess rest
-        state
-        |> add_text_to_stack(ws)
-        |> close_colgroup_or_ignore()
+      {ws, non_ws} ->
+        state = add_text_to_stack(state, ws)
+
+        if current_tag(state) == "colgroup" do
+          close_colgroup_or_ignore(state)
+        else
+          {:ok, parse_error(state, String.length(non_ws))}
+        end
     end
   end
 
