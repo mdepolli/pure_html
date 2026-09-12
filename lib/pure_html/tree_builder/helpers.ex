@@ -13,6 +13,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Mode modules import this module to get access to these functions.
   """
 
+  alias PureHTML.TreeBuilder.Modes.InBody
+
   # --------------------------------------------------------------------------
   # HTML5 Element Categories
   # --------------------------------------------------------------------------
@@ -320,7 +322,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Processes the token with the "in body" rules from inside a state pipe.
   """
-  def process_in_body(state, token), do: PureHTML.TreeBuilder.Modes.InBody.process(token, state)
+  def process_in_body(state, token), do: InBody.process(token, state)
 
   # Tags that are implicitly closed (popped) when generating implied end tags
   @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
