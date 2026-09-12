@@ -50,15 +50,14 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
     |> ok()
   end
 
-  # Table-related start tags: parse error, close caption, reprocess
+  # Table-related start tags: close caption and reprocess.
+  # Per spec: if no caption is in table scope, parse error; ignore.
   def process({:start_tag, tag, _, _}, state) when tag in @table_tags do
     if in_scope?(state, "caption", :table) do
       state
-      |> parse_error()
       |> close_caption()
       |> reprocess()
     else
-      # Caption not in scope, ignore
       state
       |> parse_error()
       |> ok()
@@ -84,11 +83,11 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
     end
   end
 
-  # End tag: table - parse error, close caption, reprocess
+  # End tag: table - close caption and reprocess.
+  # Per spec: if no caption is in table scope, parse error; ignore.
   def process({:end_tag, "table"}, state) do
     if in_scope?(state, "caption", :table) do
       state
-      |> parse_error()
       |> close_caption()
       |> reprocess()
     else

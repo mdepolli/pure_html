@@ -47,6 +47,45 @@ defmodule PureHTMLTest do
       assert error_count == 1
     end
 
+    test "does not count a table end tag that closes a caption in table scope" do
+      # Arrange
+      html = "<table><caption></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"table", [], [{"caption", [], []}]}]}]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "does not count a cell start tag that closes a caption in table scope" do
+      # Arrange
+      html = "<table><caption><td>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [{"caption", [], []}, {"tbody", [], [{"tr", [], [{"td", [], []}]}]}]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
