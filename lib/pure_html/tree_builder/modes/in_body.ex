@@ -227,13 +227,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  def process({:end_tag, "frameset"}, state) do
-    state
-    |> close_tag_ref_forced("frameset")
-    |> set_mode(:after_frameset)
-    |> ok()
-  end
-
   # Heading end tags: per spec, check if any h1-h6 is in scope.
   # "If the stack of open elements does not have an element in scope that is an HTML
   # element whose tag name is one of h1-h6, this is a parse error; ignore the token."

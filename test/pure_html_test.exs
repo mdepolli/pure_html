@@ -218,6 +218,18 @@ defmodule PureHTMLTest do
       assert error_count == 4
     end
 
+    test "ignores a frameset end tag in body as an unexpected end tag" do
+      # Arrange
+      html = "<html>aaa<frameset></frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["aaa"]}]}] = nodes
+      assert error_count == 3
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
