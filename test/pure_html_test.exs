@@ -414,6 +414,25 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "counts foster-parented start and end tags in a template row as parse errors" do
+      # Arrange
+      html = "<body><template><tr><div></div></tr></template>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"template", [], [content: [{"tr", [], []}, {"div", [], []}]]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do

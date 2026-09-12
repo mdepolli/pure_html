@@ -103,6 +103,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Per HTML5 spec: "Enable foster parenting, process the token using the rules
   # for the 'in body' insertion mode, and then disable foster parenting."
   def process({:start_tag, _, _, _} = token, state) do
+    state = parse_error(state)
     # Enable foster parenting, process in in_body, restore mode
     state_with_foster = %{state | foster_parenting: true, mode: :in_body}
     {:ok, new_state} = InBody.process(token, state_with_foster)
@@ -152,8 +153,12 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   end
 
   # Other end tags: process using in_table rules
-  def process({:end_tag, _}, state) do
+  def process({:end_tag, "template"}, state) do
     {:reprocess, %{state | mode: :in_table}}
+  end
+
+  def process({:end_tag, _}, state) do
+    {:reprocess, %{parse_error(state) | mode: :in_table}}
   end
 
   # EOF: reprocess in in_body
