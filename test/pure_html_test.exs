@@ -452,6 +452,25 @@ defmodule PureHTMLTest do
 
       assert error_count == 4
     end
+
+    test "counts a colgroup start tag inside a template as a parse error" do
+      # Arrange
+      html = "<body><template><col><colgroup></template></body>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"template", [], [content: [{"col", [], []}]]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

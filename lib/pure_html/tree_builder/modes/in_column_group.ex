@@ -129,7 +129,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     if current_tag(state) == "colgroup" do
       {:reprocess, pop_colgroup(state)}
     else
-      {:ok, state}
+      {:ok, parse_error(state)}
     end
   end
 
