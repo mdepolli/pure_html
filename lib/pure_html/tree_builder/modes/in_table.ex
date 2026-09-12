@@ -273,27 +273,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # </p> special case: per spec "Parse error." Check if p is in button scope.
-  defp process_in_table({:end_tag, "p"}, state) do
-    if in_scope?(state, "p", :button) do
-      # Let in_body handle closing the p
-      state
-      |> parse_error()
-      |> process_in_body({:end_tag, "p"})
-    else
-      # Foster parent an empty p element
-      state
-      |> parse_error()
-      |> foster_insert({:element, {"p", [], []}})
-      |> ok()
-    end
-  end
-
-  # Other end tags: per spec "Parse error. Process using in_body rules."
+  # Other end tags: per spec "Parse error. Enable foster parenting, process the
+  # token using the rules for the 'in body' insertion mode, and then disable
+  # foster parenting."
   defp process_in_table({:end_tag, _} = token, state) do
     state
     |> parse_error()
-    |> process_in_body(token)
+    |> foster_parent_in_body(token)
   end
 
   # EOF: reprocess in in_body
@@ -308,6 +294,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # --------------------------------------------------------------------------
 
   defp process_in_body(state, token), do: InBody.process(token, state)
+
+  defp foster_parent_in_body(state, token) do
+    {result, new_state} = InBody.process(token, %{state | foster_parenting: true})
+    {result, %{new_state | foster_parenting: false}}
+  end
 
   # Per spec: insert directly, no foster parenting.
   defp insert_table_input("hidden", attrs, state) do

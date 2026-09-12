@@ -199,6 +199,25 @@ defmodule PureHTMLTest do
       assert error_count == 2
     end
 
+    test "counts a p end tag in a table as a voodoo error and an in-body error" do
+      # Arrange
+      html = "<p><table></p>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"p", [], [{"p", [], []}, {"table", [], []}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 4
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
