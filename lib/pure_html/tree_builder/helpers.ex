@@ -550,8 +550,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @scopes_with_foreign_boundaries [:default, :button, :list_item]
 
   @doc """
-  Checks if an element with the given tag is in the specified scope.
-  Scope types: :default, :table, :select, :button
+  Checks if an element with the given tag (or any tag in a list) is in the
+  specified scope. Scope types: :default, :table, :select, :button
   """
   def in_scope?(
         %{stack: stack, elements: elements, context_element: context_element},
@@ -561,42 +561,43 @@ defmodule PureHTML.TreeBuilder.Helpers do
     do_in_select_scope?(stack, tag, elements, context_element)
   end
 
-  def in_scope?(
-        %{stack: stack, elements: elements, context_element: context_element},
-        tag,
-        scope_type
-      ) do
-    check_foreign = scope_type in @scopes_with_foreign_boundaries
-
-    do_in_scope?(
-      stack,
-      tag,
-      @scope_boundaries[scope_type],
-      elements,
-      check_foreign,
-      context_element
-    )
+  def in_scope?(%{stack: stack} = state, tag, scope_type) do
+    do_in_scope?(stack, tag, scope_type, state)
   end
 
-  defp do_in_scope?([], _tag, _boundaries, _elements, _check_foreign, nil), do: false
-
-  defp do_in_scope?([], tag, _boundaries, _elements, _check_foreign, {_ns, ctx_tag}) do
-    scope_tag_match?(ctx_tag, tag)
+  @doc """
+  Checks if the element with the given ref is in the default scope, per the
+  spec's "the stack of open elements does not have node in scope".
+  """
+  def node_in_scope?(%{stack: stack} = state, ref) do
+    do_in_scope?(stack, ref, :default, state)
   end
 
-  defp do_in_scope?([ref | rest], tag, boundaries, elements, check_foreign, context) do
+  defp do_in_scope?([], _target, _scope_type, %{context_element: nil}), do: false
+
+  defp do_in_scope?([], target, _scope_type, %{context_element: {_ns, ctx_tag}}) do
+    scope_node_match?(nil, ctx_tag, target)
+  end
+
+  defp do_in_scope?([ref | rest], target, scope_type, %{elements: elements} = state) do
     elem_tag = elements[ref].tag
 
     cond do
-      scope_tag_match?(elem_tag, tag) -> true
-      elem_tag in boundaries -> false
-      check_foreign and foreign_scope_boundary?(elem_tag) -> false
-      true -> do_in_scope?(rest, tag, boundaries, elements, check_foreign, context)
+      scope_node_match?(ref, elem_tag, target) -> true
+      scope_boundary?(elem_tag, scope_type) -> false
+      true -> do_in_scope?(rest, target, scope_type, state)
     end
   end
 
-  defp scope_tag_match?(elem_tag, tags) when is_list(tags), do: elem_tag in tags
-  defp scope_tag_match?(elem_tag, tag), do: elem_tag == tag
+  # The target is a tag, a list of tags, or a specific element ref
+  defp scope_node_match?(ref, _elem_tag, target) when is_reference(target), do: ref == target
+  defp scope_node_match?(_ref, elem_tag, tags) when is_list(tags), do: elem_tag in tags
+  defp scope_node_match?(_ref, elem_tag, tag), do: elem_tag == tag
+
+  defp scope_boundary?(elem_tag, scope_type) do
+    elem_tag in @scope_boundaries[scope_type] or
+      (scope_type in @scopes_with_foreign_boundaries and foreign_scope_boundary?(elem_tag))
+  end
 
   defp do_in_select_scope?([], _tag, _elements, _context), do: false
 
