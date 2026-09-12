@@ -179,6 +179,26 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "counts eof inside xmp as a text mode error and an unclosed button error" do
+      # Arrange
+      html = "<!doctype html><p><button><xmp>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"p", [], [{"button", [], [{"xmp", [], []}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

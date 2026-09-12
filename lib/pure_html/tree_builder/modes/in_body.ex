@@ -772,6 +772,32 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> add_formatting_entry(tag, attrs)
   end
 
+  # Per spec: xmp closes a p in button scope, reconstructs active formatting,
+  # sets frameset-ok to "not ok", then follows the generic raw text algorithm.
+  defp do_process_html_start_tag("xmp", attrs, _, state) do
+    state
+    |> in_body()
+    |> maybe_close_p("xmp")
+    |> reconstruct_active_formatting()
+    |> set_frameset_not_ok()
+    |> enter_raw_text("xmp", attrs)
+  end
+
+  # Per spec: iframe sets frameset-ok to "not ok", then generic raw text.
+  defp do_process_html_start_tag("iframe", attrs, _, state) do
+    state
+    |> in_body()
+    |> set_frameset_not_ok()
+    |> enter_raw_text("iframe", attrs)
+  end
+
+  # Per spec: noembed follows the generic raw text algorithm.
+  defp do_process_html_start_tag("noembed", attrs, _, state) do
+    state
+    |> in_body()
+    |> enter_raw_text("noembed", attrs)
+  end
+
   # Table
   defp do_process_html_start_tag("table", attrs, _, state) do
     state
@@ -839,6 +865,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
+  end
+
+  # Generic raw text element parsing: insert the element, remember the current
+  # insertion mode, and switch to "text". The tokenizer switches to RAWTEXT itself.
+  defp enter_raw_text(%{mode: mode} = state, tag, attrs) do
+    state
+    |> push_element(tag, attrs)
+    |> Map.put(:original_mode, mode)
+    |> set_mode(:text)
   end
 
   defp maybe_parse_error_unacknowledged_self_closing(state, tag, true)
