@@ -30,14 +30,15 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
       pop_element: 1,
       current_tag: 1,
       extract_whitespace: 1,
-      parse_error: 1
+      parse_error: 1,
+      parse_error: 2
     ]
 
   @impl true
   # Whitespace: insert, non-whitespace: parse error, ignore
   def process({:character, text}, state) do
     case extract_whitespace(text) do
-      "" -> {:ok, parse_error(state)}
+      "" -> {:ok, parse_error(state, String.length(text))}
       ^text -> {:ok, add_text_to_stack(state, text)}
       whitespace -> {:ok, state |> parse_error() |> add_text_to_stack(whitespace)}
     end

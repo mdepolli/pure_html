@@ -680,6 +680,22 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "counts non-whitespace in frameset per character" do
+      # Arrange
+      html = "<!DOCTYPE html><frameset>test"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"frameset", [], []}]}
+             ] = nodes
+
+      assert error_count == 5
+    end
   end
 
   describe "query/2" do
