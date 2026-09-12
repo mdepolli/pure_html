@@ -719,8 +719,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  # Col in other contexts - ignored (col only valid inside colgroup)
-  defp do_process_html_start_tag("col", _, _, state), do: state
+  # Col in other contexts - parse error, ignore
+  defp do_process_html_start_tag("col", _, _, state), do: parse_error(state)
 
   # Table structure in body mode (ignored per spec: parse error)
   defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state)

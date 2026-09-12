@@ -554,6 +554,37 @@ defmodule PureHTMLTest do
 
       assert error_count == 5
     end
+
+    test "counts a col start tag after a table as a parse error" do
+      # Arrange
+      html = "<table><col><tbody><col><tr><col><td><col></table><col>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"colgroup", [], [{"col", [], []}]},
+                        {"tbody", [], []},
+                        {"colgroup", [], [{"col", [], []}]},
+                        {"tbody", [], [{"tr", [], []}]},
+                        {"colgroup", [], [{"col", [], []}]},
+                        {"tbody", [], [{"tr", [], [{"td", [], []}]}]},
+                        {"colgroup", [], [{"col", [], []}]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do
