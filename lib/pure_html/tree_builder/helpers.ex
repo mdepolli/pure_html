@@ -306,6 +306,53 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def set_mode(state, mode), do: %{state | mode: mode}
 
+  # Tags that are implicitly closed (popped) when generating implied end tags
+  @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
+
+  # Tags for "generate implied end tags thoroughly" (used at EOF)
+  @implied_end_tag_tags_thorough ~w(
+    caption colgroup dd dt li optgroup option p rb rp rt rtc
+    tbody td tfoot th thead tr
+  )
+
+  @doc """
+  Generates implied end tags per the HTML5 spec.
+  """
+  def generate_implied_end_tags(state) do
+    pop_implied_end_tags(state, @implied_end_tag_tags, nil)
+  end
+
+  @doc """
+  Generates implied end tags, except for elements with the given tag name.
+  """
+  def generate_implied_end_tags_except(state, except_tag) do
+    pop_implied_end_tags(state, @implied_end_tag_tags, except_tag)
+  end
+
+  @doc """
+  Generates implied end tags thoroughly (used at EOF per spec).
+  """
+  def generate_implied_end_tags_thoroughly(state) do
+    pop_implied_end_tags(state, @implied_end_tag_tags_thorough, nil)
+  end
+
+  defp pop_implied_end_tags(%{stack: [ref | rest], elements: elements} = state, tags, except)
+       when is_map_key(elements, ref) do
+    tag = elements[ref].tag
+
+    if is_binary(tag) and tag != except and tag in tags do
+      pop_implied_end_tags(
+        %{state | stack: rest, current_parent_ref: elements[ref].parent_ref},
+        tags,
+        except
+      )
+    else
+      state
+    end
+  end
+
+  defp pop_implied_end_tags(state, _tags, _except), do: state
+
   @doc """
   Sets the frameset-ok flag.
   """

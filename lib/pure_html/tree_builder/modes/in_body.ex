@@ -2021,15 +2021,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Close tag
   # --------------------------------------------------------------------------
 
-  # Tags that are implicitly closed (popped) when generating implied end tags
-  @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
-
-  # Tags for "generate implied end tags thoroughly" (used at EOF)
-  @implied_end_tag_tags_thorough ~w(
-    caption colgroup dd dt li optgroup option p rb rp rt rtc
-    tbody td tfoot th thead tr
-  )
-
   # Close tag using ref-only stack architecture (respects special element stops)
   defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
     apply_pop_result(state, pop_until_tag_ref(stack, elements, tag))
@@ -2166,36 +2157,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp has_template_on_stack?(state) do
     find_ref(state, "template") != nil
   end
-
-  # Generate implied end tags per HTML5 spec
-  defp generate_implied_end_tags(state),
-    do: pop_implied_end_tags(state, @implied_end_tag_tags, nil)
-
-  # Generate implied end tags, except for elements with the given tag name.
-  # Per spec: "Generate implied end tags, except for X elements."
-  defp generate_implied_end_tags_except(state, except_tag),
-    do: pop_implied_end_tags(state, @implied_end_tag_tags, except_tag)
-
-  # Generate implied end tags thoroughly (used at EOF per spec)
-  defp generate_implied_end_tags_thoroughly(state),
-    do: pop_implied_end_tags(state, @implied_end_tag_tags_thorough, nil)
-
-  defp pop_implied_end_tags(%{stack: [ref | rest], elements: elements} = state, tags, except)
-       when is_map_key(elements, ref) do
-    tag = elements[ref].tag
-
-    if is_binary(tag) and tag != except and tag in tags do
-      pop_implied_end_tags(
-        %{state | stack: rest, current_parent_ref: elements[ref].parent_ref},
-        tags,
-        except
-      )
-    else
-      state
-    end
-  end
-
-  defp pop_implied_end_tags(state, _tags, _except), do: state
 
   # Close any heading element (h1-h6) per HTML5 spec
   # Any heading end tag closes any open heading element
