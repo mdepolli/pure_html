@@ -145,5 +145,11 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
     |> after_pop_caption()
   end
 
-  defp after_pop_caption({:ok, state}), do: set_mode(state, :in_table)
+  # Per spec: clear the list of active formatting elements up to the last marker,
+  # then switch the insertion mode to "in table".
+  defp after_pop_caption({:ok, state}) do
+    state
+    |> clear_af_to_marker()
+    |> set_mode(:in_table)
+  end
 end

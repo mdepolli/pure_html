@@ -118,9 +118,9 @@ defmodule PureHTMLTest do
       assert error_count == 1
     end
 
-    test "counts a caption end tag whose current node is not caption as a parse error" do
+    test "clears active formatting to the marker when a caption closes" do
       # Arrange
-      html = "<table><caption><div></caption>"
+      html = "<p><b></p><table><caption></table>y"
 
       # Act
       {nodes, error_count} = PureHTML.parse_with_errors(html)
@@ -130,10 +130,16 @@ defmodule PureHTMLTest do
                {"html", [],
                 [
                   {"head", [], []},
-                  {"body", [], [{"table", [], [{"caption", [], [{"div", [], []}]}]}]}
+                  {"body", [],
+                   [
+                     {"p", [], [{"b", [], []}]},
+                     {"table", [], [{"caption", [], []}]},
+                     {"b", [], ["y"]}
+                   ]}
                 ]}
              ] = nodes
 
+      # Missing doctype, </p> with b as current node, and b still open at EOF.
       assert error_count == 3
     end
 
