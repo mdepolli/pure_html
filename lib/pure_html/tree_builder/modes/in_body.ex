@@ -853,6 +853,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> in_body()
     |> maybe_close_p(tag)
     |> maybe_close_same(tag)
+    |> maybe_ruby_parse_error(tag)
     |> maybe_close_current_heading(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
@@ -1735,6 +1736,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       _ -> state
     end
   end
+
+  defp maybe_ruby_parse_error(state, tag) when tag in @ruby_elements do
+    if in_scope?(state, "ruby", :default) do
+      parse_error_unless_current(state, "ruby")
+    else
+      state
+    end
+  end
+
+  defp maybe_ruby_parse_error(state, _tag), do: state
 
   defp parse_error_unless_current(state, tag) do
     if current_tag(state) == tag do

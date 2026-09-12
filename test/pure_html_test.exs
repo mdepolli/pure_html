@@ -644,6 +644,26 @@ defmodule PureHTMLTest do
 
       assert error_count == 6
     end
+
+    test "counts rp inside ruby when the current node is not ruby as a parse error" do
+      # Arrange
+      html = "<!doctype html><ruby><div><span><rp>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"ruby", [], [{"div", [], [{"span", [], [{"rp", [], []}]}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do
