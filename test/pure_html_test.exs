@@ -712,6 +712,18 @@ defmodule PureHTMLTest do
 
       assert error_count == 4
     end
+
+    test "counts a frameset end tag on the fragment html root as a parse error" do
+      # Arrange
+      html = "</frameset><frame>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "frameset")
+
+      # Assert
+      assert [{"frame", [], []}] = nodes
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
