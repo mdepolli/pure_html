@@ -536,6 +536,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Runs AA if duplicate exists, returns {state, old_ref}
   defp handle_duplicate_formatting(state, af, tag) do
     if tag in @adopt_on_duplicate and has_formatting_entry?(af, tag) do
+      state = parse_error(state)
       state = AdoptionAgency.run(state, tag)
       old_ref = find_formatting_ref(state.af, tag)
       {state, old_ref}

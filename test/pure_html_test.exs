@@ -532,6 +532,28 @@ defmodule PureHTMLTest do
 
       assert error_count == 7
     end
+
+    test "counts a nested a start tag inside a template table as a parse error" do
+      # Arrange
+      html = "<template><a><table><a>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [],
+                   [
+                     {"template", [], [content: [{"a", [], [{"a", [], []}, {"table", [], []}]}]]}
+                   ]},
+                  {"body", [], []}
+                ]}
+             ] = nodes
+
+      assert error_count == 5
+    end
   end
 
   describe "query/2" do
