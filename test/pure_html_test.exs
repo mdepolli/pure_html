@@ -86,6 +86,57 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "generates implied end tags before checking the caption current node on table end" do
+      # Arrange
+      html = "<!DOCTYPE html><body><table><caption><svg><g>foo</g><g>bar</g><p>baz</table><p>quux"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"caption", [],
+                         [
+                           {{:svg, "svg"}, [],
+                            [{{:svg, "g"}, [], ["foo"]}, {{:svg, "g"}, [], ["bar"]}]},
+                           {"p", [], ["baz"]}
+                         ]}
+                      ]},
+                     {"p", [], ["quux"]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "counts a caption end tag whose current node is not caption as a parse error" do
+      # Arrange
+      html = "<table><caption><div></caption>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"table", [], [{"caption", [], [{"div", [], []}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

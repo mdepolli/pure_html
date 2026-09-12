@@ -121,11 +121,19 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
   # --------------------------------------------------------------------------
 
   # Caller guarantees a caption is in table scope.
+  # Per spec: generate implied end tags; if the current node is not a caption,
+  # parse error; pop until a caption has been popped.
   defp close_caption(state) do
+    state
+    |> generate_implied_end_tags()
+    |> parse_error_unless_current_caption()
+    |> pop_caption()
+  end
+
+  defp parse_error_unless_current_caption(state) do
     state
     |> current_tag()
     |> mismatch_if_not_caption(state)
-    |> pop_caption()
   end
 
   defp mismatch_if_not_caption("caption", state), do: state
