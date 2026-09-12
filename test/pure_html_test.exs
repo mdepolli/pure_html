@@ -471,6 +471,25 @@ defmodule PureHTMLTest do
 
       assert error_count == 2
     end
+
+    test "counts a frame start tag outside frameset as a parse error" do
+      # Arrange
+      html = "<html a=b><template><frame></frame><html b=c><frame></frame></template>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [{"a", "b"}],
+                [
+                  {"head", [], [{"template", [], [content: []]}]},
+                  {"body", [], []}
+                ]}
+             ] = nodes
+
+      assert error_count == 6
+    end
   end
 
   describe "query/2" do

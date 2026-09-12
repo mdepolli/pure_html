@@ -666,12 +666,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Frame in frameset
+  # Frame in frameset. Otherwise: parse error, ignore.
   defp do_process_html_start_tag("frame", attrs, _, state) do
     if current_tag(state) == "frameset" do
       add_child_to_stack(state, {"frame", attrs, []})
     else
-      state
+      parse_error(state)
     end
   end
 
