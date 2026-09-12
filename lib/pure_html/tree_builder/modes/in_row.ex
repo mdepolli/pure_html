@@ -26,8 +26,6 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   import PureHTML.TreeBuilder.Helpers
 
-  alias PureHTML.TreeBuilder.Modes.InBody
-
   # Start tags that close the row
   @row_closing_start_tags ~w(caption col colgroup tbody tfoot thead tr)
 
@@ -105,7 +103,8 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   def process({:start_tag, _, _, _} = token, state) do
     state
     |> parse_error()
-    |> foster_parent_in_body(token)
+    |> enable_foster_parenting()
+    |> process_in_body(token)
   end
 
   # End tag: tr - close row, switch to in_table_body
@@ -185,12 +184,6 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Clear stack to table row context (tr, template, html)
   defp clear_to_table_row_context(state) do
     pop_until_one_of(state, @table_row_context)
-  end
-
-  # Enable foster parenting, process the token in in_body, then restore.
-  defp foster_parent_in_body(state, token) do
-    {:ok, new_state} = InBody.process(token, %{state | foster_parenting: true, mode: :in_body})
-    ok(%{new_state | foster_parenting: false, mode: :in_row})
   end
 
   # Close the current row (tr). Caller guarantees a tr is in table scope.

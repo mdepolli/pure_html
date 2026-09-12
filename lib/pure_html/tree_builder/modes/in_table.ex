@@ -279,7 +279,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp process_in_table({:end_tag, _} = token, state) do
     state
     |> parse_error()
-    |> foster_parent_in_body(token)
+    |> enable_foster_parenting()
+    |> process_in_body(token)
   end
 
   # EOF: reprocess in in_body
@@ -292,13 +293,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # --------------------------------------------------------------------------
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------
-
-  defp process_in_body(state, token), do: InBody.process(token, state)
-
-  defp foster_parent_in_body(state, token) do
-    {result, new_state} = InBody.process(token, %{state | foster_parenting: true})
-    {result, %{new_state | foster_parenting: false}}
-  end
 
   # Per spec: insert directly, no foster parenting.
   defp insert_table_input("hidden", attrs, state) do

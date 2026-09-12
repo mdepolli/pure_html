@@ -306,6 +306,22 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def set_mode(state, mode), do: %{state | mode: mode}
 
+  @doc """
+  Enables foster parenting for the token being processed. The tree builder
+  disables it again once the token (and any reprocessing) is done.
+  """
+  def enable_foster_parenting(state), do: %{state | foster_parenting: true}
+
+  @doc """
+  Disables foster parenting. Called by the tree builder after each token.
+  """
+  def disable_foster_parenting(state), do: %{state | foster_parenting: false}
+
+  @doc """
+  Processes the token with the "in body" rules from inside a state pipe.
+  """
+  def process_in_body(state, token), do: PureHTML.TreeBuilder.Modes.InBody.process(token, state)
+
   # Tags that are implicitly closed (popped) when generating implied end tags
   @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
 

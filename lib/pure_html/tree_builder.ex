@@ -426,7 +426,16 @@ defmodule PureHTML.TreeBuilder do
   end
 
   defp process_token(token, {doctype, state, comments}) do
-    {doctype, dispatch(token, state), comments}
+    {doctype, process_token_fully(token, state), comments}
+  end
+
+  # Per spec, foster parenting is enabled by an insertion mode for one token
+  # ("enable foster parenting, process the token ..., and then disable foster
+  # parenting"). The flag stays on through any reprocessing of that token.
+  defp process_token_fully(token, state) do
+    token
+    |> dispatch(state)
+    |> disable_foster_parenting()
   end
 
   # Per HTML5 spec: determine if DOCTYPE should trigger quirks mode
