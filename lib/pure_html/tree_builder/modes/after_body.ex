@@ -45,9 +45,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
     {:reprocess, %{state | mode: :in_body}}
   end
 
-  # Fragment case: ignore </html> per spec
   def process({:end_tag, "html"}, %{context_element: ctx} = state) when ctx != nil do
-    {:ok, state}
+    {:ok, parse_error(state)}
   end
 
   def process({:end_tag, "html"}, state) do

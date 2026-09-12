@@ -724,6 +724,18 @@ defmodule PureHTMLTest do
       assert [{"frame", [], []}] = nodes
       assert error_count == 1
     end
+
+    test "counts an html end tag in an html fragment as a parse error" do
+      # Arrange
+      html = "<body></body></html>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "html")
+
+      # Assert
+      assert [{"head", [], []}, {"body", [], []}] = nodes
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
