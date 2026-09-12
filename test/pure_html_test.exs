@@ -143,6 +143,26 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "ignores a form end tag whose form element is not in scope" do
+      # Arrange
+      html = "<!doctype html><form><table></form><form></table></form>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"form", [], [{"table", [], [{"form", [], []}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 5
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

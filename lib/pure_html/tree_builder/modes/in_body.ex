@@ -2113,15 +2113,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Set form element pointer to null. If node is not in the stack, parse error; return.
   # Generate implied end tags. If current node is not node, parse error.
   # Remove node from stack.
-  defp close_form_special(%{stack: stack} = state, form_ref) do
-    # If form is not in the stack, parse error; return
-    if form_ref in stack do
+  defp close_form_special(state, form_ref) do
+    if node_in_scope?(state, form_ref) do
       state
       |> clear_form_element()
       |> generate_implied_end_tags()
-      |> parse_error_unless_form_was_current(List.first(stack), form_ref)
+      |> parse_error_unless_current_ref(form_ref)
       |> remove_from_stack(form_ref)
     else
+      # Per spec: node not in scope: parse error; ignore the token
       state
       |> clear_form_element()
       |> parse_error()
@@ -2130,9 +2130,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp clear_form_element(state), do: %{state | form_element: nil}
 
-  # If current node is not the form element, parse error
-  defp parse_error_unless_form_was_current(state, form_ref, form_ref), do: state
-  defp parse_error_unless_form_was_current(state, _top_ref, _form_ref), do: parse_error(state)
+  # Per spec: after generating implied end tags, if the current node is not
+  # the form element, parse error
+  defp parse_error_unless_current_ref(%{stack: [ref | _]} = state, ref), do: state
+  defp parse_error_unless_current_ref(state, _ref), do: parse_error(state)
 
   # </form> when template IS on stack
   # Per spec: If form not in scope, parse error; ignore. Generate implied end tags.
