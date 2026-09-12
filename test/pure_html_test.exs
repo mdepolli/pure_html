@@ -616,6 +616,34 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "counts SVG and HTML breakout in a colgroup as parse errors" do
+      # Arrange
+      html =
+        "<!DOCTYPE html><body><table><colgroup><svg><g>foo</g><g>bar</g><p>baz</table><p>quux"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {{:svg, "svg"}, [],
+                      [{{:svg, "g"}, [], ["foo"]}, {{:svg, "g"}, [], ["bar"]}]},
+                     {"p", [], ["baz"]},
+                     {"table", [], [{"colgroup", [], []}]},
+                     {"p", [], ["quux"]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 6
+    end
   end
 
   describe "query/2" do

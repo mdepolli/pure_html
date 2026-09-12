@@ -44,7 +44,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       needs_foster_parenting?: 1,
       update_af_entry: 3,
       get_attr: 3,
-      parse_error: 1
+      parse_error: 1,
+      parse_error: 2
     ]
 
   alias PureHTML.TreeBuilder.AdoptionAgency
@@ -386,7 +387,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   defp do_process_character(_, text, state) do
     # Per spec: "Parse error." Character tokens not in table context: delegate to in_body
-    state = parse_error(state)
+    state = parse_error(state, String.length(text))
     InBody.process({:character, text}, state)
   end
 

@@ -523,6 +523,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       |> close_foreign_content()
 
     if needs_foster_parenting?(state) do
+      state = parse_error(state)
       {state, _ref} = foster_parent(state, {:push, tag, attrs})
       state
     else
