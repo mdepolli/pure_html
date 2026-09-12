@@ -725,7 +725,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Table structure in body mode (ignored per spec: parse error)
   defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state)
        when tag in @table_structure_elements do
-    state
+    parse_error(state)
   end
 
   # Table cells
