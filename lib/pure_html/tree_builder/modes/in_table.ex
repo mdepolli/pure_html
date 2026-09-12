@@ -30,23 +30,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      push_element: 3,
-      pop_element: 1,
-      set_mode: 2,
-      push_af_marker: 1,
-      add_child_to_stack: 2,
-      in_scope?: 3,
-      find_ref: 2,
-      foster_parent: 2,
-      reject_refs_from_af: 2,
-      needs_foster_parenting?: 1,
-      update_af_entry: 3,
-      get_attr: 3,
-      parse_error: 1,
-      parse_error: 2
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.AdoptionAgency
   alias PureHTML.TreeBuilder.Modes.InBody
@@ -92,7 +76,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # DOCTYPE: parse error, ignore
   defp process_in_table({:doctype, _, _, _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Start tag: caption
@@ -166,12 +150,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Start tags: style, script - process using in_head rules
   # Set original_mode first so we return to table context after text mode
   defp process_in_table({:start_tag, tag, _, _}, state) when tag in ~w(style script) do
-    {:reprocess, %{state | original_mode: state.mode, mode: :in_head}}
+    state |> Map.put(:original_mode, state.mode) |> set_mode(:in_head) |> reprocess()
   end
 
   # Start tag: template - process using in_head rules (no original_mode needed)
   defp process_in_table({:start_tag, "template", _, _}, state) do
-    {:reprocess, %{state | mode: :in_head}}
+    state |> set_mode(:in_head) |> reprocess()
   end
 
   # Start tag: input - check for type=hidden
@@ -192,22 +176,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Start tag: form - Per spec: "Parse error."
   defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
-    state = parse_error(state)
-
-    if find_ref(state, "template") do
-      {:ok, state}
-    else
-      # Push form, set pointer, then pop (form stays in tree as child of table)
-      state = push_element(state, "form", attrs)
-      [form_ref | _] = state.stack
-      state = pop_element(state)
-      {:ok, %{state | form_element: form_ref}}
-    end
+    state
+    |> parse_error()
+    |> insert_table_form(attrs)
   end
 
   # Per spec: "Parse error." Form element pointer already set, ignore.
   defp process_in_table({:start_tag, "form", _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # SVG and math: per spec "Parse error." Foster parent as foreign elements.
@@ -228,7 +204,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Frameset/frame: per spec "Parse error. Ignore the token."
   defp process_in_table({:start_tag, tag, _, _}, state) when tag in ["frameset", "frame"] do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Other start tags: per spec "Parse error. Enable foster parenting, process
@@ -248,20 +224,20 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # this is a parse error; ignore the token."
   defp process_in_table({:end_tag, "table"}, state) do
     if in_scope?(state, "table", :table) do
-      {:ok, close_table(state)}
+      state |> close_table() |> ok()
     else
-      {:ok, parse_error(state)}
+      state |> parse_error() |> ok()
     end
   end
 
   # End tag: template - process using in_head rules
   defp process_in_table({:end_tag, "template"}, state) do
-    {:reprocess, %{state | mode: :in_head}}
+    state |> set_mode(:in_head) |> reprocess()
   end
 
   # Ignored end tags: parse error, ignore
   defp process_in_table({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # </br> special case: per spec "Parse error." Foster parent a <br> element.
@@ -274,7 +250,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # </select> special case: close select if in scope, but don't change mode
   # (InBody's handler calls pop_mode which would incorrectly switch to in_body)
   defp process_in_table({:end_tag, "select"}, state) do
-    {:ok, close_select_in_scope(state)}
+    state |> close_select_in_scope() |> ok()
   end
 
   # </p> special case: per spec "Parse error." Check if p is in button scope.
@@ -299,7 +275,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # EOF: reprocess in in_body
   defp process_in_table(:eof, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -367,7 +343,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       {new_state, _ref} = foster_parent(state, {:push, tag, attrs})
       {:ok, new_state}
     else
-      {:ok, push_element(state, tag, attrs)}
+      state |> push_element(tag, attrs) |> ok()
     end
   end
 
@@ -444,6 +420,21 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   defp ensure_tbody(state), do: state
+
+  defp insert_table_form(state, attrs) do
+    state
+    |> find_ref("template")
+    |> insert_table_form(attrs, state)
+  end
+
+  defp insert_table_form(nil, attrs, state) do
+    state = push_element(state, "form", attrs)
+    [form_ref | _] = state.stack
+    state = pop_element(state)
+    {:ok, %{state | form_element: form_ref}}
+  end
+
+  defp insert_table_form(_ref, _attrs, state), do: {:ok, state}
 
   defp close_table(%{stack: stack, af: af, elements: elements, template_mode_stack: tms} = state) do
     {new_stack, closed_refs, _stored_parent_ref} = do_close_table(stack, [], elements)

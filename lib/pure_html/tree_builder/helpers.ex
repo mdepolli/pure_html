@@ -37,6 +37,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
     %{state | error_count: n + count}
   end
 
+  @doc false
+  def ok(state), do: {:ok, state}
+
+  @doc false
+  def reprocess(state), do: {:reprocess, state}
+
+  @doc false
+  def reprocess_with(state, token), do: {:reprocess_with, state, token}
+
   # --------------------------------------------------------------------------
   # Element Creation
   # --------------------------------------------------------------------------
@@ -863,16 +872,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def merge_html_attrs(state, new_attrs) when new_attrs == [], do: state
 
-  def merge_html_attrs(%{elements: elements} = state, new_attrs) do
-    case find_ref(state, "html") do
-      nil ->
-        state
+  def merge_html_attrs(state, new_attrs) do
+    state
+    |> find_ref("html")
+    |> merge_html_attrs_at(state, new_attrs)
+  end
 
-      html_ref ->
-        html_elem = elements[html_ref]
-        merged = merge_attr_lists(new_attrs, html_elem.attrs)
-        %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
-    end
+  defp merge_html_attrs_at(nil, state, _new_attrs), do: state
+
+  defp merge_html_attrs_at(html_ref, %{elements: elements} = state, new_attrs) do
+    html_elem = elements[html_ref]
+    merged = merge_attr_lists(new_attrs, html_elem.attrs)
+    %{state | elements: Map.put(elements, html_ref, %{html_elem | attrs: merged})}
   end
 
   @doc """

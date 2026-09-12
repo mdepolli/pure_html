@@ -18,18 +18,13 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      add_child_to_stack: 2,
-      add_text_to_stack: 2,
-      extract_whitespace: 1,
-      parse_error: 1,
-      parse_error: 2
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   @impl true
   def process({:character, text}, state) do
-    handle_characters(extract_whitespace(text), text, state)
+    text
+    |> extract_whitespace()
+    |> handle_characters(text, state)
   end
 
   def process({:comment, text}, state) do
@@ -38,17 +33,17 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   def process({:start_tag, "noframes", _attrs, _self_closing}, state) do
     # Process using "in head" rules, preserve original mode to return here after text mode
-    {:reprocess, %{state | original_mode: :after_frameset, mode: :in_head}}
+    state |> Map.put(:original_mode, :after_frameset) |> set_mode(:in_head) |> reprocess()
   end
 
   def process({:end_tag, "html"}, state) do
@@ -62,20 +57,20 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
   end
 
   def process(_token, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   defp handle_characters("", text, state) do
-    {:ok, parse_error(state, String.length(text))}
+    state |> parse_error(String.length(text)) |> ok()
   end
 
   defp handle_characters(ws, ws, state) do
-    {:ok, add_text_to_stack(state, ws)}
+    state |> add_text_to_stack(ws) |> ok()
   end
 
   defp handle_characters(whitespace, text, state) do
     n = String.length(text) - String.length(whitespace)
     state = parse_error(state, n)
-    {:ok, add_text_to_stack(state, whitespace)}
+    state |> add_text_to_stack(whitespace) |> ok()
   end
 end

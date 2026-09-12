@@ -9,8 +9,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   See: https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
   """
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [new_element: 3, insert_after_in_list: 3, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   # Scope boundaries for the "in scope" check
   @scope_boundaries ~w(

@@ -24,13 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      push_element: 3,
-      set_mode: 2,
-      set_frameset_ok: 2,
-      parse_error: 1
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InHead
 
@@ -50,7 +44,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   # Non-whitespace at start - insert implied body and reprocess
   def process({:character, text}, state) do
-    {:reprocess_with, insert_implied_body(state), {:character, text}}
+    state |> insert_implied_body() |> reprocess_with({:character, text})
   end
 
   def process({:comment, text}, state) do
@@ -61,13 +55,13 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules - reprocess in :in_body mode
     # Body will be created by transition_to if needed
-    {:reprocess, insert_implied_body(state)}
+    state |> insert_implied_body() |> reprocess()
   end
 
   def process({:start_tag, "body", attrs, _self_closing}, state) do
@@ -111,32 +105,32 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
     # Parse error, ignore
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process({:end_tag, "template"}, state) do
     # Process using "in head" rules
-    {:reprocess, %{state | mode: :in_head}}
+    state |> set_mode(:in_head) |> reprocess()
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(body html br) do
     # Act as "anything else" - insert implied body and reprocess
-    {:reprocess, insert_implied_body(state)}
+    state |> insert_implied_body() |> reprocess()
   end
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # EOF: reprocess in in_body (without inserting implied body)
   def process(:eof, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   def process(_token, state) do
     # Anything else: insert implied <body>, switch to "in body", reprocess
-    {:reprocess, insert_implied_body(state)}
+    state |> insert_implied_body() |> reprocess()
   end
 
   # Insert an implied body element and switch to :in_body mode

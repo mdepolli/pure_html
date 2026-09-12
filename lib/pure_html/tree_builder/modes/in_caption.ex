@@ -22,7 +22,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [in_scope?: 3, pop_until_tag: 2, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -45,7 +45,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Table-related start tags: parse error, close caption, reprocess
@@ -75,7 +75,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
       :not_found ->
         # Parse error, ignore
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
@@ -94,7 +94,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Other end tags: process using in_body rules
@@ -104,20 +104,33 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
 
-  # Close caption if in table scope
   defp close_caption(state) do
-    with true <- in_scope?(state, "caption", :table),
-         {:ok, new_state} <- pop_until_tag(state, "caption") do
-      {:ok, %{new_state | mode: :in_table}}
+    if in_scope?(state, "caption", :table) do
+      state
+      |> current_tag()
+      |> mismatch_if_not_caption(state)
+      |> pop_caption()
     else
-      _ -> :not_found
+      :not_found
     end
   end
+
+  defp mismatch_if_not_caption("caption", state), do: state
+  defp mismatch_if_not_caption(_tag, state), do: parse_error(state)
+
+  defp pop_caption(state) do
+    state
+    |> pop_until_tag("caption")
+    |> after_pop_caption()
+  end
+
+  defp after_pop_caption({:ok, state}), do: {:ok, %{state | mode: :in_table}}
+  defp after_pop_caption({:not_found, _}), do: :not_found
 end

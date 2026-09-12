@@ -22,14 +22,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      in_scope?: 3,
-      pop_until_tag: 2,
-      clear_af_to_marker: 1,
-      current_tag: 1,
-      parse_error: 1
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -55,7 +48,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Cell-closing start tags: close cell, reprocess
@@ -66,7 +59,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
@@ -83,13 +76,13 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
         {:ok, %{new_state | mode: :in_row}}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Cell-closing end tags: close cell if TARGET tag is in table scope, reprocess
@@ -105,7 +98,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
       end
     else
       # Per spec: "parse error; ignore."
-      {:ok, parse_error(state)}
+      state |> parse_error() |> ok()
     end
   end
 
@@ -116,7 +109,7 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -136,17 +129,27 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # Close specific cell tag if in table scope
   defp close_cell_for_tag(state, tag) do
     if in_scope?(state, tag, :table) do
-      state = if current_tag(state) != tag, do: parse_error(state), else: state
-
-      case pop_until_tag(state, tag) do
-        {:ok, new_state} ->
-          {:ok, clear_af_to_marker(%{new_state | mode: :in_row})}
-
-        {:not_found, _} ->
-          :not_found
-      end
+      state
+      |> current_tag()
+      |> mismatch_if_not(tag, state)
+      |> pop_cell(tag)
     else
       :not_found
     end
   end
+
+  defp mismatch_if_not(tag, tag, state), do: state
+  defp mismatch_if_not(_current, _tag, state), do: parse_error(state)
+
+  defp pop_cell(state, tag) do
+    state
+    |> pop_until_tag(tag)
+    |> after_pop_cell()
+  end
+
+  defp after_pop_cell({:ok, state}) do
+    state |> Map.put(:mode, :in_row) |> clear_af_to_marker() |> ok()
+  end
+
+  defp after_pop_cell({:not_found, _}), do: :not_found
 end

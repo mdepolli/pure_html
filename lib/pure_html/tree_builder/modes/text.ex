@@ -16,36 +16,34 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, current_tag: 1, pop_element: 1, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   @impl true
   def process({:character, text}, state) do
     # Insert text as child of current element
-    {:ok, add_text_to_stack(state, text)}
+    state |> add_text_to_stack(text) |> ok()
   end
 
   def process({:end_tag, tag}, state) do
-    # End tag matches current element - close it and restore original mode
-    if current_tag(state) == tag do
-      {:ok, close_current_element(state)}
-    else
-      # End tag doesn't match - parse error, ignore
-      {:ok, parse_error(state)}
-    end
+    state
+    |> current_tag()
+    |> close_if_matching_end_tag(tag, state)
   end
 
   def process(:eof, state) do
     # EOF in text mode - parse error, close element and reprocess
-    {:reprocess, state |> parse_error() |> close_current_element()}
+    state |> parse_error() |> close_current_element() |> reprocess()
   end
 
   def process(_token, state) do
     # Anything else shouldn't happen, but handle gracefully
-    {:ok, state}
+    ok(state)
   end
 
   # Close current element and restore original mode
+  defp close_if_matching_end_tag(tag, tag, state), do: state |> close_current_element() |> ok()
+  defp close_if_matching_end_tag(_current, _tag, state), do: state |> parse_error() |> ok()
+
   defp close_current_element(%{original_mode: original_mode} = state) do
     state
     |> pop_element()

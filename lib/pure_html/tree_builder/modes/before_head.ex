@@ -19,8 +19,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [add_child_to_stack: 2, push_element: 3, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   # HTML5 ASCII whitespace characters
   @html5_whitespace ~c[ \t\n\r\f]
@@ -36,7 +35,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   # Non-whitespace at start - insert head and reprocess
   def process({:character, text}, state) do
-    {:reprocess_with, insert_head(state, []), {:character, text}}
+    state |> insert_head([]) |> reprocess_with({:character, text})
   end
 
   def process({:comment, text}, state) do
@@ -46,32 +45,32 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules - insert implied head first, then reprocess
-    {:reprocess, insert_head(state, [])}
+    state |> insert_head([]) |> reprocess()
   end
 
   def process({:start_tag, "head", attrs, _self_closing}, state) do
     # Insert head element with the given attrs and switch to "in head"
-    {:ok, insert_head(state, attrs)}
+    state |> insert_head(attrs) |> ok()
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - insert implied head and reprocess
-    {:reprocess, insert_head(state, [])}
+    state |> insert_head([]) |> reprocess()
   end
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process(_token, state) do
     # Anything else: insert implied <head>, switch to "in head", reprocess
-    {:reprocess, insert_head(state, [])}
+    state |> insert_head([]) |> reprocess()
   end
 
   # Insert head element, set head_element pointer, and switch to in_head mode

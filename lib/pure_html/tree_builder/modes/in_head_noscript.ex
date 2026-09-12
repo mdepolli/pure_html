@@ -24,7 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [pop_element: 1, current_tag: 1, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InBody
   alias PureHTML.TreeBuilder.Modes.InHead
@@ -42,7 +42,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
       InHead.process(token, state)
     else
       # Non-whitespace: parse error, pop noscript, switch to in_head, reprocess
-      {:reprocess, state |> parse_error() |> pop_noscript()}
+      state |> parse_error() |> pop_noscript() |> reprocess()
     end
   end
 
@@ -53,7 +53,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Start tag: html - process using "in body" rules
@@ -68,27 +68,27 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   # Start tags that are parse errors and ignored
   def process({:start_tag, tag, _, _}, state) when tag in @ignored_start_tags do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Any other start tag: parse error, pop noscript, switch to in_head, reprocess
   def process({:start_tag, _, _, _}, state) do
-    {:reprocess, state |> parse_error() |> pop_noscript()}
+    state |> parse_error() |> pop_noscript() |> reprocess()
   end
 
   # End tag: noscript - pop noscript, switch to "in head"
   def process({:end_tag, "noscript"}, state) do
-    {:ok, pop_noscript(state)}
+    state |> pop_noscript() |> ok()
   end
 
   # End tag: br - parse error, pop noscript, switch to in_head, reprocess
   def process({:end_tag, "br"}, state) do
-    {:reprocess, state |> parse_error() |> pop_noscript()}
+    state |> parse_error() |> pop_noscript() |> reprocess()
   end
 
   # Any other end tag: parse error, ignore
   def process({:end_tag, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # EOF: process using "in head" rules
@@ -108,6 +108,11 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   end
 
   defp pop_noscript_if_current(state) do
-    if current_tag(state) == "noscript", do: pop_element(state), else: state
+    state
+    |> current_tag()
+    |> pop_if_tag("noscript", state)
   end
+
+  defp pop_if_tag(tag, tag, state), do: pop_element(state)
+  defp pop_if_tag(_current, _expected, state), do: state
 end

@@ -23,14 +23,7 @@ defmodule PureHTML.TreeBuilder do
   Final output: {tag, attrs, children} tuples (attrs are lists of {name, value} tuples)
   """
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      add_child_to_stack: 2,
-      current_tag: 1,
-      determine_mode_from_stack: 4,
-      get_attr: 2,
-      parse_error: 1
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.Tokenizer
   alias PureHTML.TreeBuilder.Modes

@@ -736,6 +736,25 @@ defmodule PureHTMLTest do
       assert [{"head", [], []}, {"body", [], []}] = nodes
       assert error_count == 1
     end
+
+    test "counts a caption end tag when the current node is not caption as a parse error" do
+      # Arrange
+      html = "<table><caption><div></caption>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"table", [], [{"caption", [], [{"div", [], []}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do

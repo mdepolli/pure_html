@@ -22,21 +22,13 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      add_text_to_stack: 2,
-      add_child_to_stack: 2,
-      push_element: 3,
-      pop_element: 1,
-      current_tag: 1,
-      extract_whitespace: 1,
-      parse_error: 1,
-      parse_error: 2
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   @impl true
   def process({:character, text}, state) do
-    handle_characters(extract_whitespace(text), text, state)
+    text
+    |> extract_whitespace()
+    |> handle_characters(text, state)
   end
 
   # Comments: insert
@@ -46,17 +38,17 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Start tag: html - process using in_body rules (merge attrs)
   def process({:start_tag, "html", _attrs, _}, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # Start tag: frameset
   def process({:start_tag, "frameset", attrs, _}, state) do
-    {:ok, push_element(state, "frameset", attrs)}
+    state |> push_element("frameset", attrs) |> ok()
   end
 
   # Start tag: frame (void element)
@@ -67,54 +59,67 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   # Start tag: noframes - process using in_head rules
   # Set original_mode so text mode returns here after noframes closes
   def process({:start_tag, "noframes", _attrs, _}, state) do
-    {:reprocess, %{state | original_mode: :in_frameset, mode: :in_head}}
+    state |> Map.put(:original_mode, :in_frameset) |> set_mode(:in_head) |> reprocess()
   end
 
   # Other start tags: parse error, ignore
   def process({:start_tag, _tag, _attrs, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # End tag: frameset
   # Per spec: If current node is root html element, ignore. Otherwise pop frameset.
   # If not fragment parsing and current node is no longer frameset, switch to after frameset.
   def process({:end_tag, "frameset"}, state) do
-    end_frameset(current_tag(state), state)
+    state
+    |> current_tag()
+    |> end_frameset(state)
   end
 
   # Other end tags: parse error, ignore
   def process({:end_tag, _tag}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process(:eof, state) do
-    eof(current_tag(state), state)
+    state
+    |> current_tag()
+    |> eof(state)
   end
 
   defp handle_characters("", text, state) do
-    {:ok, parse_error(state, String.length(text))}
+    state |> parse_error(String.length(text)) |> ok()
   end
 
   defp handle_characters(ws, ws, state) do
-    {:ok, add_text_to_stack(state, ws)}
+    state |> add_text_to_stack(ws) |> ok()
   end
 
   defp handle_characters(whitespace, text, state) do
     n = String.length(text) - String.length(whitespace)
     state = parse_error(state, n)
-    {:ok, add_text_to_stack(state, whitespace)}
+    state |> add_text_to_stack(whitespace) |> ok()
   end
 
   defp eof("html", state), do: {:ok, state}
-  defp eof(_tag, state), do: {:ok, parse_error(state)}
+  defp eof(_tag, state), do: state |> parse_error() |> ok()
 
-  defp end_frameset("html", state), do: {:ok, parse_error(state)}
+  defp end_frameset("html", state), do: state |> parse_error() |> ok()
 
   defp end_frameset("frameset", state) do
-    state = pop_element(state)
-    mode = if current_tag(state) == "frameset", do: :in_frameset, else: :after_frameset
-    {:ok, %{state | mode: mode}}
+    state
+    |> pop_element()
+    |> after_pop_frameset()
   end
 
   defp end_frameset(_tag, state), do: {:ok, state}
+
+  defp after_pop_frameset(state) do
+    state
+    |> current_tag()
+    |> frameset_mode_after_pop(state)
+  end
+
+  defp frameset_mode_after_pop("frameset", state), do: {:ok, %{state | mode: :in_frameset}}
+  defp frameset_mode_after_pop(_tag, state), do: {:ok, %{state | mode: :after_frameset}}
 end

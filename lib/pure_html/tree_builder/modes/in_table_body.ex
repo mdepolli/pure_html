@@ -24,15 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      push_element: 3,
-      set_mode: 2,
-      in_scope?: 3,
-      pop_until_tag: 2,
-      pop_until_one_of: 2,
-      parse_error: 1
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InTable
 
@@ -61,7 +53,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Start tag: tr - insert row, switch to in_row
@@ -77,10 +69,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # Start tag: th, td - parse error, insert implied tr, reprocess
   def process({:start_tag, tag, _, _}, state) when tag in ["th", "td"] do
-    state = parse_error(state)
-
     state =
       state
+      |> parse_error()
       |> clear_to_table_body_context()
       |> push_element("tr", [])
       |> set_mode(:in_row)
@@ -96,7 +87,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
@@ -117,7 +108,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
         _ -> {:ok, state}
       end
     else
-      {:ok, parse_error(state)}
+      state |> parse_error() |> ok()
     end
   end
 
@@ -129,13 +120,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Other end tags: process using in_table rules (delegation)
@@ -145,7 +136,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -179,11 +170,19 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # Close the current table body if in table scope
   defp close_table_body(state) do
-    with tag when tag != nil <- Enum.find(@table_body_tags, &in_scope?(state, &1, :table)),
-         {:ok, new_state} <- pop_until_tag(state, tag) do
-      {:ok, %{new_state | mode: :in_table}}
-    else
-      _ -> :not_found
-    end
+    @table_body_tags
+    |> Enum.find(&in_scope?(state, &1, :table))
+    |> close_table_body(state)
   end
+
+  defp close_table_body(nil, _state), do: :not_found
+
+  defp close_table_body(tag, state) do
+    state
+    |> pop_until_tag(tag)
+    |> after_pop_table_body()
+  end
+
+  defp after_pop_table_body({:ok, state}), do: {:ok, %{state | mode: :in_table}}
+  defp after_pop_table_body({:not_found, _}), do: :not_found
 end

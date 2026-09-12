@@ -15,7 +15,7 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   @impl true
   def process({:character, text}, state) do
@@ -28,7 +28,11 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
 
       _ ->
         # Has non-whitespace - no DOCTYPE seen, set quirks mode
-        {:reprocess, %{parse_error(state) | mode: :before_html, quirks_mode: true}}
+        state
+        |> parse_error()
+        |> Map.put(:quirks_mode, true)
+        |> set_mode(:before_html)
+        |> reprocess()
     end
   end
 
@@ -47,6 +51,6 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
 
   def process(_token, state) do
     # Any other token without DOCTYPE: parse error, set quirks mode
-    {:reprocess, %{parse_error(state) | mode: :before_html, quirks_mode: true}}
+    state |> parse_error() |> Map.put(:quirks_mode, true) |> set_mode(:before_html) |> reprocess()
   end
 end

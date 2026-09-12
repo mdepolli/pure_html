@@ -16,8 +16,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [extract_whitespace: 1, add_text_to_stack: 2, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   @impl true
   def process({:comment, text}, state) do
@@ -27,24 +26,18 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process({:character, text}, state) do
-    case extract_whitespace(text) do
-      "" ->
-        # Non-whitespace: parse error, switch to in_body, reprocess
-        {:reprocess, %{parse_error(state) | mode: :in_body}}
-
-      ^text ->
-        # All whitespace: insert directly (staying in after_after_body mode)
-        {:ok, add_text_to_stack(state, text)}
-    end
+    text
+    |> extract_whitespace()
+    |> handle_characters(text, state)
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # EOF: stop parsing
@@ -53,7 +46,14 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
   end
 
   def process(_token, state) do
-    # Anything else: parse error, switch to "in body", reprocess
-    {:reprocess, %{parse_error(state) | mode: :in_body}}
+    state |> parse_error() |> set_mode(:in_body) |> reprocess()
+  end
+
+  defp handle_characters("", _text, state) do
+    state |> parse_error() |> set_mode(:in_body) |> reprocess()
+  end
+
+  defp handle_characters(text, text, state) do
+    state |> add_text_to_stack(text) |> ok()
   end
 end

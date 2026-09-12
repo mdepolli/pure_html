@@ -24,16 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [
-      push_element: 3,
-      set_mode: 2,
-      push_af_marker: 1,
-      in_scope?: 3,
-      pop_until_tag: 2,
-      pop_until_one_of: 2,
-      parse_error: 1
-    ]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -54,17 +45,17 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   def process({:character, _}, state) do
     # Delegate to in_table mode (handles foster parenting)
     # Set original_mode so in_table_text returns to in_row after text handling
-    {:reprocess, %{state | mode: :in_table, original_mode: :in_row}}
+    state |> Map.put(:original_mode, :in_row) |> set_mode(:in_table) |> reprocess()
   end
 
   # Comments: process using in_table rules
   def process({:comment, _}, state) do
-    {:reprocess, %{state | mode: :in_table}}
+    state |> set_mode(:in_table) |> reprocess()
   end
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Start tag: th, td - insert cell, switch to in_cell
@@ -87,7 +78,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
@@ -96,7 +87,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   @delegate_to_table ~w(template script style svg math)
 
   def process({:start_tag, tag, _, _}, state) when tag in @delegate_to_table do
-    {:reprocess, %{state | mode: :in_table}}
+    state |> set_mode(:in_table) |> reprocess()
   end
 
   # Other start tags: process using in_body rules with foster parenting enabled
@@ -118,7 +109,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
         {:ok, %{new_state | mode: :in_table_body}}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
@@ -130,7 +121,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
         {:reprocess, new_state}
 
       :not_found ->
-        {:ok, parse_error(state)}
+        state |> parse_error() |> ok()
     end
   end
 
@@ -140,30 +131,30 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     if in_scope?(state, tag, :table) do
       case close_row(state) do
         {:ok, new_state} -> {:reprocess, new_state}
-        :not_found -> {:ok, parse_error(state)}
+        :not_found -> state |> parse_error() |> ok()
       end
     else
-      {:ok, parse_error(state)}
+      state |> parse_error() |> ok()
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   # Other end tags: process using in_table rules
   def process({:end_tag, "template"}, state) do
-    {:reprocess, %{state | mode: :in_table}}
+    state |> set_mode(:in_table) |> reprocess()
   end
 
   def process({:end_tag, _}, state) do
-    {:reprocess, %{parse_error(state) | mode: :in_table}}
+    state |> parse_error() |> set_mode(:in_table) |> reprocess()
   end
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    {:reprocess, %{state | mode: :in_body}}
+    state |> set_mode(:in_body) |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -177,11 +168,15 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   # Close the current row (tr) if in table scope
   defp close_row(state) do
-    with true <- in_scope?(state, "tr", :table),
-         {:ok, new_state} <- pop_until_tag(state, "tr") do
-      {:ok, %{new_state | mode: :in_table_body}}
+    if in_scope?(state, "tr", :table) do
+      state
+      |> pop_until_tag("tr")
+      |> after_pop_row()
     else
-      _ -> :not_found
+      :not_found
     end
   end
+
+  defp after_pop_row({:ok, state}), do: {:ok, %{state | mode: :in_table_body}}
+  defp after_pop_row({:not_found, _}), do: :not_found
 end

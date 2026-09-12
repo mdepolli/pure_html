@@ -18,7 +18,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, only: [push_element: 3, set_mode: 2, parse_error: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   # HTML5 ASCII whitespace characters
   @html5_whitespace ~c[ \t\n\r\f]
@@ -34,7 +34,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   # Non-whitespace at start - insert html and reprocess
   def process({:character, text}, state) do
-    {:reprocess_with, insert_html(state, []), {:character, text}}
+    state |> insert_html([]) |> reprocess_with({:character, text})
   end
 
   def process({:comment, _text}, state) do
@@ -45,27 +45,27 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process({:start_tag, "html", attrs, _self_closing}, state) do
     # Create html element with attrs and switch to before_head
-    {:ok, insert_html(state, attrs)}
+    state |> insert_html(attrs) |> ok()
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - create implied <html> and reprocess
-    {:reprocess, insert_html(state, [])}
+    state |> insert_html([]) |> reprocess()
   end
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    {:ok, parse_error(state)}
+    state |> parse_error() |> ok()
   end
 
   def process(_token, state) do
     # Anything else: create implied <html>, switch to before_head, reprocess
-    {:reprocess, insert_html(state, [])}
+    state |> insert_html([]) |> reprocess()
   end
 
   # Insert html element and switch to before_head mode

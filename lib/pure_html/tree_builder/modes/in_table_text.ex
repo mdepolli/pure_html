@@ -20,8 +20,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers,
-    only: [add_text_to_stack: 2, foster_parent: 2, update_af_entry: 3, parse_error: 2]
+  import PureHTML.TreeBuilder.Helpers
 
   @impl true
   # Character tokens: collect into pending list
@@ -33,7 +32,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   def process(_token, state) do
     state = flush_pending_text(state)
     # Restore original mode and reprocess the token
-    {:reprocess, %{state | mode: state.original_mode, original_mode: nil}}
+    state |> set_mode(state.original_mode) |> Map.put(:original_mode, nil) |> reprocess()
   end
 
   # --------------------------------------------------------------------------
