@@ -32,14 +32,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
   end
 
   def process({:character, text}, state) do
-    case extract_whitespace(text) do
-      "" ->
-        {:ok, parse_error(state, String.length(text))}
-
-      ^text ->
-        # All whitespace: process using "in body" rules (insert to body)
-        {:ok, add_text_to_stack(state, text)}
-    end
+    handle_characters(extract_whitespace(text), text, state)
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
@@ -58,7 +51,20 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
   end
 
   def process(_token, state) do
-    # Anything else: parse error, ignore
     {:ok, parse_error(state)}
+  end
+
+  defp handle_characters("", text, state) do
+    {:ok, parse_error(state, String.length(text))}
+  end
+
+  defp handle_characters(ws, ws, state) do
+    {:ok, add_text_to_stack(state, ws)}
+  end
+
+  defp handle_characters(whitespace, text, state) do
+    n = String.length(text) - String.length(whitespace)
+    state = parse_error(state, n)
+    {:ok, add_text_to_stack(state, whitespace)}
   end
 end

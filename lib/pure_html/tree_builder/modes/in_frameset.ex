@@ -35,19 +35,8 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     ]
 
   @impl true
-  # Whitespace: insert, non-whitespace: parse error, ignore
   def process({:character, text}, state) do
-    case extract_whitespace(text) do
-      "" ->
-        {:ok, parse_error(state, String.length(text))}
-
-      ^text ->
-        {:ok, add_text_to_stack(state, text)}
-
-      whitespace ->
-        n = String.length(text) - String.length(whitespace)
-        {:ok, state |> parse_error(n) |> add_text_to_stack(whitespace)}
-    end
+    handle_characters(extract_whitespace(text), text, state)
   end
 
   # Comments: insert
@@ -112,12 +101,24 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     {:ok, parse_error(state)}
   end
 
-  # EOF: parse error if current node is not html
   def process(:eof, state) do
-    if current_tag(state) != "html" do
-      {:ok, parse_error(state)}
-    else
-      {:ok, state}
-    end
+    eof(current_tag(state), state)
   end
+
+  defp handle_characters("", text, state) do
+    {:ok, parse_error(state, String.length(text))}
+  end
+
+  defp handle_characters(ws, ws, state) do
+    {:ok, add_text_to_stack(state, ws)}
+  end
+
+  defp handle_characters(whitespace, text, state) do
+    n = String.length(text) - String.length(whitespace)
+    state = parse_error(state, n)
+    {:ok, add_text_to_stack(state, whitespace)}
+  end
+
+  defp eof("html", state), do: {:ok, state}
+  defp eof(_tag, state), do: {:ok, parse_error(state)}
 end
