@@ -163,6 +163,22 @@ defmodule PureHTMLTest do
       assert error_count == 5
     end
 
+    test "counts a frameset start tag in a table as a table voodoo error and an in-body error" do
+      # Arrange
+      html = "<!doctype html><table><frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

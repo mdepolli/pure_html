@@ -652,28 +652,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     insert_as_head_element(tag, attrs, self_closing, state)
   end
 
-  # Frameset in body mode with frameset_ok
-  defp do_process_html_start_tag(
-         "frameset",
-         attrs,
-         _,
-         %{mode: :in_body, frameset_ok: true} = state
-       ) do
+  # Per HTML5 spec: "Parse error." Then ignore if only one element on stack
+  # (fragment case), if the second element is not body, or if frameset-ok is "not ok".
+  defp do_process_html_start_tag("frameset", attrs, _, %{frameset_ok: true} = state) do
     state
     |> parse_error()
     |> insert_frameset_in_body(attrs)
   end
 
-  # Per spec: "Parse error." frameset_ok is false, ignore
-  defp do_process_html_start_tag("frameset", _, _, %{mode: :in_body} = state) do
-    parse_error(state)
-  end
-
-  defp do_process_html_start_tag("frameset", attrs, _, state) do
-    state
-    |> find_ref("body")
-    |> insert_frameset(attrs, state)
-  end
+  defp do_process_html_start_tag("frameset", _, _, state), do: parse_error(state)
 
   # Frame in frameset. Otherwise: parse error, ignore.
   defp do_process_html_start_tag("frame", attrs, _, state) do
@@ -940,21 +927,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp insert_frame(_tag, _attrs, state), do: parse_error(state)
-
-  defp insert_frameset(nil, attrs, state) do
-    if has_body_content?(state) do
-      state
-    else
-      state
-      |> ensure_html()
-      |> ensure_head()
-      |> close_head()
-      |> push_element("frameset", attrs)
-      |> set_mode(:in_frameset)
-    end
-  end
-
-  defp insert_frameset(_body_ref, _attrs, state), do: state
 
   defp insert_tr(nil, mode, attrs, state) do
     if mode in @table_related_modes and not has_foreign_on_stack?(state) do
@@ -1379,12 +1351,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp ensure_body_for(_tag, state), do: state
-
-  defp has_body_content?(%{stack: stack, elements: elements}) do
-    Enum.any?(stack, fn ref ->
-      elements[ref].tag not in ["html", "head"]
-    end)
-  end
 
   # Modes that can delegate to InBody without mode being changed
   @body_modes [

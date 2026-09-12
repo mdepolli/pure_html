@@ -206,11 +206,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # Frameset/frame: per spec "Parse error. Ignore the token."
-  defp process_in_table({:start_tag, tag, _, _}, state) when tag in ["frameset", "frame"] do
+  # Frameset/frame: per spec "Parse error." then in-body rules, which parse
+  # error again and ignore the token (nothing is inserted, so no foster parenting).
+  defp process_in_table({:start_tag, tag, _, _} = token, state)
+       when tag in ["frameset", "frame"] do
     state
     |> parse_error()
-    |> ok()
+    |> process_in_body(token)
   end
 
   # Other start tags: per spec "Parse error. Enable foster parenting, process
