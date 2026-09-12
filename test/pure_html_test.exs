@@ -696,6 +696,22 @@ defmodule PureHTMLTest do
 
       assert error_count == 5
     end
+
+    test "counts mixed leftover characters after frameset per non-whitespace" do
+      # Arrange
+      html = "<!DOCTYPE html><frameset></frameset> te st"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"frameset", [], []}, "  "]}
+             ] = nodes
+
+      assert error_count == 4
+    end
   end
 
   describe "query/2" do
