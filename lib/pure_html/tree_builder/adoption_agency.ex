@@ -40,18 +40,20 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   # Outer loop - runs up to 8 iterations
   defp outer_loop(state, _subject, _fallback, iteration) when iteration >= 8, do: state
 
-  defp outer_loop(%{af: af} = state, subject, fallback, iteration) do
+  defp outer_loop(state, subject, fallback, iteration) do
     case locate_formatting_element(state, subject) do
       :not_in_af ->
         # Per spec: "If there is no such element, then this is a parse error"
         # On first iteration, run "any other end tag" steps via the fallback
-        state = parse_error(state)
-        if iteration == 0, do: fallback.(state, subject), else: state
+        state
+        |> parse_error()
+        |> run_fallback_on_first_iteration(fallback, subject, iteration)
 
       {:not_in_stack, af_idx} ->
         # Per spec: "parse error; remove the element from the list; return"
-        state = parse_error(state)
-        %{state | af: List.delete_at(af, af_idx)}
+        state
+        |> parse_error()
+        |> remove_af_entry_at(af_idx)
 
       :not_in_scope ->
         # Per spec: "parse error; return"
@@ -60,8 +62,9 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
       {:no_furthest_block, af_idx, stack_idx} ->
         # Per spec step 9: "If formatting element is not the current node,
         # then this is a parse error. (But do not return.)"
-        state = if stack_idx > 0, do: parse_error(state), else: state
-        pop_to_formatting_element(state, af_idx, stack_idx)
+        state
+        |> parse_error_unless_current_node(stack_idx)
+        |> pop_to_formatting_element(af_idx, stack_idx)
 
       {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx} ->
         # Per spec step 9: "If formatting element is not the current node,
@@ -72,6 +75,16 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
         |> outer_loop(subject, fallback, iteration + 1)
     end
   end
+
+  defp run_fallback_on_first_iteration(state, fallback, subject, 0), do: fallback.(state, subject)
+  defp run_fallback_on_first_iteration(state, _fallback, _subject, _iteration), do: state
+
+  defp remove_af_entry_at(%{af: af} = state, af_idx) do
+    %{state | af: List.delete_at(af, af_idx)}
+  end
+
+  defp parse_error_unless_current_node(state, 0), do: state
+  defp parse_error_unless_current_node(state, _stack_idx), do: parse_error(state)
 
   # --------------------------------------------------------------------------
   # Locating the formatting element

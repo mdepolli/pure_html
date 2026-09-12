@@ -51,53 +51,61 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Void head elements: add directly to stack
   def process({:start_tag, tag, attrs, _}, state)
       when tag in @void_head_elements do
-    {:ok, add_child_to_stack(state, {tag, attrs, []})}
+    state
+    |> add_child_to_stack({tag, attrs, []})
+    |> ok()
   end
 
   # Script: push element, switch to text mode with original_mode: :in_template
   def process({:start_tag, "script", attrs, _}, state) do
-    state |> push_and_enter_text_mode("script", attrs) |> ok()
+    state
+    |> push_and_enter_text_mode("script", attrs)
+    |> ok()
   end
 
   # <noscript> with scripting enabled: treat as RAWTEXT
   def process({:start_tag, "noscript", attrs, _}, %{scripting: true} = state) do
-    state |> push_and_enter_text_mode("noscript", attrs) |> ok()
+    state
+    |> push_and_enter_text_mode("noscript", attrs)
+    |> ok()
   end
 
   # Raw text elements: push element, switch to text mode
   def process({:start_tag, tag, attrs, _}, state)
       when tag in @raw_text_elements do
-    state |> push_and_enter_text_mode(tag, attrs) |> ok()
+    state
+    |> push_and_enter_text_mode(tag, attrs)
+    |> ok()
   end
 
   # Nested template: push element and push mode onto template_mode_stack
-  def process({:start_tag, "template", attrs, _}, %{template_mode_stack: tms} = state) do
-    new_tms = [:in_template | tms]
-
-    state =
-      state
-      |> push_element("template", attrs)
-      |> push_af_marker()
-      |> Map.put(:template_mode_stack, new_tms)
-
-    {:ok, state}
+  def process({:start_tag, "template", attrs, _}, state) do
+    state
+    |> push_element("template", attrs)
+    |> push_af_marker()
+    |> push_template_mode(:in_template)
+    |> ok()
   end
 
   # Title: delegate to in_head
   def process({:start_tag, tag, _, _}, state) when tag in @delegate_head_elements do
-    state |> set_mode(:in_head) |> reprocess()
+    state
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   # html/head/body start tags: parse error, ignore when in template
   # Per spec: "If there is a template element on the stack of open elements, then ignore the token"
   def process({:start_tag, tag, _, _}, state) when tag in ["html", "head", "body"] do
-    {:ok, state}
+    ok(state)
   end
 
   # Table elements: per HTML5 spec, switch template mode and reprocess through dispatch
@@ -105,27 +113,37 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   @table_section_elements ~w(caption colgroup tbody tfoot thead)
 
   def process({:start_tag, tag, _, _}, state) when tag in @table_section_elements do
-    state |> switch_template_mode(:in_table) |> reprocess()
+    state
+    |> switch_template_mode(:in_table)
+    |> reprocess()
   end
 
   # col: switch to "in column group", reprocess
   def process({:start_tag, "col", _, _}, state) do
-    state |> switch_template_mode(:in_column_group) |> reprocess()
+    state
+    |> switch_template_mode(:in_column_group)
+    |> reprocess()
   end
 
   # tr: if template_mode_stack has :in_table, switch to :in_table so tr triggers
   # implicit tbody creation.
   def process({:start_tag, "tr", _, _}, %{template_mode_stack: [:in_table | _]} = state) do
-    state |> switch_template_mode(:in_table) |> reprocess()
+    state
+    |> switch_template_mode(:in_table)
+    |> reprocess()
   end
 
   # tr: check if template already has non-table content
   # If so, tr is "bogus" and should be ignored (test #77 scenario)
   def process({:start_tag, "tr", _, _}, state) do
     if template_has_non_table_content?(state) do
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     else
-      state |> switch_template_mode(:in_table_body) |> reprocess()
+      state
+      |> switch_template_mode(:in_table_body)
+      |> reprocess()
     end
   end
 
@@ -134,11 +152,15 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   # we need in_table_body to create the implicit tr first
   def process({:start_tag, tag, _, _}, %{template_mode_stack: [:in_table_body | _]} = state)
       when tag in ["td", "th"] do
-    state |> switch_template_mode(:in_table_body) |> reprocess()
+    state
+    |> switch_template_mode(:in_table_body)
+    |> reprocess()
   end
 
   def process({:start_tag, tag, _, _}, state) when tag in ["td", "th"] do
-    state |> switch_template_mode(:in_row) |> reprocess()
+    state
+    |> switch_template_mode(:in_row)
+    |> reprocess()
   end
 
   # Other start tags (including table): switch to in_body and reprocess
@@ -147,17 +169,23 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   # Push 'in body' onto the stack of template insertion modes.
   # Switch the insertion mode to 'in body', and reprocess the token."
   def process({:start_tag, _, _, _}, state) do
-    state |> switch_template_mode(:in_body) |> reprocess()
+    state
+    |> switch_template_mode(:in_body)
+    |> reprocess()
   end
 
   # End tag: template - process using in_head rules
   def process({:end_tag, "template"}, state) do
-    state |> set_mode(:in_head) |> reprocess()
+    state
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   # Other end tags: parse error, ignore
   def process({:end_tag, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # EOF: per spec, if there is no template element on the stack of open elements,
@@ -172,7 +200,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp eof_in_template(nil, state), do: {:ok, state}
+  defp eof_in_template(nil, state), do: ok(state)
 
   defp eof_in_template(_ref, state) do
     state
@@ -188,6 +216,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     state
   end
 
+  defp push_template_mode(%{template_mode_stack: tms} = state, mode) do
+    %{state | template_mode_stack: [mode | tms]}
+  end
+
   defp pop_template_mode(%{template_mode_stack: [_ | rest]} = state) do
     %{state | template_mode_stack: rest}
   end
@@ -201,14 +233,16 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
         state.scripting
       )
 
-    state |> set_mode(mode) |> reprocess()
+    state
+    |> set_mode(mode)
+    |> reprocess()
   end
 
   defp push_and_enter_text_mode(state, tag, attrs) do
     state
     |> push_element(tag, attrs)
     |> Map.put(:original_mode, :in_template)
-    |> Map.put(:mode, :text)
+    |> set_mode(:text)
   end
 
   # Table-related elements that are valid as early template content
@@ -219,12 +253,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   defp template_has_non_table_content?(state) do
     state
     |> find_ref("template")
-    |> template_has_non_table_content?(state)
+    |> template_ref_has_non_table_content?(state)
   end
 
-  defp template_has_non_table_content?(nil, _state), do: false
+  defp template_ref_has_non_table_content?(nil, _state), do: false
 
-  defp template_has_non_table_content?(ref, %{elements: elements}) do
+  defp template_ref_has_non_table_content?(ref, %{elements: elements}) do
     has_non_table_children?(elements[ref].children, elements)
   end
 

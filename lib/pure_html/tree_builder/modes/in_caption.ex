@@ -45,20 +45,23 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Table-related start tags: parse error, close caption, reprocess
   def process({:start_tag, tag, _, _}, state) when tag in @table_tags do
-    state = parse_error(state)
-
-    case close_caption(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
-
-      :not_found ->
-        # Caption not in scope, ignore
-        {:ok, state}
+    if in_scope?(state, "caption", :table) do
+      state
+      |> parse_error()
+      |> close_caption()
+      |> reprocess()
+    else
+      # Caption not in scope, ignore
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -69,32 +72,37 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # End tag: caption
   def process({:end_tag, "caption"}, state) do
-    case close_caption(state) do
-      {:ok, new_state} ->
-        {:ok, %{new_state | mode: :in_table}}
-
-      :not_found ->
-        # Parse error, ignore
-        state |> parse_error() |> ok()
+    if in_scope?(state, "caption", :table) do
+      state
+      |> close_caption()
+      |> ok()
+    else
+      # Parse error, ignore
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # End tag: table - parse error, close caption, reprocess
   def process({:end_tag, "table"}, state) do
-    state = parse_error(state)
-
-    case close_caption(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
-
-      :not_found ->
-        {:ok, state}
+    if in_scope?(state, "caption", :table) do
+      state
+      |> parse_error()
+      |> close_caption()
+      |> reprocess()
+    else
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Other end tags: process using in_body rules
@@ -104,22 +112,21 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
 
+  # Caller guarantees a caption is in table scope.
   defp close_caption(state) do
-    if in_scope?(state, "caption", :table) do
-      state
-      |> current_tag()
-      |> mismatch_if_not_caption(state)
-      |> pop_caption()
-    else
-      :not_found
-    end
+    state
+    |> current_tag()
+    |> mismatch_if_not_caption(state)
+    |> pop_caption()
   end
 
   defp mismatch_if_not_caption("caption", state), do: state
@@ -131,6 +138,5 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
     |> after_pop_caption()
   end
 
-  defp after_pop_caption({:ok, state}), do: {:ok, %{state | mode: :in_table}}
-  defp after_pop_caption({:not_found, _}), do: :not_found
+  defp after_pop_caption({:ok, state}), do: set_mode(state, :in_table)
 end

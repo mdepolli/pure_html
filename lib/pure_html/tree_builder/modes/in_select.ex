@@ -51,43 +51,48 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
   # Character tokens: reconstruct active formatting, then insert
   def process({:character, text}, state) do
     # Null characters should be ignored, but we don't track that - just insert
-    state |> reconstruct_af_in_select() |> add_text_to_stack(text) |> ok()
+    state
+    |> reconstruct_af_in_select()
+    |> add_text_to_stack(text)
+    |> ok()
   end
 
   # Comments: insert
   def process({:comment, text}, state) do
-    state |> add_child_to_stack({:comment, text}) |> ok()
+    state
+    |> add_child_to_stack({:comment, text})
+    |> ok()
   end
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Start tag: html - process using in_body rules
   def process({:start_tag, "html", _, _}, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # Start tag: option
   def process({:start_tag, "option", attrs, _}, state) do
-    state =
-      state
-      |> close_current_option()
-      |> push_element("option", attrs)
-
-    {:ok, state}
+    state
+    |> close_current_option()
+    |> push_element("option", attrs)
+    |> ok()
   end
 
   # Start tag: optgroup
   def process({:start_tag, "optgroup", attrs, _}, state) do
-    state =
-      state
-      |> close_current_option()
-      |> close_current_optgroup()
-      |> push_element("optgroup", attrs)
-
-    {:ok, state}
+    state
+    |> close_current_option()
+    |> close_current_optgroup()
+    |> push_element("optgroup", attrs)
+    |> ok()
   end
 
   # Start tag: select (nested) - parse error, close select
@@ -107,58 +112,73 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # Start tag: keygen - insert as child of select (deprecated element)
   def process({:start_tag, "keygen", attrs, _}, state) do
-    {:ok, add_child_to_stack(state, {"keygen", attrs, []})}
+    state
+    |> add_child_to_stack({"keygen", attrs, []})
+    |> ok()
   end
 
   # Start tag: script - process using in_head rules, preserve original mode
   def process({:start_tag, "script", _, _}, state) do
-    state |> Map.put(:original_mode, state.mode) |> set_mode(:in_head) |> reprocess()
+    state
+    |> Map.put(:original_mode, state.mode)
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   # Start tag: template - process using in_head rules
   def process({:start_tag, "template", _, _}, state) do
-    state |> set_mode(:in_head) |> reprocess()
+    state
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   # Start tag: hr - close option/optgroup, insert void
   def process({:start_tag, "hr", attrs, _}, state) do
-    state =
-      state
-      |> close_current_option()
-      |> close_current_optgroup()
-      |> add_child_to_stack({"hr", attrs, []})
-
-    {:ok, state}
+    state
+    |> close_current_option()
+    |> close_current_optgroup()
+    |> add_child_to_stack({"hr", attrs, []})
+    |> ok()
   end
 
   # Table elements in in_select: parse error, ignore per HTML5 spec
   # Note: in_select_in_table mode handles these differently (closes select)
   def process({:start_tag, tag, _, _}, state) when tag in @table_elements_to_ignore do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # SVG and Math - create namespaced elements
   def process({:start_tag, "svg", attrs, true}, state) do
-    {:ok, add_child_to_stack(state, {{:svg, "svg"}, attrs, []})}
+    state
+    |> add_child_to_stack({{:svg, "svg"}, attrs, []})
+    |> ok()
   end
 
   def process({:start_tag, "svg", attrs, false}, state) do
-    state |> push_foreign_element(:svg, "svg", attrs) |> ok()
+    state
+    |> push_foreign_element(:svg, "svg", attrs)
+    |> ok()
   end
 
   def process({:start_tag, "math", attrs, true}, state) do
-    {:ok, add_child_to_stack(state, {{:math, "math"}, attrs, []})}
+    state
+    |> add_child_to_stack({{:math, "math"}, attrs, []})
+    |> ok()
   end
 
   def process({:start_tag, "math", attrs, false}, state) do
-    state |> push_foreign_element(:math, "math", attrs) |> ok()
+    state
+    |> push_foreign_element(:math, "math", attrs)
+    |> ok()
   end
 
   # Any other start tag: per spec "Parse error."
   def process({:start_tag, tag, attrs, self_closing}, state) do
-    state = parse_error(state)
-    {ns, state} = resolve_namespace_and_close_foreign(state, tag)
-    state |> insert_element_in_select(ns, tag, attrs, self_closing) |> ok()
+    state
+    |> parse_error()
+    |> insert_other_element(tag, attrs, self_closing)
   end
 
   # End tag: optgroup
@@ -196,66 +216,74 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
 
   # End tag: template - process using in_head rules
   def process({:end_tag, "template"}, state) do
-    state |> set_mode(:in_head) |> reprocess()
+    state
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   # End tag for formatting elements: parse error, use adoption agency if element is inside select
   def process({:end_tag, tag}, state) when tag in @formatting_elements do
-    state = parse_error(state)
-
     if formatting_element_in_select?(state, tag) do
       # Run adoption agency for formatting elements inside select
-      {:ok, AdoptionAgency.run(state, tag, &close_formatting_in_select/2)}
+      state
+      |> parse_error()
+      |> AdoptionAgency.run(tag, &close_formatting_in_select/2)
+      |> ok()
     else
       # Formatting element is outside select - ignore
-      {:ok, state}
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # Any other end tag: parse error, handle foreign content or close matching HTML element
   def process({:end_tag, tag}, state) do
-    state = parse_error(state)
-
-    case foreign_namespace(state) do
-      nil ->
-        # Not in foreign content - try to close matching HTML element
-        # This handles cases where elements like <div> were pushed for compatibility
-        state |> close_html_element_in_select(tag) |> ok()
-
-      ns ->
-        # In foreign content - close if matches current element
-        state |> close_foreign_element(ns, tag) |> ok()
-    end
+    state
+    |> parse_error()
+    |> close_element_in_select(tag)
   end
 
   # EOF: process using "in body" rules
   def process(:eof, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
 
-  # Resolve namespace for the tag and close foreign content if needed
-  defp resolve_namespace_and_close_foreign(state, tag) do
-    ns = foreign_namespace(state)
-    ns = if ns && tag in @html_breakout_tags, do: nil, else: ns
+  defp insert_other_element(state, tag, attrs, self_closing) do
+    state
+    |> foreign_namespace()
+    |> insert_in_namespace(tag, attrs, self_closing, state)
+  end
 
-    state =
-      if ns == nil && foreign_namespace(state), do: close_foreign_content(state), else: state
+  # HTML breakout tag inside foreign content: close the foreign content first
+  defp insert_in_namespace(ns, tag, attrs, self_closing, state)
+       when ns != nil and tag in @html_breakout_tags do
+    state
+    |> close_foreign_content()
+    |> insert_element_in_select(nil, tag, attrs, self_closing)
+    |> ok()
+  end
 
-    {ns, state}
+  defp insert_in_namespace(ns, tag, attrs, self_closing, state) do
+    state
+    |> insert_element_in_select(ns, tag, attrs, self_closing)
+    |> ok()
   end
 
   # Insert element, handling void/self-closing vs regular elements
-  defp insert_element_in_select(state, ns, tag, attrs, self_closing) do
-    if self_closing or tag in @void_elements do
-      child = build_child_node(ns, tag, attrs)
-      add_child_to_stack(state, child)
-    else
-      push_element_in_select(state, ns, tag, attrs)
-    end
+  defp insert_element_in_select(state, ns, tag, attrs, self_closing)
+       when self_closing or tag in @void_elements do
+    add_child_to_stack(state, build_child_node(ns, tag, attrs))
+  end
+
+  defp insert_element_in_select(state, ns, tag, attrs, _self_closing) do
+    push_element_in_select(state, ns, tag, attrs)
   end
 
   defp build_child_node(nil, tag, attrs), do: {tag, attrs, []}
@@ -273,10 +301,9 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     |> maybe_add_formatting_entry(tag, attrs)
   end
 
-  defp maybe_add_formatting_entry(state, tag, attrs) when tag in @formatting_elements do
-    [new_ref | _] = state.stack
-    new_af = [{new_ref, tag, attrs} | state.af]
-    %{state | af: new_af}
+  defp maybe_add_formatting_entry(%{stack: [new_ref | _], af: af} = state, tag, attrs)
+       when tag in @formatting_elements do
+    %{state | af: [{new_ref, tag, attrs} | af]}
   end
 
   defp maybe_add_formatting_entry(state, _tag, _attrs), do: state
@@ -288,33 +315,103 @@ defmodule PureHTML.TreeBuilder.Modes.InSelect do
     |> reprocess_after_close_select(state)
   end
 
-  defp reprocess_after_close_select(true, state), do: state |> close_select() |> reprocess()
-  defp reprocess_after_close_select(false, state), do: {:ok, state}
+  defp reprocess_after_close_select(true, state) do
+    state
+    |> close_select()
+    |> reprocess()
+  end
 
-  defp end_select(true, state), do: state |> close_select() |> ok()
-  defp end_select(false, state), do: state |> parse_error() |> ok()
+  defp reprocess_after_close_select(false, state), do: ok(state)
+
+  defp end_select(true, state) do
+    state
+    |> close_select()
+    |> ok()
+  end
+
+  defp end_select(false, state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
 
   defp close_nested_select(state) do
     state
     |> find_ref("select")
-    |> close_nested_select(state)
+    |> pop_select_if_found(state)
   end
 
-  defp close_nested_select(nil, state), do: {:ok, state}
-  defp close_nested_select(_ref, state), do: state |> close_select() |> ok()
+  defp pop_select_if_found(nil, state), do: ok(state)
+
+  defp pop_select_if_found(_ref, state) do
+    state
+    |> close_select()
+    |> ok()
+  end
+
+  defp close_element_in_select(state, tag) do
+    state
+    |> foreign_namespace()
+    |> close_element_in_namespace(tag, state)
+  end
+
+  # Not in foreign content - try to close matching HTML element
+  # This handles cases where elements like <div> were pushed for compatibility
+  defp close_element_in_namespace(nil, tag, state) do
+    state
+    |> close_html_element_in_select(tag)
+    |> ok()
+  end
+
+  # In foreign content - close if matches current element
+  defp close_element_in_namespace(ns, tag, state) do
+    state
+    |> close_foreign_element(ns, tag)
+    |> ok()
+  end
 
   defp end_optgroup_with_parent("option", "optgroup", state) do
-    state |> pop_element() |> pop_element() |> ok()
+    state
+    |> pop_element()
+    |> pop_element()
+    |> ok()
   end
 
-  defp end_optgroup_with_parent("optgroup", _parent, state), do: state |> pop_element() |> ok()
-  defp end_optgroup_with_parent(_tag, _parent, state), do: state |> parse_error() |> ok()
+  defp end_optgroup_with_parent("optgroup", _parent, state) do
+    state
+    |> pop_element()
+    |> ok()
+  end
 
-  defp end_optgroup("optgroup", state), do: state |> pop_element() |> ok()
-  defp end_optgroup(_tag, state), do: state |> parse_error() |> ok()
+  defp end_optgroup_with_parent(_tag, _parent, state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
 
-  defp end_option("option", state), do: state |> pop_element() |> ok()
-  defp end_option(_tag, state), do: state |> parse_error() |> ok()
+  defp end_optgroup("optgroup", state) do
+    state
+    |> pop_element()
+    |> ok()
+  end
+
+  defp end_optgroup(_tag, state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
+
+  defp end_option("option", state) do
+    state
+    |> pop_element()
+    |> ok()
+  end
+
+  defp end_option(_tag, state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
 
   defp close_current_option(state) do
     close_if_current_tag(state, "option")

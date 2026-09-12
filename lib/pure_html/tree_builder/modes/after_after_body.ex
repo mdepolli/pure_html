@@ -21,12 +21,14 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
   @impl true
   def process({:comment, text}, state) do
     # Insert comment as child of the Document (sibling of html, stored in post_html_nodes)
-    {:ok, %{state | post_html_nodes: [{:comment, text} | state.post_html_nodes]}}
+    ok(%{state | post_html_nodes: [{:comment, text} | state.post_html_nodes]})
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process({:character, text}, state) do
@@ -37,23 +39,33 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # EOF: stop parsing
   def process(:eof, state) do
-    {:ok, state}
+    ok(state)
   end
 
   def process(_token, state) do
-    state |> parse_error() |> set_mode(:in_body) |> reprocess()
+    state
+    |> parse_error()
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   defp handle_characters("", _text, state) do
-    state |> parse_error() |> set_mode(:in_body) |> reprocess()
+    state
+    |> parse_error()
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   defp handle_characters(text, text, state) do
-    state |> add_text_to_stack(text) |> ok()
+    state
+    |> add_text_to_stack(text)
+    |> ok()
   end
 end

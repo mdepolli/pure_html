@@ -49,29 +49,36 @@ defmodule PureHTML.TreeBuilder.Modes.InSelectInTable do
   defp close_select_for_table_end(state, tag) do
     state
     |> find_ref("select")
-    |> close_select_for_table_end(tag, state)
+    |> close_select_if_tag_in_table_scope(tag, state)
   end
 
-  defp close_select_for_table_end(nil, _tag, state), do: {:ok, state}
+  defp close_select_if_tag_in_table_scope(nil, _tag, state), do: ok(state)
 
-  defp close_select_for_table_end(_ref, tag, state) do
+  defp close_select_if_tag_in_table_scope(_ref, tag, state) do
     state
     |> in_scope?(tag, :table)
     |> reprocess_after_close_select(state)
   end
 
-  defp reprocess_after_close_select(true, state), do: state |> close_select() |> reprocess()
-  defp reprocess_after_close_select(false, state), do: {:ok, state}
+  defp reprocess_after_close_select(true, state) do
+    state
+    |> close_select()
+    |> reprocess()
+  end
+
+  defp reprocess_after_close_select(false, state), do: ok(state)
 
   defp close_select_and_reprocess(state) do
     state
     |> find_ref("select")
-    |> close_select_and_reprocess(state)
+    |> reprocess_past_select(state)
   end
 
-  defp close_select_and_reprocess(nil, state), do: {:ok, state}
+  defp reprocess_past_select(nil, state), do: ok(state)
 
-  defp close_select_and_reprocess(_ref, state) do
-    state |> close_select() |> reprocess()
+  defp reprocess_past_select(_ref, state) do
+    state
+    |> close_select()
+    |> reprocess()
   end
 end

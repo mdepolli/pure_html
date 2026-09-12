@@ -727,6 +727,14 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   @doc """
+  Foster parents `content` and returns only the state.
+  """
+  def foster_insert(state, content) do
+    {new_state, _ref} = foster_parent(state, content)
+    new_state
+  end
+
+  @doc """
   Unified foster parenting function.
   Inserts content before the table element per HTML5 spec.
   Always returns `{state, ref}` where ref is nil for text/element insertions.

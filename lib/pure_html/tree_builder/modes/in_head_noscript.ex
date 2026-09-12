@@ -38,12 +38,9 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   @impl true
   # Whitespace characters: process using "in head" rules
   def process({:character, text} = token, state) do
-    if String.trim(text) == "" do
-      InHead.process(token, state)
-    else
-      # Non-whitespace: parse error, pop noscript, switch to in_head, reprocess
-      state |> parse_error() |> pop_noscript() |> reprocess()
-    end
+    text
+    |> String.trim()
+    |> handle_characters(token, state)
   end
 
   # Comments: process using "in head" rules
@@ -53,7 +50,9 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Start tag: html - process using "in body" rules
@@ -68,27 +67,39 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
 
   # Start tags that are parse errors and ignored
   def process({:start_tag, tag, _, _}, state) when tag in @ignored_start_tags do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Any other start tag: parse error, pop noscript, switch to in_head, reprocess
   def process({:start_tag, _, _, _}, state) do
-    state |> parse_error() |> pop_noscript() |> reprocess()
+    state
+    |> parse_error()
+    |> pop_noscript()
+    |> reprocess()
   end
 
   # End tag: noscript - pop noscript, switch to "in head"
   def process({:end_tag, "noscript"}, state) do
-    state |> pop_noscript() |> ok()
+    state
+    |> pop_noscript()
+    |> ok()
   end
 
   # End tag: br - parse error, pop noscript, switch to in_head, reprocess
   def process({:end_tag, "br"}, state) do
-    state |> parse_error() |> pop_noscript() |> reprocess()
+    state
+    |> parse_error()
+    |> pop_noscript()
+    |> reprocess()
   end
 
   # Any other end tag: parse error, ignore
   def process({:end_tag, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # EOF: process using "in head" rules
@@ -100,11 +111,21 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   # Helpers
   # --------------------------------------------------------------------------
 
+  defp handle_characters("", token, state), do: InHead.process(token, state)
+
+  # Non-whitespace: parse error, pop noscript, switch to in_head, reprocess
+  defp handle_characters(_non_ws, _token, state) do
+    state
+    |> parse_error()
+    |> pop_noscript()
+    |> reprocess()
+  end
+
   # Pop noscript element and switch to in_head mode
   defp pop_noscript(state) do
     state
     |> pop_noscript_if_current()
-    |> Map.put(:mode, :in_head)
+    |> set_mode(:in_head)
   end
 
   defp pop_noscript_if_current(state) do

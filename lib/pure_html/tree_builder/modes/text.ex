@@ -21,7 +21,9 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   @impl true
   def process({:character, text}, state) do
     # Insert text as child of current element
-    state |> add_text_to_stack(text) |> ok()
+    state
+    |> add_text_to_stack(text)
+    |> ok()
   end
 
   def process({:end_tag, tag}, state) do
@@ -32,7 +34,10 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
 
   def process(:eof, state) do
     # EOF in text mode - parse error, close element and reprocess
-    state |> parse_error() |> close_current_element() |> reprocess()
+    state
+    |> parse_error()
+    |> close_current_element()
+    |> reprocess()
   end
 
   def process(_token, state) do
@@ -41,13 +46,22 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   end
 
   # Close current element and restore original mode
-  defp close_if_matching_end_tag(tag, tag, state), do: state |> close_current_element() |> ok()
-  defp close_if_matching_end_tag(_current, _tag, state), do: state |> parse_error() |> ok()
+  defp close_if_matching_end_tag(tag, tag, state) do
+    state
+    |> close_current_element()
+    |> ok()
+  end
+
+  defp close_if_matching_end_tag(_current, _tag, state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
 
   defp close_current_element(%{original_mode: original_mode} = state) do
     state
     |> pop_element()
-    |> Map.put(:mode, original_mode)
+    |> set_mode(original_mode)
     |> Map.put(:original_mode, nil)
   end
 end

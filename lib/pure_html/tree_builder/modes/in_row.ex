@@ -45,40 +45,47 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   def process({:character, _}, state) do
     # Delegate to in_table mode (handles foster parenting)
     # Set original_mode so in_table_text returns to in_row after text handling
-    state |> Map.put(:original_mode, :in_row) |> set_mode(:in_table) |> reprocess()
+    state
+    |> Map.put(:original_mode, :in_row)
+    |> set_mode(:in_table)
+    |> reprocess()
   end
 
   # Comments: process using in_table rules
   def process({:comment, _}, state) do
-    state |> set_mode(:in_table) |> reprocess()
+    state
+    |> set_mode(:in_table)
+    |> reprocess()
   end
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Start tag: th, td - insert cell, switch to in_cell
   def process({:start_tag, tag, attrs, _}, state) when tag in ["th", "td"] do
-    state =
-      state
-      |> clear_to_table_row_context()
-      |> push_element(tag, attrs)
-      |> push_af_marker()
-      |> set_mode(:in_cell)
-
-    {:ok, state}
+    state
+    |> clear_to_table_row_context()
+    |> push_element(tag, attrs)
+    |> push_af_marker()
+    |> set_mode(:in_cell)
+    |> ok()
   end
 
   # Row-closing start tags: close row, reprocess
   # Per spec: "If not in table scope, parse error; ignore."
   def process({:start_tag, tag, _, _}, state) when tag in @row_closing_start_tags do
-    case close_row(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
-
-      :not_found ->
-        state |> parse_error() |> ok()
+    if in_scope?(state, "tr", :table) do
+      state
+      |> close_row()
+      |> reprocess()
+    else
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -87,74 +94,88 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   @delegate_to_table ~w(template script style svg math)
 
   def process({:start_tag, tag, _, _}, state) when tag in @delegate_to_table do
-    state |> set_mode(:in_table) |> reprocess()
+    state
+    |> set_mode(:in_table)
+    |> reprocess()
   end
 
   # Other start tags: process using in_body rules with foster parenting enabled
   # Per HTML5 spec: "Enable foster parenting, process the token using the rules
   # for the 'in body' insertion mode, and then disable foster parenting."
   def process({:start_tag, _, _, _} = token, state) do
-    state = parse_error(state)
-    # Enable foster parenting, process in in_body, restore mode
-    state_with_foster = %{state | foster_parenting: true, mode: :in_body}
-    {:ok, new_state} = InBody.process(token, state_with_foster)
-    {:ok, %{new_state | foster_parenting: false, mode: :in_row}}
+    state
+    |> parse_error()
+    |> foster_parent_in_body(token)
   end
 
   # End tag: tr - close row, switch to in_table_body
   # Per spec: "If not in scope, parse error; ignore."
   def process({:end_tag, "tr"}, state) do
-    case close_row(state) do
-      {:ok, new_state} ->
-        {:ok, %{new_state | mode: :in_table_body}}
-
-      :not_found ->
-        state |> parse_error() |> ok()
+    if in_scope?(state, "tr", :table) do
+      state
+      |> close_row()
+      |> ok()
+    else
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # End tag: table - close row, reprocess
   # Per spec: "If not in scope, parse error; ignore."
   def process({:end_tag, "table"}, state) do
-    case close_row(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
-
-      :not_found ->
-        state |> parse_error() |> ok()
+    if in_scope?(state, "tr", :table) do
+      state
+      |> close_row()
+      |> reprocess()
+    else
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # Table body end tags: close row if in scope, reprocess
   # Per spec: "If not in table scope, parse error; ignore."
   def process({:end_tag, tag}, state) when tag in @table_body_end_tags do
-    if in_scope?(state, tag, :table) do
-      case close_row(state) do
-        {:ok, new_state} -> {:reprocess, new_state}
-        :not_found -> state |> parse_error() |> ok()
-      end
+    if in_scope?(state, tag, :table) and in_scope?(state, "tr", :table) do
+      state
+      |> close_row()
+      |> reprocess()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Other end tags: process using in_table rules
   def process({:end_tag, "template"}, state) do
-    state |> set_mode(:in_table) |> reprocess()
+    state
+    |> set_mode(:in_table)
+    |> reprocess()
   end
 
   def process({:end_tag, _}, state) do
-    state |> parse_error() |> set_mode(:in_table) |> reprocess()
+    state
+    |> parse_error()
+    |> set_mode(:in_table)
+    |> reprocess()
   end
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -166,17 +187,18 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     pop_until_one_of(state, @table_row_context)
   end
 
-  # Close the current row (tr) if in table scope
-  defp close_row(state) do
-    if in_scope?(state, "tr", :table) do
-      state
-      |> pop_until_tag("tr")
-      |> after_pop_row()
-    else
-      :not_found
-    end
+  # Enable foster parenting, process the token in in_body, then restore.
+  defp foster_parent_in_body(state, token) do
+    {:ok, new_state} = InBody.process(token, %{state | foster_parenting: true, mode: :in_body})
+    ok(%{new_state | foster_parenting: false, mode: :in_row})
   end
 
-  defp after_pop_row({:ok, state}), do: {:ok, %{state | mode: :in_table_body}}
-  defp after_pop_row({:not_found, _}), do: :not_found
+  # Close the current row (tr). Caller guarantees a tr is in table scope.
+  defp close_row(state) do
+    state
+    |> pop_until_tag("tr")
+    |> after_pop_row()
+  end
+
+  defp after_pop_row({:ok, state}), do: set_mode(state, :in_table_body)
 end

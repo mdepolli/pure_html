@@ -24,7 +24,7 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     case String.trim(text) do
       "" ->
         # All whitespace - ignore
-        {:ok, state}
+        ok(state)
 
       _ ->
         # Has non-whitespace - no DOCTYPE seen, set quirks mode
@@ -40,17 +40,23 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     # Comments in initial mode are inserted as children of the Document
     # This is handled at the document level in TreeBuilder.process_token
     # The mode module just needs to not change mode
-    {:ok, state}
+    ok(state)
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # DOCTYPE handling is done at process_token level
     # Valid DOCTYPE -> not quirks mode (quirks_mode stays false)
-    {:ok, %{state | mode: :before_html}}
+    state
+    |> set_mode(:before_html)
+    |> ok()
   end
 
   def process(_token, state) do
     # Any other token without DOCTYPE: parse error, set quirks mode
-    state |> parse_error() |> Map.put(:quirks_mode, true) |> set_mode(:before_html) |> reprocess()
+    state
+    |> parse_error()
+    |> Map.put(:quirks_mode, true)
+    |> set_mode(:before_html)
+    |> reprocess()
   end
 end

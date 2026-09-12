@@ -93,15 +93,19 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Comment tokens
-  def process({:comment, _text}, %{stack: []} = state), do: {:ok, state}
+  def process({:comment, _text}, %{stack: []} = state), do: ok(state)
 
   def process({:comment, text}, state) do
-    state |> add_child_to_stack({:comment, text}) |> ok()
+    state
+    |> add_child_to_stack({:comment, text})
+    |> ok()
   end
 
   # DOCTYPE - parse error, ignore
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # --------------------------------------------------------------------------
@@ -110,15 +114,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # End tags that break out of foreign content
   def process({:end_tag, tag} = token, state) when tag in ~w(p br) do
-    case foreign_namespace(state) do
-      nil ->
-        do_process_end_tag(token, state)
-
-      _ns ->
-        # Break out of foreign content first
-        state = close_foreign_content(state)
-        do_process_end_tag(token, state)
-    end
+    state
+    |> foreign_namespace()
+    |> break_out_for_end_tag(token, state)
   end
 
   # Per spec: "If the stack of open elements does not have a body element in scope,
@@ -126,10 +124,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Otherwise, check for unclosed elements and parse error if any are unexpected.
   def process({:end_tag, "body"}, state) do
     if in_scope?(state, "body", :default) do
-      state = maybe_parse_error_for_unclosed_body(state)
-      {:ok, %{state | mode: :after_body}}
+      state
+      |> maybe_parse_error_for_unclosed_body()
+      |> set_mode(:after_body)
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -138,22 +140,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Otherwise act as if </body> was seen, then reprocess.
   def process({:end_tag, "html"}, state) do
     case process({:end_tag, "body"}, state) do
-      {:ok, %{mode: :after_body} = new_state} -> {:reprocess, new_state}
+      {:ok, %{mode: :after_body} = new_state} -> reprocess(new_state)
       other -> other
     end
   end
 
   def process({:end_tag, tag}, state) when tag in @formatting_elements do
-    {:ok, AdoptionAgency.run(state, tag, &close_tag_ref/2)}
+    state
+    |> AdoptionAgency.run(tag, &close_tag_ref/2)
+    |> ok()
   end
 
   def process({:end_tag, tag}, state) when tag in @table_cells do
-    state =
-      state
-      |> close_tag_ref_forced(tag)
-      |> clear_af_to_marker()
-
-    {:ok, state}
+    state
+    |> close_tag_ref_forced(tag)
+    |> clear_af_to_marker()
+    |> ok()
   end
 
   # Per spec: applet/marquee/object end tags:
@@ -161,31 +163,34 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # "Generate implied end tags." "If current node is not the element, parse error."
   def process({:end_tag, tag}, state) when tag in @af_marker_elements do
     if in_scope?(state, tag, :default) do
-      state = generate_implied_end_tags(state)
       # Per spec: if current node is not the element, parse error
-      state = parse_error_unless_current(state, tag)
-
-      state =
-        state
-        |> close_tag_ref_forced(tag)
-        |> clear_af_to_marker()
-
-      {:ok, state}
+      state
+      |> generate_implied_end_tags()
+      |> parse_error_unless_current(tag)
+      |> close_tag_ref_forced(tag)
+      |> clear_af_to_marker()
+      |> ok()
     else
       # Per spec: parse error; ignore the token
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
-  def process({:end_tag, "table"}, %{af: af} = state) do
+  def process({:end_tag, "table"}, state) do
     if in_scope?(state, "table", :table) do
-      closed_refs = get_refs_to_close_for_table(state)
-      new_af = reject_refs_from_af(af, closed_refs)
-      state = clear_to_table_context(state)
-      {:ok, close_tag_ref_forced(%{state | af: new_af}, "table") |> pop_mode()}
+      state
+      |> drop_table_refs_from_af()
+      |> clear_to_table_context()
+      |> close_tag_ref_forced("table")
+      |> pop_mode()
+      |> ok()
     else
       # Per spec: "parse error; ignore the token"
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -193,9 +198,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # this is a parse error; ignore the token."
   def process({:end_tag, "select"}, state) do
     if in_scope?(state, "select", :select) do
-      state |> close_tag_ref_forced("select") |> pop_mode() |> ok()
+      state
+      |> close_tag_ref_forced("select")
+      |> pop_mode()
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -203,22 +213,25 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # then this is a parse error; ignore the token."
   def process({:end_tag, "template"}, state) do
     if has_template_on_stack?(state) do
-      state =
-        state
-        |> generate_implied_end_tags_thoroughly()
-        |> parse_error_unless_current("template")
-        |> close_html_template()
-        |> clear_af_to_marker()
-        |> reset_insertion_mode()
-
-      {:ok, state}
+      state
+      |> generate_implied_end_tags_thoroughly()
+      |> parse_error_unless_current("template")
+      |> close_html_template()
+      |> clear_af_to_marker()
+      |> reset_insertion_mode()
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   def process({:end_tag, "frameset"}, state) do
-    state |> close_tag_ref_forced("frameset") |> Map.put(:mode, :after_frameset) |> ok()
+    state
+    |> close_tag_ref_forced("frameset")
+    |> set_mode(:after_frameset)
+    |> ok()
   end
 
   # Heading end tags: per spec, check if any h1-h6 is in scope.
@@ -230,12 +243,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @headings ~w(h1 h2 h3 h4 h5 h6)
   def process({:end_tag, tag}, state) when tag in @headings do
     if has_heading_in_scope?(state) do
-      state = generate_implied_end_tags(state)
       # If current node is not the same heading, parse error
-      state = parse_error_unless_current(state, tag)
-      state |> close_any_heading() |> ok()
+      state
+      |> generate_implied_end_tags()
+      |> parse_error_unless_current(tag)
+      |> close_any_heading()
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -245,11 +262,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # "If the current node is not an li element, this is a parse error."
   def process({:end_tag, "li"}, state) do
     if in_scope?(state, "li", :list_item) do
-      state = generate_implied_end_tags_except(state, "li")
-      state = parse_error_unless_current(state, "li")
-      state |> close_li_in_list_scope() |> ok()
+      state
+      |> generate_implied_end_tags_except("li")
+      |> parse_error_unless_current("li")
+      |> close_li_in_list_scope()
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -259,11 +280,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # "If current node is not the same element, parse error."
   def process({:end_tag, tag}, state) when tag in ~w(dd dt) do
     if in_scope?(state, tag, :default) do
-      state = generate_implied_end_tags_except(state, tag)
-      state = parse_error_unless_current(state, tag)
-      state |> close_dd_dt_in_scope(tag) |> ok()
+      state
+      |> generate_implied_end_tags_except(tag)
+      |> parse_error_unless_current(tag)
+      |> close_dd_dt_in_scope(tag)
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
@@ -273,25 +298,35 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       when not is_nil(form_ref) do
     if has_template_on_stack?(state) do
       # Template case: use standard "in scope" handling
-      state |> close_form_with_template() |> ok()
+      state
+      |> close_form_with_template()
+      |> ok()
     else
-      state |> close_form_special(form_ref) |> ok()
+      state
+      |> close_form_special(form_ref)
+      |> ok()
     end
   end
 
   # Block-level end tags: generate implied end tags, then pop until match
   # Per HTML5 spec, these do NOT use the "special element stops traversal" rule
   def process({:end_tag, tag}, state) when tag in @block_end_tags do
-    state |> close_block_end_tag(tag) |> ok()
+    state
+    |> close_block_end_tag(tag)
+    |> ok()
   end
 
   # </svg> and </math>: close foreign root element (ignores internal barriers)
   def process({:end_tag, "svg"}, state) do
-    state |> close_foreign_root(:svg) |> ok()
+    state
+    |> close_foreign_root(:svg)
+    |> ok()
   end
 
   def process({:end_tag, "math"}, state) do
-    state |> close_foreign_root(:math) |> ok()
+    state
+    |> close_foreign_root(:math)
+    |> ok()
   end
 
   # Any other end tag per spec:
@@ -300,14 +335,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   #   - Pop until and including node.
   # If node is special: parse error; ignore.
   def process({:end_tag, tag}, state) do
-    state |> close_any_other_end_tag(tag) |> ok()
+    state
+    |> close_any_other_end_tag(tag)
+    |> ok()
   end
 
   # EOF: if a template is still open, use "in template" (which parse-errors and
   # reprocesses EOF after popping the template).
   def process(:eof, %{template_mode_stack: [_ | _]} = state) do
     if has_template_on_stack?(state) do
-      state |> set_mode(:in_template) |> reprocess()
+      state
+      |> set_mode(:in_template)
+      |> reprocess()
     else
       eof_in_body(state)
     end
@@ -320,54 +359,98 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   def process({:start_tag, "html", attrs, _}, %{stack: []} = state) do
-    {:ok, %{state | stack: [new_element("html", attrs)], mode: :before_head}}
+    ok(%{state | stack: [new_element("html", attrs)], mode: :before_head})
   end
 
   # Per spec: "Parse error. If there is a template element on the stack of open elements,
   # then ignore the token."
   def process({:start_tag, "html", _attrs, _}, %{template_mode_stack: [_ | _]} = state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Per spec: "Parse error." Then merge attributes.
   def process({:start_tag, "html", attrs, _}, state) do
-    state |> parse_error() |> merge_html_attrs(attrs) |> ok()
+    state
+    |> parse_error()
+    |> merge_html_attrs(attrs)
+    |> ok()
   end
 
   def process({:start_tag, "head", _attrs, _}, state) do
     # Parse error, ignore the token (head is only valid in before_head mode)
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process({:start_tag, "body", attrs, _}, state) do
-    state =
-      if foreign_namespace(state) && not html_integration_point?(state) do
-        # HTML start tag in foreign content: parse error, then insertion-mode rules.
-        # HTML integration points (e.g. svg desc) already use in-body rules.
-        state |> parse_error() |> close_foreign_content()
-      else
-        state
-      end
-
-    state |> process_html_body_start_tag(attrs) |> ok()
+    state
+    |> break_out_of_foreign_content()
+    |> process_html_body_start_tag(attrs)
+    |> ok()
   end
 
   def process({:start_tag, "svg", attrs, self_closing}, state) do
-    state |> in_body() |> do_push_foreign_element(:svg, "svg", attrs, self_closing) |> ok()
+    state
+    |> in_body()
+    |> do_push_foreign_element(:svg, "svg", attrs, self_closing)
+    |> ok()
   end
 
   def process({:start_tag, "math", attrs, self_closing}, state) do
-    state |> in_body() |> do_push_foreign_element(:math, "math", attrs, self_closing) |> ok()
+    state
+    |> in_body()
+    |> do_push_foreign_element(:math, "math", attrs, self_closing)
+    |> ok()
   end
 
   def process({:start_tag, tag, attrs, self_closing}, state) do
-    original_tag = tag
-    tag = correct_tag(tag)
-    # Per spec: <image> — "Parse error. Change the token's tag name to 'img'."
-    state = if tag != original_tag, do: parse_error(state), else: state
-    ns = foreign_namespace(state)
-    state = dispatch_start_tag(state, ns, tag, attrs, self_closing)
-    {:ok, state}
+    tag
+    |> correct_tag()
+    |> process_corrected_start_tag(tag, attrs, self_closing, state)
+  end
+
+  defp process_corrected_start_tag(tag, tag, attrs, self_closing, state) do
+    state
+    |> dispatch_start_tag(tag, attrs, self_closing)
+    |> ok()
+  end
+
+  # Per spec: <image> — "Parse error. Change the token's tag name to 'img'."
+  defp process_corrected_start_tag(corrected_tag, _original_tag, attrs, self_closing, state) do
+    state
+    |> parse_error()
+    |> dispatch_start_tag(corrected_tag, attrs, self_closing)
+    |> ok()
+  end
+
+  defp break_out_for_end_tag(nil, token, state), do: do_process_end_tag(token, state)
+
+  # Break out of foreign content first
+  defp break_out_for_end_tag(_ns, token, state) do
+    state
+    |> close_foreign_content()
+    |> process_end_tag(token)
+  end
+
+  defp process_end_tag(state, token), do: do_process_end_tag(token, state)
+
+  defp process_html_start_tag(state, tag, attrs, self_closing) do
+    do_process_html_start_tag(tag, attrs, self_closing, state)
+  end
+
+  # HTML start tag in foreign content: parse error, then insertion-mode rules.
+  # HTML integration points (e.g. svg desc) already use in-body rules.
+  defp break_out_of_foreign_content(state) do
+    if foreign_namespace(state) && not html_integration_point?(state) do
+      state
+      |> parse_error()
+      |> close_foreign_content()
+    else
+      state
+    end
   end
 
   # Per spec: "Parse error." then "If there is a template element on the stack, ignore"
@@ -388,36 +471,45 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ensure_html()
     |> ensure_head()
     |> close_head()
-    |> then(fn
-      %{mode: :after_head} = s ->
-        s
-        |> push_element("body", attrs)
-        |> set_mode(:in_body)
-        |> set_frameset_not_ok()
-
-      s ->
-        s
-        |> merge_body_attrs(attrs)
-        |> set_frameset_not_ok()
-    end)
+    |> insert_or_merge_body(attrs)
   end
 
-  # Dispatch start tag to the appropriate handler based on namespace and context
-  defp dispatch_start_tag(state, _ns, tag, attrs, self_closing)
-       when tag in ~w(mglyph malignmark) do
-    # mglyph/malignmark stay in MathML namespace even at text integration points
+  defp insert_or_merge_body(%{mode: :after_head} = state, attrs) do
+    state
+    |> push_element("body", attrs)
+    |> set_mode(:in_body)
+    |> set_frameset_not_ok()
+  end
+
+  defp insert_or_merge_body(state, attrs) do
+    state
+    |> merge_body_attrs(attrs)
+    |> set_frameset_not_ok()
+  end
+
+  # Dispatch start tag to the appropriate handler based on namespace and context.
+  # mglyph/malignmark stay in MathML namespace even at text integration points.
+  defp dispatch_start_tag(state, tag, attrs, self_closing) when tag in ~w(mglyph malignmark) do
     if mathml_text_integration_point?(state) do
       do_push_foreign_element(state, :math, tag, attrs, self_closing)
     else
-      dispatch_start_tag_default(state, foreign_namespace(state), tag, attrs, self_closing)
+      state
+      |> foreign_namespace()
+      |> dispatch_start_tag_default(tag, attrs, self_closing, state)
     end
   end
 
-  defp dispatch_start_tag(state, nil, tag, attrs, self_closing) do
+  defp dispatch_start_tag(state, tag, attrs, self_closing) do
+    state
+    |> foreign_namespace()
+    |> dispatch_start_tag_in_namespace(tag, attrs, self_closing, state)
+  end
+
+  defp dispatch_start_tag_in_namespace(nil, tag, attrs, self_closing, state) do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp dispatch_start_tag(state, ns, tag, attrs, self_closing) do
+  defp dispatch_start_tag_in_namespace(ns, tag, attrs, self_closing, state) do
     cond do
       html_integration_point?(state) ->
         dispatch_at_integration_point(state, ns, tag, attrs, self_closing)
@@ -442,32 +534,36 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp dispatch_start_tag_default(state, nil, tag, attrs, self_closing) do
+  defp dispatch_start_tag_default(nil, tag, attrs, self_closing, state) do
     do_process_html_start_tag(tag, attrs, self_closing, state)
   end
 
-  defp dispatch_start_tag_default(state, ns, tag, attrs, self_closing) do
+  defp dispatch_start_tag_default(ns, tag, attrs, self_closing, state) do
     do_push_foreign_element(state, ns, tag, attrs, self_closing)
   end
 
   defp handle_table_at_integration_point(state, tag, attrs) do
-    state = close_foreign_content(state)
-    {state, _ref} = foster_parent(state, {:push, tag, attrs})
-    state |> push_mode(:in_table) |> set_frameset_not_ok()
+    state
+    |> close_foreign_content()
+    |> foster_insert({:push, tag, attrs})
+    |> push_mode(:in_table)
+    |> set_frameset_not_ok()
   end
 
+  # Per spec: HTML start tag in foreign content is a parse error, then pop
+  # until an HTML/integration-point element and reprocess.
   defp handle_html_breakout_tag(state, tag, attrs, self_closing) do
-    # Per spec: HTML start tag in foreign content is a parse error, then pop
-    # until an HTML/integration-point element and reprocess.
-    state =
+    state
+    |> parse_error()
+    |> close_foreign_content()
+    |> insert_breakout_element(tag, attrs, self_closing)
+  end
+
+  defp insert_breakout_element(state, tag, attrs, self_closing) do
+    if needs_foster_parenting?(state) do
       state
       |> parse_error()
-      |> close_foreign_content()
-
-    if needs_foster_parenting?(state) do
-      state = parse_error(state)
-      {state, _ref} = foster_parent(state, {:push, tag, attrs})
-      state
+      |> foster_insert({:push, tag, attrs})
     else
       do_process_html_start_tag(tag, attrs, self_closing, state)
     end
@@ -478,34 +574,35 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # then this is a parse error; insert an HTML element for a 'p' start tag token with no attributes."
   # Also: "Close a p element" — "If the current node is not a p element, then this is a parse error."
   defp do_process_end_tag({:end_tag, "p"}, state) do
-    case close_p_in_scope_ref(state) do
-      {:found, closed} ->
-        closed =
-          state
-          |> current_tag()
-          |> mismatch_if_not("p", closed)
-
-        {:ok, closed}
-
-      :not_found ->
-        # Parse error: p not in button scope
-        state |> parse_error() |> add_child_to_stack({"p", [], []}) |> ok()
-    end
+    state
+    |> find_p_in_scope_ref()
+    |> close_p_for_end_tag(state)
   end
 
   # Per spec: "</br> — Parse error. Drop the attributes from the token,
   # and act as described in the 'start tag' entry for br."
   defp do_process_end_tag({:end_tag, "br"}, state) do
-    element = {"br", [], []}
+    state
+    |> parse_error()
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> add_child_to_stack({"br", [], []})
+    |> ok()
+  end
 
-    state =
-      state
-      |> parse_error()
-      |> in_body()
-      |> reconstruct_active_formatting()
-      |> add_child_to_stack(element)
+  # Parse error: p not in button scope
+  defp close_p_for_end_tag(nil, state) do
+    state
+    |> parse_error()
+    |> add_child_to_stack({"p", [], []})
+    |> ok()
+  end
 
-    {:ok, state}
+  defp close_p_for_end_tag({p_ref, _refs_above}, state) do
+    state
+    |> parse_error_unless_current("p")
+    |> pop_to_element_ref(p_ref)
+    |> ok()
   end
 
   # --------------------------------------------------------------------------
@@ -556,32 +653,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Frameset in body mode with frameset_ok
-  # Per HTML5 spec: "Parse error." Then ignore if only one element on stack (fragment case),
-  # or if second element is not body, or if template on stack.
   defp do_process_html_start_tag(
          "frameset",
          attrs,
          _,
-         %{mode: :in_body, frameset_ok: true, stack: stack} = state
+         %{mode: :in_body, frameset_ok: true} = state
        ) do
-    state = parse_error(state)
-
-    cond do
-      length(stack) <= 1 ->
-        state
-
-      find_ref(state, "template") ->
-        state
-
-      not second_element_is_body?(stack, state.elements) ->
-        state
-
-      true ->
-        state
-        |> close_body_for_frameset()
-        |> push_element("frameset", attrs)
-        |> set_mode(:in_frameset)
-    end
+    state
+    |> parse_error()
+    |> insert_frameset_in_body(attrs)
   end
 
   # Per spec: "Parse error." frameset_ok is false, ignore
@@ -622,7 +702,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
        when tag in ["input", "keygen", "textarea"] and mode in [:in_select, :in_select_in_table] do
     state
     |> close_select()
-    |> then(&do_process_html_start_tag(tag, attrs, self_closing, &1))
+    |> process_html_start_tag(tag, attrs, self_closing)
   end
 
   # Input element - only non-hidden inputs disable frameset
@@ -706,14 +786,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Table
-  # Per HTML5 spec: only close p if NOT in quirks mode
-  defp do_process_html_start_tag("table", attrs, _, %{quirks_mode: quirks_mode} = state) do
-    state =
-      state
-      |> in_body()
-      |> then(fn s -> if quirks_mode, do: s, else: maybe_close_p(s, "table") end)
-
+  defp do_process_html_start_tag("table", attrs, _, state) do
     state
+    |> in_body()
+    |> close_p_unless_quirks("table")
     |> push_element("table", attrs)
     |> push_mode(:in_table)
     |> set_frameset_not_ok()
@@ -738,15 +814,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Select - use in_select_in_table if there's a table ancestor
   defp do_process_html_start_tag("select", attrs, _, state) do
-    state = state |> in_body() |> reconstruct_active_formatting() |> push_element("select", attrs)
-
-    mode =
-      if has_table_ancestor?(state.stack, state.elements),
-        do: :in_select_in_table,
-        else: :in_select
-
     state
-    |> push_mode(mode)
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> push_element("select", attrs)
+    |> push_select_mode()
     |> set_frameset_not_ok()
   end
 
@@ -795,15 +867,54 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> in_body()
     |> maybe_close_p("form")
     |> push_element("form", attrs)
-    |> then(fn new_state ->
-      # Set form_element only if no template on stack
-      if has_template_on_stack?(new_state) do
-        new_state
-      else
-        [form_ref | _] = new_state.stack
-        %{new_state | form_element: form_ref}
-      end
-    end)
+    |> point_form_element_unless_template()
+  end
+
+  # Set form_element only if no template on stack
+  defp point_form_element_unless_template(state) do
+    if has_template_on_stack?(state) do
+      state
+    else
+      point_form_element(state)
+    end
+  end
+
+  defp point_form_element(%{stack: [form_ref | _]} = state) do
+    %{state | form_element: form_ref}
+  end
+
+  # Per HTML5 spec: only close p if NOT in quirks mode
+  defp close_p_unless_quirks(%{quirks_mode: true} = state, _tag), do: state
+  defp close_p_unless_quirks(state, tag), do: maybe_close_p(state, tag)
+
+  # Use in_select_in_table if there's a table ancestor
+  defp push_select_mode(%{stack: stack, elements: elements} = state) do
+    if has_table_ancestor?(stack, elements) do
+      push_mode(state, :in_select_in_table)
+    else
+      push_mode(state, :in_select)
+    end
+  end
+
+  # Per HTML5 spec: "Parse error." Then ignore if only one element on stack (fragment case),
+  # or if second element is not body, or if template on stack.
+  defp insert_frameset_in_body(%{stack: stack, elements: elements} = state, attrs) do
+    cond do
+      length(stack) <= 1 ->
+        state
+
+      find_ref(state, "template") ->
+        state
+
+      not second_element_is_body?(stack, elements) ->
+        state
+
+      true ->
+        state
+        |> close_body_for_frameset()
+        |> push_element("frameset", attrs)
+        |> set_mode(:in_frameset)
+    end
   end
 
   # Per HTML5 spec: "If the current node is an HTML element whose tag name is one of
@@ -969,17 +1080,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   # Push foreign element with adjustments (local version with self_closing handling)
-  defp do_push_foreign_element(state, ns, tag, attrs, self_closing) do
-    adjusted_tag = adjust_svg_tag(ns, tag)
-    adjusted_attrs = adjust_foreign_attributes(ns, attrs)
+  # Self-closing: add as child, don't push to stack
+  defp do_push_foreign_element(state, ns, tag, attrs, true) do
+    add_child_to_stack(
+      state,
+      {{ns, adjust_svg_tag(ns, tag)}, adjust_foreign_attributes(ns, attrs), []}
+    )
+  end
 
-    if self_closing do
-      # Self-closing: add as child, don't push to stack
-      add_child_to_stack(state, {{ns, adjusted_tag}, adjusted_attrs, []})
-    else
-      # Non-self-closing: push to stack
-      push_foreign_element(state, ns, adjusted_tag, adjusted_attrs)
-    end
+  defp do_push_foreign_element(state, ns, tag, attrs, _self_closing) do
+    push_foreign_element(state, ns, adjust_svg_tag(ns, tag), adjust_foreign_attributes(ns, attrs))
   end
 
   @foreign_attr_adjustments %{
@@ -1449,36 +1559,47 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp handle_in_body_characters(tag, text, state) when tag in @head_elements do
-    state |> add_text_to_stack(text) |> ok()
+    state
+    |> add_text_to_stack(text)
+    |> ok()
   end
 
   defp handle_in_body_characters(tag, text, state) when tag in @table_context do
-    if String.trim(text) == "" do
-      state |> add_text_to_stack(text) |> ok()
-    else
-      {new_state, _} = foster_parent(state, {:text, text})
-      {:ok, new_state}
-    end
+    text
+    |> String.trim()
+    |> insert_table_context_text(text, state)
   end
 
   defp handle_in_body_characters(_tag, text, state) do
-    text = maybe_skip_leading_newline(state, text)
-
-    if text == "" do
-      {:ok, state}
-    else
-      state =
-        state
-        |> in_body()
-        |> reconstruct_active_formatting()
-        |> add_text_to_stack(text)
-        |> maybe_set_frameset_not_ok(text)
-
-      {:ok, state}
-    end
+    text
+    |> maybe_skip_leading_newline(state)
+    |> insert_body_text(state)
   end
 
-  defp maybe_skip_leading_newline(state, <<?\n, rest::binary>>) do
+  defp insert_table_context_text("", text, state) do
+    state
+    |> add_text_to_stack(text)
+    |> ok()
+  end
+
+  defp insert_table_context_text(_non_ws, text, state) do
+    state
+    |> foster_insert({:text, text})
+    |> ok()
+  end
+
+  defp insert_body_text("", state), do: ok(state)
+
+  defp insert_body_text(text, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> add_text_to_stack(text)
+    |> maybe_set_frameset_not_ok(text)
+    |> ok()
+  end
+
+  defp maybe_skip_leading_newline(<<?\n, rest::binary>>, state) do
     case current_element(state) do
       %{tag: tag, children: []} when tag in @newline_skipping_elements ->
         rest
@@ -1488,15 +1609,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  defp maybe_skip_leading_newline(_state, text), do: text
+  defp maybe_skip_leading_newline(text, _state), do: text
 
   defp eof_in_body(state) do
-    state =
-      state
-      |> maybe_parse_error_for_unclosed_body()
-      |> generate_implied_end_tags_thoroughly()
-
-    {:ok, state}
+    state
+    |> maybe_parse_error_for_unclosed_body()
+    |> generate_implied_end_tags_thoroughly()
+    |> ok()
   end
 
   # --------------------------------------------------------------------------
@@ -1509,16 +1628,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @allowed_open_at_body_close ~w(dd dt li optgroup option p rb rp rt rtc
     tbody td tfoot th thead tr body html template)
   defp maybe_parse_error_for_unclosed_body(%{stack: stack, elements: elements} = state) do
-    has_unexpected =
-      Enum.any?(stack, fn ref ->
-        case elements[ref].tag do
-          tag when is_binary(tag) -> tag not in @allowed_open_at_body_close
-          _ -> true
-        end
-      end)
-
-    if has_unexpected, do: parse_error(state), else: state
+    if Enum.any?(stack, &unexpected_open_at_body_close?(elements[&1].tag)) do
+      parse_error(state)
+    else
+      state
+    end
   end
+
+  defp unexpected_open_at_body_close?(tag) when is_binary(tag) do
+    tag not in @allowed_open_at_body_close
+  end
+
+  defp unexpected_open_at_body_close?(_foreign_tag), do: true
 
   # Check if any heading element (h1-h6) is in scope
   defp has_heading_in_scope?(state) do
@@ -1532,12 +1653,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp maybe_set_frameset_not_ok(%{frameset_ok: false} = state, _text), do: state
 
   defp maybe_set_frameset_not_ok(state, text) do
-    if String.trim(text) == "" do
-      state
-    else
-      %{state | frameset_ok: false}
-    end
+    text
+    |> String.trim()
+    |> set_frameset_not_ok_for_text(state)
   end
+
+  defp set_frameset_not_ok_for_text("", state), do: state
+  defp set_frameset_not_ok_for_text(_text, state), do: set_frameset_not_ok(state)
 
   defp set_frameset_not_ok(state), do: %{state | frameset_ok: false}
 
@@ -1583,7 +1705,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp close_option_optgroup(_tag, state), do: state
 
   defp close_select(state) do
-    close_tag_ref(state, "select") |> pop_mode()
+    state
+    |> close_tag_ref("select")
+    |> pop_mode()
   end
 
   # --------------------------------------------------------------------------
@@ -1606,8 +1730,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     pop_until_one_of(state, @table_boundaries)
   end
 
-  defp get_refs_to_close_for_table(%{stack: stack, elements: elements}) do
-    do_get_refs_to_close_for_table(stack, elements, MapSet.new())
+  # Drop the refs that closing the table will pop from the active formatting list
+  defp drop_table_refs_from_af(%{stack: stack, elements: elements, af: af} = state) do
+    closed_refs = do_get_refs_to_close_for_table(stack, elements, MapSet.new())
+    %{state | af: reject_refs_from_af(af, closed_refs)}
   end
 
   defp do_get_refs_to_close_for_table([], _elements, acc), do: acc
@@ -1686,41 +1812,38 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Implicit closing
   # --------------------------------------------------------------------------
 
-  defp maybe_close_p(%{af: af} = state, tag) when tag in @closes_p do
-    case find_p_in_scope_ref(state) do
-      nil ->
-        state
-
-      {p_ref, refs_above} ->
-        # Per spec "close a p element": "If the current node is not a p element,
-        # then this is a parse error."
-        state = parse_error_unless_current(state, "p")
-
-        # Remove non-formatting refs from af
-        non_formatting_refs =
-          [p_ref | refs_above]
-          |> Enum.reject(fn ref -> state.elements[ref].tag in @formatting_elements end)
-          |> MapSet.new()
-
-        new_af = reject_refs_from_af(af, non_formatting_refs)
-
-        # Pop to p element (children already in elements map)
-        {new_stack, parent_ref} = pop_to_ref(state.stack, state.elements, p_ref)
-        %{state | stack: new_stack, af: new_af, current_parent_ref: parent_ref}
-    end
+  defp maybe_close_p(state, tag) when tag in @closes_p do
+    state
+    |> find_p_in_scope_ref()
+    |> close_p_ref(state)
   end
 
   defp maybe_close_p(state, _tag), do: state
 
-  defp close_p_in_scope_ref(state) do
-    case find_p_in_scope_ref(state) do
-      nil ->
-        :not_found
+  defp close_p_ref(nil, state), do: state
 
-      {p_ref, _refs_above} ->
-        {new_stack, parent_ref} = pop_to_ref(state.stack, state.elements, p_ref)
-        {:found, %{state | stack: new_stack, current_parent_ref: parent_ref}}
-    end
+  # Per spec "close a p element": "If the current node is not a p element,
+  # then this is a parse error."
+  defp close_p_ref({p_ref, refs_above}, state) do
+    state
+    |> parse_error_unless_current("p")
+    |> drop_non_formatting_refs_from_af([p_ref | refs_above])
+    |> pop_to_element_ref(p_ref)
+  end
+
+  defp drop_non_formatting_refs_from_af(%{af: af, elements: elements} = state, refs) do
+    non_formatting_refs =
+      refs
+      |> Enum.reject(fn ref -> elements[ref].tag in @formatting_elements end)
+      |> MapSet.new()
+
+    %{state | af: reject_refs_from_af(af, non_formatting_refs)}
+  end
+
+  # Pop to the element (children already in elements map)
+  defp pop_to_element_ref(%{stack: stack, elements: elements} = state, ref) do
+    {new_stack, parent_ref} = pop_to_ref(stack, elements, ref)
+    %{state | stack: new_stack, current_parent_ref: parent_ref}
   end
 
   defp find_p_in_scope_ref(%{stack: stack, elements: elements}) do
@@ -1767,34 +1890,49 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> pop_if_current_tag("optgroup")
   end
 
-  defp maybe_close_same(%{stack: stack, elements: elements} = state, tag) do
-    with {closes, boundaries, close_all?} <- get_implicit_close_config(tag),
-         {:ok, new_stack, parent_ref} <-
-           pop_implicit_close(stack, elements, closes, boundaries, close_all?) do
-      # Per spec: for li/dd/dt start tags:
-      #   1. Generate implied end tags, except for the target tag
-      #   2. If the current node is not the target tag, parse error
-      #   3. Pop until the target is popped
-      # For button: "If the stack has a button in scope, this is a parse error."
-      state =
-        cond do
-          tag == "button" ->
-            parse_error(state)
+  defp maybe_close_same(state, tag) do
+    tag
+    |> get_implicit_close_config()
+    |> close_implicit(tag, state)
+  end
 
-          tag in ~w(li dd dt) ->
-            parse_error_unless_current_in(
-              generate_implied_end_tags_except(state, tag),
-              closes
-            )
+  defp close_implicit(nil, _tag, state), do: state
 
-          true ->
-            state
-        end
+  defp close_implicit(
+         {closes, boundaries, close_all?},
+         tag,
+         %{stack: stack, elements: elements} = state
+       ) do
+    stack
+    |> pop_implicit_close(elements, closes, boundaries, close_all?)
+    |> apply_implicit_close(tag, closes, state)
+  end
 
-      %{state | stack: new_stack, current_parent_ref: parent_ref}
-    else
-      _ -> state
-    end
+  defp apply_implicit_close(:not_found, _tag, _closes, state), do: state
+
+  defp apply_implicit_close({:ok, new_stack, parent_ref}, tag, closes, state) do
+    state
+    |> implicit_close_parse_error(tag, closes)
+    |> replace_stack(new_stack, parent_ref)
+  end
+
+  # For button: "If the stack has a button in scope, this is a parse error."
+  defp implicit_close_parse_error(state, "button", _closes), do: parse_error(state)
+
+  # Per spec: for li/dd/dt start tags:
+  #   1. Generate implied end tags, except for the target tag
+  #   2. If the current node is not the target tag, parse error
+  #   3. Pop until the target is popped
+  defp implicit_close_parse_error(state, tag, closes) when tag in ~w(li dd dt) do
+    state
+    |> generate_implied_end_tags_except(tag)
+    |> parse_error_unless_current_in(closes)
+  end
+
+  defp implicit_close_parse_error(state, _tag, _closes), do: state
+
+  defp replace_stack(state, stack, parent_ref) do
+    %{state | stack: stack, current_parent_ref: parent_ref}
   end
 
   defp maybe_ruby_parse_error(state, tag) when tag in @ruby_elements do
@@ -1905,11 +2043,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       {:found, _new_stack, _parent_ref} = result ->
         # Per spec: generate implied end tags except for the target tag,
         # then check if current node matches.
-        state = generate_implied_end_tags_except(state, tag)
-
-        state = parse_error_unless_current(state, tag)
-
-        apply_pop_result(state, result)
+        state
+        |> generate_implied_end_tags_except(tag)
+        |> parse_error_unless_current(tag)
+        |> apply_pop_result(result)
 
       :not_found ->
         # Per spec: hit a special element without finding match — parse error; ignore
@@ -1965,10 +2102,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # check current node, then pop.
   defp close_block_end_tag(state, tag) do
     if in_scope?(state, tag, :default) do
-      state = generate_implied_end_tags(state)
       # Per spec: if current node is not the element, parse error
-      state = parse_error_unless_current(state, tag)
-      do_close_block_end_tag(state, tag)
+      state
+      |> generate_implied_end_tags()
+      |> parse_error_unless_current(tag)
+      |> do_close_block_end_tag(tag)
     else
       # Per spec: parse error; ignore the token
       parse_error(state)
@@ -1985,21 +2123,25 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Generate implied end tags. If current node is not node, parse error.
   # Remove node from stack.
   defp close_form_special(%{stack: stack} = state, form_ref) do
-    # Clear form_element pointer
-    state = %{state | form_element: nil}
-
     # If form is not in the stack, parse error; return
     if form_ref in stack do
-      state = generate_implied_end_tags(state)
-      # If current node is not the form element, parse error
-      state =
-        if List.first(stack) != form_ref, do: parse_error(state), else: state
-
-      remove_from_stack(state, form_ref)
+      state
+      |> clear_form_element()
+      |> generate_implied_end_tags()
+      |> parse_error_unless_form_was_current(List.first(stack), form_ref)
+      |> remove_from_stack(form_ref)
     else
-      parse_error(state)
+      state
+      |> clear_form_element()
+      |> parse_error()
     end
   end
+
+  defp clear_form_element(state), do: %{state | form_element: nil}
+
+  # If current node is not the form element, parse error
+  defp parse_error_unless_form_was_current(state, form_ref, form_ref), do: state
+  defp parse_error_unless_form_was_current(state, _top_ref, _form_ref), do: parse_error(state)
 
   # </form> when template IS on stack
   # Per spec: If form not in scope, parse error; ignore. Generate implied end tags.
@@ -2242,15 +2384,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Per spec: for <a> and <nobr>, if there's already one in the AF list,
   # "this is a parse error" and run the adoption agency algorithm.
   defp maybe_close_existing_formatting(%{af: af} = state, tag) do
-    case find_formatting_entry(af, tag) do
-      nil ->
-        state
+    af
+    |> find_formatting_entry(tag)
+    |> close_existing_formatting(tag, state)
+  end
 
-      {_idx, {ref, _tag, _attrs}} ->
-        state
-        |> parse_error()
-        |> do_close_existing_formatting(tag, ref)
-    end
+  defp close_existing_formatting(nil, _tag, state), do: state
+
+  defp close_existing_formatting({_idx, {ref, _tag, _attrs}}, tag, state) do
+    state
+    |> parse_error()
+    |> do_close_existing_formatting(tag, ref)
   end
 
   defp do_close_existing_formatting(%{stack: stack} = state, tag, ref) do
@@ -2274,16 +2418,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  defp close_formatting_in_stack(state, tag, ref) do
-    old_af = state.af
-    state = AdoptionAgency.run(state, tag, &close_tag_ref/2)
+  defp close_formatting_in_stack(%{af: old_af} = state, tag, ref) do
+    state
+    |> AdoptionAgency.run(tag, &close_tag_ref/2)
+    |> drop_stale_formatting_entry(tag, ref, old_af)
+  end
 
-    # Remove from AF only if AA didn't handle it AND element was actually closed
-    aa_unchanged = state.af == old_af
-    element_closed = not Enum.member?(state.stack, ref)
-
-    if aa_unchanged and element_closed do
-      %{state | af: remove_formatting_entry(state.af, tag)}
+  # Remove from AF only if AA didn't handle it AND element was actually closed
+  defp drop_stale_formatting_entry(%{af: af, stack: stack} = state, tag, ref, old_af) do
+    if af == old_af and ref not in stack do
+      %{state | af: remove_formatting_entry(af, tag)}
     else
       state
     end

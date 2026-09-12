@@ -53,42 +53,36 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Start tag: tr - insert row, switch to in_row
   def process({:start_tag, "tr", attrs, _}, state) do
-    state =
-      state
-      |> clear_to_table_body_context()
-      |> push_element("tr", attrs)
-      |> set_mode(:in_row)
-
-    {:ok, state}
+    state
+    |> clear_to_table_body_context()
+    |> push_element("tr", attrs)
+    |> set_mode(:in_row)
+    |> ok()
   end
 
   # Start tag: th, td - parse error, insert implied tr, reprocess
   def process({:start_tag, tag, _, _}, state) when tag in ["th", "td"] do
-    state =
-      state
-      |> parse_error()
-      |> clear_to_table_body_context()
-      |> push_element("tr", [])
-      |> set_mode(:in_row)
-
-    {:reprocess, state}
+    state
+    |> parse_error()
+    |> clear_to_table_body_context()
+    |> push_element("tr", [])
+    |> set_mode(:in_row)
+    |> reprocess()
   end
 
   # Body-closing start tags: close table body, reprocess
   # Per spec: "If not in table scope, parse error; ignore."
   def process({:start_tag, tag, _, _}, state) when tag in @body_closing_start_tags do
-    case close_table_body(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
-
-      :not_found ->
-        state |> parse_error() |> ok()
-    end
+    @table_body_tags
+    |> Enum.find(&in_scope?(state, &1, :table))
+    |> close_table_body_or_error(state)
   end
 
   # Other start tags: process using in_table rules (delegation, not mode switch).
@@ -103,30 +97,29 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # Per spec: "If not in table scope, parse error; ignore."
   def process({:end_tag, tag}, state) when tag in @table_body_tags do
     if in_scope?(state, tag, :table) do
-      case pop_until_tag(state, tag) do
-        {:ok, new_state} -> {:ok, %{new_state | mode: :in_table}}
-        _ -> {:ok, state}
-      end
+      state
+      |> close_table_body(tag)
+      |> ok()
     else
-      state |> parse_error() |> ok()
+      state
+      |> parse_error()
+      |> ok()
     end
   end
 
   # End tag: table - close table body, reprocess
   # Per spec: "If not in table scope, parse error; ignore."
   def process({:end_tag, "table"}, state) do
-    case close_table_body(state) do
-      {:ok, new_state} ->
-        {:reprocess, new_state}
-
-      :not_found ->
-        state |> parse_error() |> ok()
-    end
+    @table_body_tags
+    |> Enum.find(&in_scope?(state, &1, :table))
+    |> close_table_body_or_error(state)
   end
 
   # Ignored end tags: parse error, ignore
   def process({:end_tag, tag}, state) when tag in @ignored_end_tags do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Other end tags: process using in_table rules (delegation)
@@ -136,7 +129,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # EOF: reprocess in in_body
   def process(:eof, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -151,12 +146,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   defp delegate_to_in_table(token, state) do
     case InTable.process(token, %{state | mode: :in_table}) do
       {:ok, %{mode: :in_table} = new_state} ->
-        {:ok, %{new_state | mode: :in_table_body}}
+        new_state
+        |> set_mode(:in_table_body)
+        |> ok()
 
       # InTable switched to in_table_text for character processing.
       # Fix original_mode so in_table_text returns to in_table_body.
       {:reprocess, %{mode: :in_table_text, original_mode: :in_table} = new_state} ->
-        {:reprocess, %{new_state | original_mode: :in_table_body}}
+        reprocess(%{new_state | original_mode: :in_table_body})
 
       other ->
         other
@@ -168,21 +165,24 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
     pop_until_one_of(state, @table_body_context_tags)
   end
 
-  # Close the current table body if in table scope
-  defp close_table_body(state) do
-    @table_body_tags
-    |> Enum.find(&in_scope?(state, &1, :table))
-    |> close_table_body(state)
+  defp close_table_body_or_error(nil, state) do
+    state
+    |> parse_error()
+    |> ok()
   end
 
-  defp close_table_body(nil, _state), do: :not_found
+  defp close_table_body_or_error(tag, state) do
+    state
+    |> close_table_body(tag)
+    |> reprocess()
+  end
 
-  defp close_table_body(tag, state) do
+  # Close the tbody/tfoot/thead. Caller guarantees `tag` is in table scope.
+  defp close_table_body(state, tag) do
     state
     |> pop_until_tag(tag)
     |> after_pop_table_body()
   end
 
-  defp after_pop_table_body({:ok, state}), do: {:ok, %{state | mode: :in_table}}
-  defp after_pop_table_body({:not_found, _}), do: :not_found
+  defp after_pop_table_body({:ok, state}), do: set_mode(state, :in_table)
 end

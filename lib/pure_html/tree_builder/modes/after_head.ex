@@ -34,103 +34,110 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   @impl true
   # Empty string - done
-  def process({:character, ""}, state), do: {:ok, state}
+  def process({:character, ""}, state), do: ok(state)
 
   # Leading HTML5 whitespace - insert and continue with rest
   def process({:character, <<c, rest::binary>>}, state) when c in @html5_whitespace do
-    state = add_text_to_top_of_stack(state, <<c>>)
-    process({:character, rest}, state)
+    process({:character, rest}, add_text_to_top_of_stack(state, <<c>>))
   end
 
   # Non-whitespace at start - insert implied body and reprocess
   def process({:character, text}, state) do
-    state |> insert_implied_body() |> reprocess_with({:character, text})
+    state
+    |> insert_implied_body()
+    |> reprocess_with({:character, text})
   end
 
   def process({:comment, text}, state) do
     # Insert comment as child of current element (html)
     # Use top of stack to handle case where current_parent_ref may be stale
-    {:ok, add_child_to_top_of_stack(state, {:comment, text})}
+    state
+    |> add_child_to_top_of_stack({:comment, text})
+    |> ok()
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules - reprocess in :in_body mode
     # Body will be created by transition_to if needed
-    state |> insert_implied_body() |> reprocess()
+    state
+    |> insert_implied_body()
+    |> reprocess()
   end
 
   def process({:start_tag, "body", attrs, _self_closing}, state) do
     # Insert body element, switch to "in body", set frameset-ok to false
-    state =
-      state
-      |> push_element("body", attrs)
-      |> set_mode(:in_body)
-      |> set_frameset_ok(false)
-
-    {:ok, state}
+    state
+    |> push_element("body", attrs)
+    |> set_mode(:in_body)
+    |> set_frameset_ok(false)
+    |> ok()
   end
 
   def process({:start_tag, "frameset", attrs, _self_closing}, state) do
     # Insert frameset element, switch to "in frameset"
-    state =
-      state
-      |> push_element("frameset", attrs)
-      |> set_mode(:in_frameset)
-
-    {:ok, state}
+    state
+    |> push_element("frameset", attrs)
+    |> set_mode(:in_frameset)
+    |> ok()
   end
 
   def process({:start_tag, tag, _attrs, _self_closing} = token, state)
       when tag in @head_elements do
     # Parse error, but process using "in head" rules
-    state = parse_error(state)
     # Per spec: push head onto stack, process in in_head, then remove head from stack
-    state = push_head_onto_stack(state)
-    {result, state} = InHead.process(token, state)
-    state = remove_head_from_stack(state)
-
-    # If we switched to text mode (style/script), set original_mode to after_head
-    state =
-      if state.mode == :text,
-        do: %{state | original_mode: :after_head},
-        else: state
-
-    {result, state}
+    state
+    |> parse_error()
+    |> push_head_onto_stack()
+    |> process_in_head(token)
   end
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
     # Parse error, ignore
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process({:end_tag, "template"}, state) do
     # Process using "in head" rules
-    state |> set_mode(:in_head) |> reprocess()
+    state
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(body html br) do
     # Act as "anything else" - insert implied body and reprocess
-    state |> insert_implied_body() |> reprocess()
+    state
+    |> insert_implied_body()
+    |> reprocess()
   end
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # EOF: reprocess in in_body (without inserting implied body)
   def process(:eof, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   def process(_token, state) do
     # Anything else: insert implied <body>, switch to "in body", reprocess
-    state |> insert_implied_body() |> reprocess()
+    state
+    |> insert_implied_body()
+    |> reprocess()
   end
 
   # Insert an implied body element and switch to :in_body mode
@@ -142,6 +149,24 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   end
 
   defp insert_implied_body(state), do: set_mode(state, :in_body)
+
+  defp process_in_head(state, token) do
+    {result, new_state} = InHead.process(token, state)
+    {result, finish_in_head(new_state)}
+  end
+
+  defp finish_in_head(state) do
+    state
+    |> remove_head_from_stack()
+    |> return_to_after_head_from_text()
+  end
+
+  # If we switched to text mode (style/script), set original_mode to after_head
+  defp return_to_after_head_from_text(%{mode: :text} = state) do
+    %{state | original_mode: :after_head}
+  end
+
+  defp return_to_after_head_from_text(state), do: state
 
   # Push head element onto stack (for processing head elements in after_head)
   defp push_head_onto_stack(%{head_element: head_ref, stack: stack} = state)

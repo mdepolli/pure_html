@@ -33,38 +33,53 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # Comments: insert
   def process({:comment, text}, state) do
-    {:ok, add_child_to_stack(state, {:comment, text})}
+    state
+    |> add_child_to_stack({:comment, text})
+    |> ok()
   end
 
   # DOCTYPE: parse error, ignore
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # Start tag: html - process using in_body rules (merge attrs)
   def process({:start_tag, "html", _attrs, _}, state) do
-    state |> set_mode(:in_body) |> reprocess()
+    state
+    |> set_mode(:in_body)
+    |> reprocess()
   end
 
   # Start tag: frameset
   def process({:start_tag, "frameset", attrs, _}, state) do
-    state |> push_element("frameset", attrs) |> ok()
+    state
+    |> push_element("frameset", attrs)
+    |> ok()
   end
 
   # Start tag: frame (void element)
   def process({:start_tag, "frame", attrs, _}, state) do
-    {:ok, add_child_to_stack(state, {"frame", attrs, []})}
+    state
+    |> add_child_to_stack({"frame", attrs, []})
+    |> ok()
   end
 
   # Start tag: noframes - process using in_head rules
   # Set original_mode so text mode returns here after noframes closes
   def process({:start_tag, "noframes", _attrs, _}, state) do
-    state |> Map.put(:original_mode, :in_frameset) |> set_mode(:in_head) |> reprocess()
+    state
+    |> Map.put(:original_mode, :in_frameset)
+    |> set_mode(:in_head)
+    |> reprocess()
   end
 
   # Other start tags: parse error, ignore
   def process({:start_tag, _tag, _attrs, _}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   # End tag: frameset
@@ -78,7 +93,9 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   # Other end tags: parse error, ignore
   def process({:end_tag, _tag}, state) do
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process(:eof, state) do
@@ -88,23 +105,39 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   end
 
   defp handle_characters("", text, state) do
-    state |> parse_error(String.length(text)) |> ok()
+    state
+    |> parse_error(String.length(text))
+    |> ok()
   end
 
   defp handle_characters(ws, ws, state) do
-    state |> add_text_to_stack(ws) |> ok()
+    state
+    |> add_text_to_stack(ws)
+    |> ok()
   end
 
   defp handle_characters(whitespace, text, state) do
     n = String.length(text) - String.length(whitespace)
-    state = parse_error(state, n)
-    state |> add_text_to_stack(whitespace) |> ok()
+
+    state
+    |> parse_error(n)
+    |> add_text_to_stack(whitespace)
+    |> ok()
   end
 
-  defp eof("html", state), do: {:ok, state}
-  defp eof(_tag, state), do: state |> parse_error() |> ok()
+  defp eof("html", state), do: ok(state)
 
-  defp end_frameset("html", state), do: state |> parse_error() |> ok()
+  defp eof(_tag, state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
+
+  defp end_frameset("html", state) do
+    state
+    |> parse_error()
+    |> ok()
+  end
 
   defp end_frameset("frameset", state) do
     state
@@ -112,7 +145,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     |> after_pop_frameset()
   end
 
-  defp end_frameset(_tag, state), do: {:ok, state}
+  defp end_frameset(_tag, state), do: ok(state)
 
   defp after_pop_frameset(state) do
     state
@@ -120,6 +153,15 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     |> frameset_mode_after_pop(state)
   end
 
-  defp frameset_mode_after_pop("frameset", state), do: {:ok, %{state | mode: :in_frameset}}
-  defp frameset_mode_after_pop(_tag, state), do: {:ok, %{state | mode: :after_frameset}}
+  defp frameset_mode_after_pop("frameset", state) do
+    state
+    |> set_mode(:in_frameset)
+    |> ok()
+  end
+
+  defp frameset_mode_after_pop(_tag, state) do
+    state
+    |> set_mode(:after_frameset)
+    |> ok()
+  end
 end

@@ -26,7 +26,7 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   @impl true
   # Empty string - all whitespace was consumed
-  def process({:character, ""}, state), do: {:ok, state}
+  def process({:character, ""}, state), do: ok(state)
 
   # Leading HTML5 whitespace - strip and reprocess rest
   def process({:character, <<c, rest::binary>>}, state) when c in @html5_whitespace do
@@ -35,48 +35,68 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
 
   # Non-whitespace at start - insert head and reprocess
   def process({:character, text}, state) do
-    state |> insert_head([]) |> reprocess_with({:character, text})
+    state
+    |> insert_head([])
+    |> reprocess_with({:character, text})
   end
 
   def process({:comment, text}, state) do
     # Insert comment as child of current element
-    {:ok, add_child_to_stack(state, {:comment, text})}
+    state
+    |> add_child_to_stack({:comment, text})
+    |> ok()
   end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process({:start_tag, "html", _attrs, _self_closing}, state) do
     # Process using "in body" rules - insert implied head first, then reprocess
-    state |> insert_head([]) |> reprocess()
+    state
+    |> insert_head([])
+    |> reprocess()
   end
 
   def process({:start_tag, "head", attrs, _self_closing}, state) do
     # Insert head element with the given attrs and switch to "in head"
-    state |> insert_head(attrs) |> ok()
+    state
+    |> insert_head(attrs)
+    |> ok()
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(head body html br) do
     # Act as "anything else" - insert implied head and reprocess
-    state |> insert_head([]) |> reprocess()
+    state
+    |> insert_head([])
+    |> reprocess()
   end
 
   def process({:end_tag, _tag}, state) do
     # Parse error, ignore any other end tag
-    state |> parse_error() |> ok()
+    state
+    |> parse_error()
+    |> ok()
   end
 
   def process(_token, state) do
     # Anything else: insert implied <head>, switch to "in head", reprocess
-    state |> insert_head([]) |> reprocess()
+    state
+    |> insert_head([])
+    |> reprocess()
   end
 
   # Insert head element, set head_element pointer, and switch to in_head mode
   defp insert_head(state, attrs) do
-    state = push_element(state, "head", attrs)
-    # Set head_element pointer to the newly created head ref (top of stack)
-    %{state | head_element: hd(state.stack), mode: :in_head}
+    state
+    |> push_element("head", attrs)
+    |> point_head_element()
+    |> set_mode(:in_head)
   end
+
+  # Set head_element pointer to the newly created head ref (top of stack)
+  defp point_head_element(%{stack: [ref | _]} = state), do: %{state | head_element: ref}
 end
