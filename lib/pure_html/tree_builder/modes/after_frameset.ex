@@ -19,12 +19,18 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
   import PureHTML.TreeBuilder.Helpers,
-    only: [add_child_to_stack: 2, add_text_to_stack: 2, extract_whitespace: 1, parse_error: 1]
+    only: [
+      add_child_to_stack: 2,
+      add_text_to_stack: 2,
+      extract_whitespace: 1,
+      parse_error: 1,
+      parse_error: 2
+    ]
 
   @impl true
   def process({:character, text}, state) do
     case extract_whitespace(text) do
-      "" -> {:ok, parse_error(state)}
+      "" -> {:ok, parse_error(state, String.length(text))}
       ^text -> {:ok, add_text_to_stack(state, text)}
       whitespace -> {:ok, state |> parse_error() |> add_text_to_stack(whitespace)}
     end

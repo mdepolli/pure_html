@@ -664,6 +664,22 @@ defmodule PureHTMLTest do
 
       assert error_count == 2
     end
+
+    test "counts leftover characters after a frameset document as parse errors" do
+      # Arrange
+      html = "<!doctype html><html><frameset></frameset></html>abc"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"frameset", [], []}]}
+             ] = nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do
