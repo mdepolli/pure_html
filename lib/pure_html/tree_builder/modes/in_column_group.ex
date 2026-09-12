@@ -38,29 +38,9 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     ]
 
   @impl true
-  # Whitespace: insert
   def process({:character, text}, state) do
-    case split_whitespace(text) do
-      {"", non_ws} ->
-        if current_tag(state) == "colgroup" do
-          close_colgroup_or_ignore(state)
-        else
-          {:ok, parse_error(state, String.length(non_ws))}
-        end
-
-      {ws, ""} ->
-        # All whitespace: insert
-        {:ok, add_text_to_stack(state, ws)}
-
-      {ws, non_ws} ->
-        state = add_text_to_stack(state, ws)
-
-        if current_tag(state) == "colgroup" do
-          close_colgroup_or_ignore(state)
-        else
-          {:ok, parse_error(state, String.length(non_ws))}
-        end
-    end
+    {ws, rest} = split_whitespace(text)
+    handle_characters(ws, rest, current_tag(state), state)
   end
 
   # Comments: insert
@@ -73,14 +53,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     {:ok, parse_error(state)}
   end
 
-  # Start tag: html - process using in_body rules
-  # In template context (no colgroup on stack), parse error and ignore
   def process({:start_tag, "html", _, _}, state) do
-    if current_tag(state) == "colgroup" do
-      {:reprocess, %{state | mode: :in_body}}
-    else
-      {:ok, parse_error(state)}
-    end
+    html_start(current_tag(state), state)
   end
 
   # Start tag: col - insert void element
@@ -93,19 +67,12 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     {:reprocess, %{state | mode: :in_head}}
   end
 
-  # Other start tags: close colgroup, reprocess
   def process({:start_tag, _, _, _}, state) do
-    close_colgroup_or_ignore(state)
+    close_colgroup_or_ignore(current_tag(state), state)
   end
 
-  # End tag: colgroup - pop and switch to in_table
   def process({:end_tag, "colgroup"}, state) do
-    if current_tag(state) == "colgroup" do
-      {:ok, pop_colgroup(state)}
-    else
-      # Parse error, ignore
-      {:ok, parse_error(state)}
-    end
+    end_colgroup(current_tag(state), state)
   end
 
   # End tag: col - parse error, ignore
@@ -118,9 +85,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     {:reprocess, %{state | mode: :in_head}}
   end
 
-  # Other end tags: close colgroup, reprocess
   def process({:end_tag, _}, state) do
-    close_colgroup_or_ignore(state)
+    close_colgroup_or_ignore(current_tag(state), state)
   end
 
   # EOF: process using "in body" rules
@@ -132,12 +98,50 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp close_colgroup_or_ignore(state) do
-    if current_tag(state) == "colgroup" do
-      {:reprocess, pop_colgroup(state)}
-    else
-      {:ok, parse_error(state)}
-    end
+  defp handle_characters(ws, "", _tag, state) do
+    {:ok, add_text_to_stack(state, ws)}
+  end
+
+  defp handle_characters("", _rest, "colgroup", state) do
+    {:reprocess, pop_colgroup(state)}
+  end
+
+  defp handle_characters(ws, _rest, "colgroup", state) do
+    state = add_text_to_stack(state, ws)
+    {:reprocess, pop_colgroup(state)}
+  end
+
+  defp handle_characters("", rest, _tag, state) do
+    {:ok, parse_error(state, String.length(rest))}
+  end
+
+  defp handle_characters(ws, rest, _tag, state) do
+    state = add_text_to_stack(state, ws)
+    {:ok, parse_error(state, String.length(rest))}
+  end
+
+  defp html_start("colgroup", state) do
+    {:reprocess, %{state | mode: :in_body}}
+  end
+
+  defp html_start(_tag, state) do
+    {:ok, parse_error(state)}
+  end
+
+  defp end_colgroup("colgroup", state) do
+    {:ok, pop_colgroup(state)}
+  end
+
+  defp end_colgroup(_tag, state) do
+    {:ok, parse_error(state)}
+  end
+
+  defp close_colgroup_or_ignore("colgroup", state) do
+    {:reprocess, pop_colgroup(state)}
+  end
+
+  defp close_colgroup_or_ignore(_tag, state) do
+    {:ok, parse_error(state)}
   end
 
   defp pop_colgroup(state) do
