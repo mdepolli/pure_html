@@ -29,6 +29,7 @@ defmodule PureHTML.TreeBuilder do
   alias PureHTML.TreeBuilder.ForeignContent
   alias PureHTML.TreeBuilder.Modes
   alias PureHTML.TreeBuilder.Modes.InBody
+  alias PureHTML.TreeBuilder.SelectedContent
 
   # --------------------------------------------------------------------------
   # Type Definitions
@@ -521,7 +522,7 @@ defmodule PureHTML.TreeBuilder do
     if html_ref do
       elements
       |> build_tree_from_elements(html_ref)
-      |> populate_selectedcontent()
+      |> SelectedContent.populate()
       |> convert_to_tuples()
     else
       # No html element - create minimal structure
@@ -601,113 +602,6 @@ defmodule PureHTML.TreeBuilder do
 
     %{tag: elem.tag, attrs: elem.attrs, children: resolved_children}
   end
-
-  # Populate <selectedcontent> elements with content from the appropriate <option>
-  # This implements the stylable <select> feature where selectedcontent reflects
-  # the selected option's content
-  defp populate_selectedcontent(tree) do
-    transform_tree(tree, &maybe_populate_select/1)
-  end
-
-  defp transform_tree(%{children: children} = node, transform) do
-    transformed_children = Enum.map(children, &transform_tree(&1, transform))
-    transform.(%{node | children: transformed_children})
-  end
-
-  defp transform_tree(other, _transform), do: other
-
-  defp maybe_populate_select(%{tag: "select", children: children} = select) do
-    case find_selectedcontent_and_options(children) do
-      {nil, _} ->
-        select
-
-      {selectedcontent_path, options} ->
-        # Find content to clone: selected option, or first option
-        option_content = get_option_content(options)
-        # Clone content to selectedcontent
-        new_children =
-          set_selectedcontent_children(children, selectedcontent_path, option_content)
-
-        %{select | children: new_children}
-    end
-  end
-
-  defp maybe_populate_select(node), do: node
-
-  # Find selectedcontent element path and collect options
-  defp find_selectedcontent_and_options(children) do
-    find_selectedcontent_and_options(children, [], [])
-  end
-
-  defp find_selectedcontent_and_options([], _path, options) do
-    {nil, Enum.reverse(options)}
-  end
-
-  defp find_selectedcontent_and_options([%{tag: "selectedcontent"} | rest], _path, options) do
-    {[0], Enum.reverse(options) ++ collect_options(rest)}
-  end
-
-  defp find_selectedcontent_and_options([%{tag: "option"} = opt | rest], path, options) do
-    find_selectedcontent_and_options(rest, path, [opt | options])
-  end
-
-  defp find_selectedcontent_and_options(
-         [%{tag: "button", children: button_children} | rest],
-         path,
-         options
-       ) do
-    case find_in_button(button_children, 0) do
-      {:found, idx} ->
-        all_options = Enum.reverse(options) ++ collect_options(rest)
-        {[length(path), idx], all_options}
-
-      :not_found ->
-        find_selectedcontent_and_options(rest, path, options)
-    end
-  end
-
-  defp find_selectedcontent_and_options([_ | rest], path, options) do
-    find_selectedcontent_and_options(rest, path, options)
-  end
-
-  defp find_in_button([], _idx), do: :not_found
-
-  defp find_in_button([%{tag: "selectedcontent"} | _], idx), do: {:found, idx}
-  defp find_in_button([_ | rest], idx), do: find_in_button(rest, idx + 1)
-
-  defp collect_options(children) do
-    Enum.filter(children, &match?(%{tag: "option"}, &1))
-  end
-
-  defp get_option_content([]), do: []
-
-  defp get_option_content(options) do
-    # Find option with selected attribute, or use first option
-    selected =
-      Enum.find(options, fn %{attrs: attrs} -> List.keymember?(attrs, "selected", 0) end)
-
-    option = selected || hd(options)
-    option.children
-  end
-
-  defp set_selectedcontent_children(children, [button_idx, sc_idx], content) do
-    List.update_at(children, button_idx, fn button ->
-      new_button_children =
-        List.update_at(button.children, sc_idx, fn sc ->
-          %{sc | children: content}
-        end)
-
-      %{button | children: new_button_children}
-    end)
-  end
-
-  defp set_selectedcontent_children(children, [sc_idx], content) do
-    List.update_at(children, sc_idx, fn sc ->
-      %{sc | children: content}
-    end)
-  end
-
-  defp set_selectedcontent_children(children, _, _), do: children
 
   defp convert_to_tuples(nil), do: nil
   defp convert_to_tuples({:comment, text}), do: {:comment, text}

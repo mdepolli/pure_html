@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The stack of template insertion modes holds only template insertion modes; the table return-mode push/pop is gone
 - In body no longer creates html, head, or body elements on the fly for other modes, and finalize no longer patches a missing head or body in; the insertion modes' EOF rules produce them
 - In body's start tag entries take the token, and the adoption agency works on element refs with one function per step of the text; elements no longer carry a foster-parent marker
+- The `selectedcontent` mirroring of the customizable select is replayed by `PureHTML.TreeBuilder.SelectedContent` after parsing, documented as the forms chapter's "update a select's selectedcontent" rather than a tree construction step
 - Foreign content has its own module, `PureHTML.TreeBuilder.ForeignContent`, mirroring the text's section: the dispatcher decision, the rules for parsing tokens in foreign content, the tokenizer's CDATA test, element insertion with the SVG tag and foreign attribute adjustments, the integration point tests, and breaking out
 - html5lib-tests submodule pinned at `9329e64` (2026-06-20), the last upstream commit with the tree-construction fixtures before they moved to web-platform-tests; it adds the `void-in-phrasing` fixtures, an adoption case, and corrects `<input><option>` in a select-context fragment
 - html5lib tree-construction tests count `#errors` lines only; `#new-errors` are renamed tokenizer codes, not extra errors
