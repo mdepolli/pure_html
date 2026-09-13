@@ -12,6 +12,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.AdoptionAgency
+  alias PureHTML.TreeBuilder.ForeignContent
   alias PureHTML.TreeBuilder.Modes.InTemplate
 
   # --------------------------------------------------------------------------
@@ -289,13 +290,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   def process({:start_tag, "svg", attrs, self_closing}, state) do
     state
-    |> do_push_foreign_element(:svg, "svg", attrs, self_closing)
+    |> ForeignContent.insert_element(:svg, "svg", attrs, self_closing)
     |> ok()
   end
 
   def process({:start_tag, "math", attrs, self_closing}, state) do
     state
-    |> do_push_foreign_element(:math, "math", attrs, self_closing)
+    |> ForeignContent.insert_element(:math, "math", attrs, self_closing)
     |> ok()
   end
 
@@ -323,7 +324,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # case: a table start tag at an HTML integration point with a table ancestor
   # is foster-parented past the foreign content.
   defp dispatch_start_tag(state, {:start_tag, "table", attrs, _} = token) do
-    if html_integration_point?(state) and has_table_ancestor?(state.stack, state.elements) do
+    if ForeignContent.html_integration_point?(state) and
+         has_table_ancestor?(state.stack, state.elements) do
       handle_table_at_integration_point(state, "table", attrs)
     else
       start_tag(token, state)
@@ -341,7 +343,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp handle_table_at_integration_point(state, tag, attrs) do
     state
-    |> close_foreign_content()
+    |> ForeignContent.close()
     |> foster_insert({:push, tag, attrs})
     |> set_mode(:in_table)
     |> set_frameset_not_ok()
@@ -844,178 +846,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> clear_to_table_context()
     |> push_element(tag, attrs)
   end
-
-  # --------------------------------------------------------------------------
-  # Foreign content
-  # --------------------------------------------------------------------------
-
-  @doc """
-  Inserts a foreign element for a start tag processed by the foreign content
-  rules: the element goes into the adjusted current node's namespace with the
-  SVG tag and foreign attribute adjustments applied.
-  """
-  def insert_foreign_element({:start_tag, tag, attrs, self_closing}, state) do
-    state
-    |> do_push_foreign_element(foreign_namespace(state), tag, attrs, self_closing)
-    |> ok()
-  end
-
-  # Push foreign element with adjustments (local version with self_closing handling)
-  # Self-closing: add as child, don't push to stack
-  defp do_push_foreign_element(state, ns, tag, attrs, true) do
-    add_child_to_stack(
-      state,
-      {{ns, adjust_svg_tag(ns, tag)}, adjust_foreign_attributes(ns, attrs), []}
-    )
-  end
-
-  defp do_push_foreign_element(state, ns, tag, attrs, _self_closing) do
-    push_foreign_element(state, ns, adjust_svg_tag(ns, tag), adjust_foreign_attributes(ns, attrs))
-  end
-
-  @foreign_attr_adjustments %{
-    "xlink:actuate" => {:xlink, "actuate"},
-    "xlink:arcrole" => {:xlink, "arcrole"},
-    "xlink:href" => {:xlink, "href"},
-    "xlink:role" => {:xlink, "role"},
-    "xlink:show" => {:xlink, "show"},
-    "xlink:title" => {:xlink, "title"},
-    "xlink:type" => {:xlink, "type"},
-    "xml:lang" => {:xml, "lang"},
-    "xml:space" => {:xml, "space"},
-    "xmlns" => {:xmlns, ""},
-    "xmlns:xlink" => {:xmlns, "xlink"}
-  }
-
-  @mathml_attr_case_adjustments %{"definitionurl" => "definitionURL"}
-
-  # SVG attributes that need case adjustment (per HTML5 spec)
-  @svg_attr_case_adjustments %{
-    "attributename" => "attributeName",
-    "attributetype" => "attributeType",
-    "basefrequency" => "baseFrequency",
-    "baseprofile" => "baseProfile",
-    "calcmode" => "calcMode",
-    "clippathunits" => "clipPathUnits",
-    "diffuseconstant" => "diffuseConstant",
-    "edgemode" => "edgeMode",
-    "filterunits" => "filterUnits",
-    "glyphref" => "glyphRef",
-    "gradienttransform" => "gradientTransform",
-    "gradientunits" => "gradientUnits",
-    "kernelmatrix" => "kernelMatrix",
-    "kernelunitlength" => "kernelUnitLength",
-    "keypoints" => "keyPoints",
-    "keysplines" => "keySplines",
-    "keytimes" => "keyTimes",
-    "lengthadjust" => "lengthAdjust",
-    "limitingconeangle" => "limitingConeAngle",
-    "markerheight" => "markerHeight",
-    "markerunits" => "markerUnits",
-    "markerwidth" => "markerWidth",
-    "maskcontentunits" => "maskContentUnits",
-    "maskunits" => "maskUnits",
-    "numoctaves" => "numOctaves",
-    "pathlength" => "pathLength",
-    "patterncontentunits" => "patternContentUnits",
-    "patterntransform" => "patternTransform",
-    "patternunits" => "patternUnits",
-    "pointsatx" => "pointsAtX",
-    "pointsaty" => "pointsAtY",
-    "pointsatz" => "pointsAtZ",
-    "preservealpha" => "preserveAlpha",
-    "preserveaspectratio" => "preserveAspectRatio",
-    "primitiveunits" => "primitiveUnits",
-    "refx" => "refX",
-    "refy" => "refY",
-    "repeatcount" => "repeatCount",
-    "repeatdur" => "repeatDur",
-    "requiredextensions" => "requiredExtensions",
-    "requiredfeatures" => "requiredFeatures",
-    "specularconstant" => "specularConstant",
-    "specularexponent" => "specularExponent",
-    "spreadmethod" => "spreadMethod",
-    "startoffset" => "startOffset",
-    "stddeviation" => "stdDeviation",
-    "stitchtiles" => "stitchTiles",
-    "surfacescale" => "surfaceScale",
-    "systemlanguage" => "systemLanguage",
-    "tablevalues" => "tableValues",
-    "targetx" => "targetX",
-    "targety" => "targetY",
-    "textlength" => "textLength",
-    "viewbox" => "viewBox",
-    "viewtarget" => "viewTarget",
-    "xchannelselector" => "xChannelSelector",
-    "ychannelselector" => "yChannelSelector",
-    "zoomandpan" => "zoomAndPan"
-  }
-
-  defp adjust_foreign_attributes(ns, attrs) do
-    Enum.map(attrs, fn {key, value} ->
-      {adjust_attr_key(ns, key), value}
-    end)
-  end
-
-  defp adjust_attr_key(_ns, key) when is_map_key(@foreign_attr_adjustments, key) do
-    @foreign_attr_adjustments[key]
-  end
-
-  defp adjust_attr_key(:math, key) when is_map_key(@mathml_attr_case_adjustments, key) do
-    @mathml_attr_case_adjustments[key]
-  end
-
-  defp adjust_attr_key(:svg, key) when is_map_key(@svg_attr_case_adjustments, key) do
-    @svg_attr_case_adjustments[key]
-  end
-
-  defp adjust_attr_key(_ns, key), do: key
-
-  @svg_tag_adjustments %{
-    "altglyph" => "altGlyph",
-    "altglyphdef" => "altGlyphDef",
-    "altglyphitem" => "altGlyphItem",
-    "animatecolor" => "animateColor",
-    "animatemotion" => "animateMotion",
-    "animatetransform" => "animateTransform",
-    "clippath" => "clipPath",
-    "feblend" => "feBlend",
-    "fecolormatrix" => "feColorMatrix",
-    "fecomponenttransfer" => "feComponentTransfer",
-    "fecomposite" => "feComposite",
-    "feconvolvematrix" => "feConvolveMatrix",
-    "fediffuselighting" => "feDiffuseLighting",
-    "fedisplacementmap" => "feDisplacementMap",
-    "fedistantlight" => "feDistantLight",
-    "fedropshadow" => "feDropShadow",
-    "feflood" => "feFlood",
-    "fefunca" => "feFuncA",
-    "fefuncb" => "feFuncB",
-    "fefuncg" => "feFuncG",
-    "fefuncr" => "feFuncR",
-    "fegaussianblur" => "feGaussianBlur",
-    "feimage" => "feImage",
-    "femerge" => "feMerge",
-    "femergenode" => "feMergeNode",
-    "femorphology" => "feMorphology",
-    "feoffset" => "feOffset",
-    "fepointlight" => "fePointLight",
-    "fespecularlighting" => "feSpecularLighting",
-    "fespotlight" => "feSpotLight",
-    "fetile" => "feTile",
-    "feturbulence" => "feTurbulence",
-    "foreignobject" => "foreignObject",
-    "glyphref" => "glyphRef",
-    "lineargradient" => "linearGradient",
-    "radialgradient" => "radialGradient",
-    "textpath" => "textPath"
-  }
-
-  defp adjust_svg_tag(:svg, tag) when is_map_key(@svg_tag_adjustments, tag) do
-    @svg_tag_adjustments[tag]
-  end
-
-  defp adjust_svg_tag(_ns, tag), do: tag
 
   # --------------------------------------------------------------------------
   # Body element

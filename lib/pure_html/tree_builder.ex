@@ -26,6 +26,7 @@ defmodule PureHTML.TreeBuilder do
   import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.Tokenizer
+  alias PureHTML.TreeBuilder.ForeignContent
   alias PureHTML.TreeBuilder.Modes
   alias PureHTML.TreeBuilder.Modes.InBody
 
@@ -375,41 +376,11 @@ defmodule PureHTML.TreeBuilder do
     {doctype, %{state | error_count: state.error_count + n}, comments}
   end
 
-  defp update_tokenizer_context(
-         tokenizer,
-         {_, %State{stack: stack, elements: elements, context_element: context_element}, _}
-       ) do
+  defp update_tokenizer_context(tokenizer, {_, %State{} = state, _}) do
     # Per spec: the adjusted current node is the context element if the parser
     # was created for fragment parsing and the stack has only one element.
-    in_foreign = adjusted_current_node_is_foreign?(stack, elements, context_element)
-    Tokenizer.set_foreign_content(tokenizer, in_foreign)
+    Tokenizer.set_foreign_content(tokenizer, ForeignContent.adjusted_current_node_foreign?(state))
   end
-
-  # Check if the adjusted current node is in foreign content for tokenizer purposes.
-  # Per spec: in fragment mode with one element on the stack, the adjusted current
-  # node is the context element instead of the stack top.
-  # Returns false for HTML integration points (where content should be parsed as HTML).
-  @svg_html_integration_points ~w(foreignObject desc title)
-  @mathml_html_integration_points ~w(mi mo mn ms mtext)
-
-  defp adjusted_current_node_is_foreign?([_single], _elements, {ns, tag})
-       when ns in [:svg, :math] do
-    tag_is_foreign?({ns, tag})
-  end
-
-  defp adjusted_current_node_is_foreign?([ref | _], elements, _context) do
-    case elements[ref] do
-      %{tag: {ns, tag}} when ns in [:svg, :math] -> tag_is_foreign?({ns, tag})
-      _ -> false
-    end
-  end
-
-  defp adjusted_current_node_is_foreign?([], _, _), do: false
-
-  defp tag_is_foreign?({:svg, tag}) when tag in @svg_html_integration_points, do: false
-  defp tag_is_foreign?({:math, tag}) when tag in @mathml_html_integration_points, do: false
-  defp tag_is_foreign?({ns, _}) when ns in [:svg, :math], do: true
-  defp tag_is_foreign?(_), do: false
 
   defp process_token(
          {:doctype, name, public_id, system_id, force_quirks},
@@ -506,8 +477,8 @@ defmodule PureHTML.TreeBuilder do
   # See: https://html.spec.whatwg.org/multipage/parsing.html#tree-construction-dispatcher
   defp dispatch(token, %State{mode: mode} = state) when is_map_key(@mode_modules, mode) do
     result =
-      if use_foreign_content_rules?(token, state) do
-        process_foreign_content(token, state)
+      if ForeignContent.applies?(token, state) do
+        ForeignContent.process(token, state)
       else
         dispatch_to_insertion_mode(token, mode, state)
       end
@@ -530,179 +501,11 @@ defmodule PureHTML.TreeBuilder do
     Map.fetch!(@mode_modules, mode).process(token, state)
   end
 
-  # Per WHATWG spec, process using the current insertion mode (NOT foreign content)
-  # when any of these conditions is true:
-  # 1. Stack is empty
-  # 2. Adjusted current node is in HTML namespace
-  # 3. Adjusted current node is MathML text integration point AND token is
-  #    a start tag (not mglyph/malignmark)
-  # 4. Adjusted current node is MathML text integration point AND token is character
-  # 5. Adjusted current node is annotation-xml AND token is start tag "svg"
-  # 6. Adjusted current node is HTML integration point AND token is start tag
-  # 7. Adjusted current node is HTML integration point AND token is character
-  # 8. Token is EOF
-  # Otherwise, use foreign content rules.
-  defp use_foreign_content_rules?(_token, %{stack: []}), do: false
-  defp use_foreign_content_rules?(:eof, _state), do: false
-
-  defp use_foreign_content_rules?(token, state) do
-    case adjusted_current_node_tag(state) do
-      {ns, _} = node_tag when ns in [:svg, :math] ->
-        not insertion_mode_exception?(token, node_tag, state)
-
-      _ ->
-        false
-    end
-  end
-
-  defp adjusted_current_node_tag(%{stack: [_single], context_element: {_, _} = ctx}), do: ctx
-
-  defp adjusted_current_node_tag(%{stack: [ref | _], elements: elements}),
-    do: elements[ref].tag
-
-  @mathml_text_integration_points ~w(mi mo mn ms mtext)
-
-  # Condition 3: MathML text integration point + start tag (not mglyph/malignmark)
-  defp insertion_mode_exception?({:start_tag, tag, _, _}, {:math, mtag}, _state)
-       when mtag in @mathml_text_integration_points and tag not in ~w(mglyph malignmark),
-       do: true
-
-  # Condition 4: MathML text integration point + character
-  defp insertion_mode_exception?({:character, _}, {:math, mtag}, _state)
-       when mtag in @mathml_text_integration_points,
-       do: true
-
-  # Condition 5: annotation-xml + start tag "svg"
-  defp insertion_mode_exception?({:start_tag, "svg", _, _}, {:math, "annotation-xml"}, _state),
-    do: true
-
-  # Condition 6: HTML integration point (SVG) + start tag
-  defp insertion_mode_exception?({:start_tag, _, _, _}, {:svg, tag}, _state)
-       when tag in @svg_html_integration_points,
-       do: true
-
-  # Condition 7: HTML integration point (SVG) + character
-  defp insertion_mode_exception?({:character, _}, {:svg, tag}, _state)
-       when tag in @svg_html_integration_points,
-       do: true
-
-  # Condition 6: HTML integration point (MathML annotation-xml with encoding) + start tag
-  defp insertion_mode_exception?({:start_tag, _, _, _}, {:math, "annotation-xml"}, state),
-    do: annotation_xml_is_html_integration_point?(state)
-
-  # Condition 7: HTML integration point (MathML annotation-xml with encoding) + character
-  defp insertion_mode_exception?({:character, _}, {:math, "annotation-xml"}, state),
-    do: annotation_xml_is_html_integration_point?(state)
-
-  defp insertion_mode_exception?(_, _, _), do: false
-
-  defp annotation_xml_is_html_integration_point?(%{stack: [ref | _], elements: elements}) do
-    case get_attr(elements[ref].attrs || [], "encoding") do
-      nil -> false
-      enc -> String.downcase(enc) in ["text/html", "application/xhtml+xml"]
-    end
-  end
-
-  defp annotation_xml_is_html_integration_point?(_), do: false
-
-  # --------------------------------------------------------------------------
-  # Foreign content processing
-  # Per WHATWG spec: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
-  # --------------------------------------------------------------------------
-
-  # Start tags. Per spec, an HTML breakout tag is a parse error; pop until the
-  # current node is an integration point or an HTML element, then reprocess the
-  # token with the rules for the current insertion mode (not the dispatcher).
-  # Other start tags insert a foreign element, which InBody handles.
-  defp process_foreign_content({:start_tag, tag, attrs, _} = token, state) do
-    if html_breakout_tag?(tag, attrs) do
-      state
-      |> parse_error()
-      |> close_foreign_content()
-      |> process_with_current_mode(token)
-    else
-      InBody.insert_foreign_element(token, state)
-    end
-  end
-
-  # End tags: walk the stack per spec. Match foreign elements by tag name,
-  # fall through to insertion mode when reaching an HTML element.
-  # First step: if the current node's tag name does not match, parse error.
-  # Per spec, "An end tag whose tag name is 'br', 'p'": parse error; pop until
-  # an integration point or an HTML element; reprocess the token with the
-  # rules for the current insertion mode.
-  defp process_foreign_content({:end_tag, tag} = token, state) when tag in ~w(br p) do
-    state
-    |> parse_error()
-    |> close_foreign_content()
-    |> process_with_current_mode(token)
-  end
-
-  defp process_foreign_content({:end_tag, tag}, %{stack: stack} = state) do
-    state =
-      if current_node_matches_end_tag?(state, tag) do
-        state
-      else
-        parse_error(state)
-      end
-
-    foreign_content_end_tag(tag, stack, 0, state)
-  end
-
-  # Characters: delegate to InBody (inserts text, sets frameset_not_ok)
-  defp process_foreign_content({:character, _} = token, state) do
-    InBody.process(token, state)
-  end
-
-  # Comments: insert directly
-  defp process_foreign_content({:comment, text}, state) do
-    {:ok, add_child_to_stack(state, {:comment, text})}
-  end
-
-  # DOCTYPE: parse error, ignore
-  defp process_foreign_content({:doctype, _, _, _, _}, state), do: {:ok, parse_error(state)}
-
-  defp process_with_current_mode(state, token) do
-    dispatch_to_insertion_mode(token, state.mode, state)
-  end
-
-  # Foreign content end tag algorithm per WHATWG spec:
-  # Walk down the stack from current node. If a foreign element's tag matches
-  # (case-insensitive), pop until it's popped. If an HTML element is reached,
-  # process using the current insertion mode's rules instead.
-  defp foreign_content_end_tag(_tag, [], _count, state), do: {:ok, state}
-
-  # Per spec: "If node is the topmost element in the stack of open elements,
-  # then return. (fragment case)" — checked before the tag match and before
-  # any hand-off to the current insertion mode.
-  defp foreign_content_end_tag(_tag, [_topmost], _count, state), do: ok(state)
-
-  defp foreign_content_end_tag(tag, [ref | rest], count, %{elements: elements} = state) do
-    case elements[ref].tag do
-      {_ns, etag} ->
-        foreign_content_match_or_continue(tag, etag, rest, count, state)
-
-      _html_tag ->
-        # Reached an HTML element — process using insertion mode rules
-        module = Map.fetch!(@mode_modules, state.mode)
-        module.process({:end_tag, tag}, state)
-    end
-  end
-
-  defp foreign_content_match_or_continue(tag, etag, rest, count, state) do
-    if String.downcase(etag) == tag do
-      {:ok, %{state | stack: Enum.drop(state.stack, count + 1)}}
-    else
-      foreign_content_end_tag(tag, rest, count + 1, state)
-    end
-  end
-
-  defp current_node_matches_end_tag?(state, tag) do
-    case current_tag(state) do
-      {_ns, etag} -> String.downcase(etag) == tag
-      ^tag -> true
-      _ -> false
-    end
+  @doc false
+  # "Process the token using the rules for the current insertion mode", for the
+  # foreign content rules to hand a token back.
+  def process_with_current_mode(token, %State{mode: mode} = state) do
+    dispatch_to_insertion_mode(token, mode, state)
   end
 
   # --------------------------------------------------------------------------
