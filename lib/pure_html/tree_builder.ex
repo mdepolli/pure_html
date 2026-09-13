@@ -718,25 +718,12 @@ defmodule PureHTML.TreeBuilder do
     if html_ref do
       elements
       |> build_tree_from_elements(html_ref)
-      |> ensure_head()
-      |> ensure_body()
       |> populate_selectedcontent()
       |> convert_to_tuples()
     else
       # No html element - create minimal structure
       {"html", [], [{"head", [], []}, {"body", [], []}]}
     end
-  end
-
-  # Finalize fragment: return children as output tuples.
-  # For html context, ensure head and body exist just like normal parsing.
-  defp finalize_fragment(%State{elements: elements, context_element: {_, "html"}}, html_ref) do
-    elements
-    |> build_tree_from_elements(html_ref)
-    |> ensure_head()
-    |> ensure_body()
-    |> Map.get(:children)
-    |> Enum.map(&convert_to_tuples/1)
   end
 
   defp finalize_fragment(%State{elements: elements}, html_ref) do
@@ -811,48 +798,6 @@ defmodule PureHTML.TreeBuilder do
 
     %{tag: elem.tag, attrs: elem.attrs, children: resolved_children}
   end
-
-  defp ensure_head(%{tag: "html", children: children} = html) do
-    has_head? =
-      Enum.any?(children, fn
-        %{tag: "head"} -> true
-        {"head", _, _} -> true
-        _ -> false
-      end)
-
-    if has_head? do
-      html
-    else
-      # Insert head after any leading comments but before other content
-      {leading_comments, rest} =
-        Enum.split_while(children, fn
-          {:comment, _} -> true
-          _ -> false
-        end)
-
-      head = %{tag: "head", attrs: [], children: []}
-      %{html | children: leading_comments ++ [head | rest]}
-    end
-  end
-
-  defp ensure_head(other), do: other
-
-  defp ensure_body(%{tag: "html", children: children} = html) do
-    has_body_or_frameset? =
-      Enum.any?(children, fn
-        %{tag: tag} -> tag in ["body", "frameset"]
-        {tag, _, _} -> tag in ["body", "frameset"]
-        _ -> false
-      end)
-
-    if has_body_or_frameset? do
-      html
-    else
-      %{html | children: children ++ [%{tag: "body", attrs: [], children: []}]}
-    end
-  end
-
-  defp ensure_body(other), do: other
 
   # Populate <selectedcontent> elements with content from the appropriate <option>
   # This implements the stylable <select> feature where selectedcontent reflects
