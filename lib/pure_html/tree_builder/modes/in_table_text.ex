@@ -59,64 +59,25 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
     |> clear_pending_text()
   end
 
-  # html5lib counts one foster-parenting-character parse error per
-  # character token; we coalesce text, so increment per codepoint.
+  # Non-whitespace: "reprocess the character tokens ... using the rules given
+  # in the anything else entry in the in table insertion mode": a parse error
+  # per character token (we coalesce text), then the in body rules with
+  # foster parenting enabled for those tokens.
   defp insert_pending_text(_non_ws, text, state) do
     state
     |> parse_error(String.length(text))
-    |> foster_parent_with_formatting(text)
+    |> foster_parent_characters(text)
     |> clear_pending_text()
   end
 
+  defp foster_parent_characters(state, text) do
+    {:ok, state} =
+      state
+      |> enable_foster_parenting()
+      |> process_in_body({:character, text})
+
+    disable_foster_parenting(state)
+  end
+
   defp clear_pending_text(state), do: %{state | pending_table_text: ""}
-
-  # Foster parent text with active formatting reconstruction
-  # This emulates "in body" processing with foster parenting enabled
-  defp foster_parent_with_formatting(%{af: af, stack: stack} = state, text) do
-    af
-    |> Enum.take_while(&(&1 != :marker))
-    |> Enum.filter(fn {ref, _tag, _attrs} -> ref not in stack end)
-    |> foster_parent_text(text, state)
-  end
-
-  # No formatting to reconstruct - just foster parent the text
-  defp foster_parent_text([], text, state) do
-    {new_state, _ref} = foster_parent(state, {:text, text})
-    new_state
-  end
-
-  # Reconstruct formatting elements (they'll be foster parented)
-  # Then add text to the reconstructed element (not foster parented)
-  defp foster_parent_text(_entries, text, state) do
-    state
-    |> reconstruct_formatting_for_foster()
-    |> add_text_to_stack(text)
-  end
-
-  # Reconstruct active formatting elements for foster parenting
-  # Creates clones of formatting elements and foster-parents them
-  defp reconstruct_formatting_for_foster(%{stack: stack, af: af} = state) do
-    # Get entries to reconstruct (formatting elements not on stack)
-    entries =
-      af
-      |> Enum.take_while(&(&1 != :marker))
-      |> Enum.reverse()
-      |> Enum.filter(fn {ref, _tag, _attrs} ->
-        not Enum.any?(stack, &(&1 == ref))
-      end)
-
-    # Reconstruct each entry with foster parenting
-    reconstruct_entries_foster(entries, state)
-  end
-
-  defp reconstruct_entries_foster([], state), do: state
-
-  defp reconstruct_entries_foster([{old_ref, tag, attrs} | rest], state) do
-    # Foster-push the element (inserts before table)
-    {new_state, new_ref} = foster_parent(state, {:push, tag, attrs})
-
-    # Update AF entry to point to new ref
-    new_af = update_af_entry(new_state.af, old_ref, {new_ref, tag, attrs})
-    reconstruct_entries_foster(rest, %{new_state | af: new_af})
-  end
 end

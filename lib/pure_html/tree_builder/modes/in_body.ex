@@ -20,7 +20,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
-  @table_context ~w(table tbody thead tfoot tr)
   @table_sections ~w(tbody thead tfoot)
   @table_cells ~w(td th)
   @table_row_context ~w(tr tbody thead tfoot)
@@ -65,9 +64,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @impl true
   # Character tokens
   def process({:character, text}, state) do
-    state
-    |> current_tag()
-    |> handle_in_body_characters(text, state)
+    text
+    |> maybe_skip_leading_newline(state)
+    |> insert_body_text(state)
   end
 
   # Comment tokens
@@ -1106,30 +1105,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         _ -> false
       end
     end)
-  end
-
-  defp handle_in_body_characters(tag, text, state) when tag in @table_context do
-    text
-    |> String.trim()
-    |> insert_table_context_text(text, state)
-  end
-
-  defp handle_in_body_characters(_tag, text, state) do
-    text
-    |> maybe_skip_leading_newline(state)
-    |> insert_body_text(state)
-  end
-
-  defp insert_table_context_text("", text, state) do
-    state
-    |> add_text_to_stack(text)
-    |> ok()
-  end
-
-  defp insert_table_context_text(_non_ws, text, state) do
-    state
-    |> foster_insert({:text, text})
-    |> ok()
   end
 
   defp insert_body_text("", state), do: ok(state)

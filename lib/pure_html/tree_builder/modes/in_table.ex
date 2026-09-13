@@ -255,10 +255,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # Per spec: "Parse error." Character tokens not in table context: delegate to in_body
+  # Anything else: parse error (one per character token), enable foster
+  # parenting, process using the in body rules
   defp do_process_character(_, text, state) do
     state
     |> parse_error(String.length(text))
+    |> enable_foster_parenting()
     |> process_in_body({:character, text})
   end
 
