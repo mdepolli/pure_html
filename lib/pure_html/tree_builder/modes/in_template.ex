@@ -142,10 +142,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   end
 
   # End tag: template - process using in_head rules
-  def process({:end_tag, "template"}, state) do
-    state
-    |> set_mode(:in_head)
-    |> reprocess()
+  def process({:end_tag, "template"} = token, state) do
+    InHead.process(token, state)
   end
 
   # Other end tags: parse error, ignore

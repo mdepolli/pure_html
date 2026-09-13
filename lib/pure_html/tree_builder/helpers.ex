@@ -1153,6 +1153,27 @@ defmodule PureHTML.TreeBuilder.Helpers do
     )
   end
 
+  def has_template_on_stack?(state), do: find_ref(state, "template") != nil
+
+  @doc """
+  Pops elements from the stack of open elements until an HTML template
+  element has been popped.
+  """
+  def close_html_template(state) do
+    state
+    |> current_tag()
+    |> pop_through_template(state)
+  end
+
+  defp pop_through_template(nil, state), do: state
+  defp pop_through_template("template", state), do: pop_element(state)
+
+  defp pop_through_template(_tag, state) do
+    state
+    |> pop_element()
+    |> close_html_template()
+  end
+
   def push_template_mode(%{template_mode_stack: modes} = state, mode) do
     %{state | template_mode_stack: [mode | modes]}
   end

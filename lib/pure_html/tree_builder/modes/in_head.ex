@@ -138,12 +138,26 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     |> reprocess()
   end
 
+  # Per spec: with no template on the stack of open elements, parse error and
+  # ignore. Otherwise generate implied end tags thoroughly, parse error unless
+  # the current node is the template, pop through it, clear the active
+  # formatting list to the last marker, pop the template insertion mode, and
+  # reset the insertion mode appropriately.
   def process({:end_tag, "template"}, state) do
-    # Template end tag needs special handling - delegate to main process/2
-    # Set mode to :in_body (not in @mode_modules) so dispatch falls through
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
+    if has_template_on_stack?(state) do
+      state
+      |> generate_implied_end_tags_thoroughly()
+      |> parse_error_unless_current("template")
+      |> close_html_template()
+      |> clear_af_to_marker()
+      |> pop_template_mode()
+      |> reset_insertion_mode()
+      |> ok()
+    else
+      state
+      |> parse_error()
+      |> ok()
+    end
   end
 
   def process({:end_tag, _tag}, state) do
@@ -194,6 +208,15 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
 
   defp pop_if_tag(tag, tag, state), do: pop_element(state)
   defp pop_if_tag(_current, _expected, state), do: state
+
+  defp parse_error_unless_current(state, tag) do
+    state
+    |> current_tag()
+    |> mismatch_if_not(tag, state)
+  end
+
+  defp mismatch_if_not(tag, tag, state), do: state
+  defp mismatch_if_not(_current, _tag, state), do: parse_error(state)
 
   defp switch_to_text_mode(state, tag, attrs, tokenizer_state) do
     state

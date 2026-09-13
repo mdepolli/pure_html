@@ -26,6 +26,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   import PureHTML.TreeBuilder.Helpers
 
+  alias PureHTML.TreeBuilder.Modes.InHead
+
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
   # HTML5 ASCII whitespace characters
   @html5_whitespace ~c[ \t\n\r\f]
@@ -105,11 +107,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     |> ok()
   end
 
-  def process({:end_tag, "template"}, state) do
-    # Process using "in head" rules
-    state
-    |> set_mode(:in_head)
-    |> reprocess()
+  # Process using "in head" rules
+  def process({:end_tag, "template"} = token, state) do
+    InHead.process(token, state)
   end
 
   def process({:end_tag, tag}, state) when tag in ~w(body html br) do

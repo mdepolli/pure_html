@@ -28,6 +28,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
 
   import PureHTML.TreeBuilder.Helpers
 
+  alias PureHTML.TreeBuilder.Modes.InHead
+
   @impl true
   def process({:character, text}, state) do
     {ws, rest} = split_whitespace(text)
@@ -65,10 +67,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   end
 
   # Start tag: template - process using in_head rules
-  def process({:start_tag, "template", _, _}, state) do
-    state
-    |> set_mode(:in_head)
-    |> reprocess()
+  def process({:start_tag, "template", _, _} = token, state) do
+    InHead.process(token, state)
   end
 
   def process({:start_tag, _, _, _}, state) do
@@ -91,10 +91,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   end
 
   # End tag: template - process using in_head rules
-  def process({:end_tag, "template"}, state) do
-    state
-    |> set_mode(:in_head)
-    |> reprocess()
+  def process({:end_tag, "template"} = token, state) do
+    InHead.process(token, state)
   end
 
   def process({:end_tag, _}, state) do

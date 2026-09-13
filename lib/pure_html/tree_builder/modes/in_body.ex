@@ -175,23 +175,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Per spec: "If there is no template element on the stack of open elements,
-  # then this is a parse error; ignore the token."
-  def process({:end_tag, "template"}, state) do
-    if has_template_on_stack?(state) do
-      state
-      |> generate_implied_end_tags_thoroughly()
-      |> parse_error_unless_current("template")
-      |> close_html_template()
-      |> clear_af_to_marker()
-      |> pop_template_mode()
-      |> reset_insertion_mode()
-      |> ok()
-    else
-      state
-      |> parse_error()
-      |> ok()
-    end
+  # Template end tag: process using the "in head" rules
+  def process({:end_tag, "template"} = token, state) do
+    state
+    |> process_in_head(token)
+    |> ok()
   end
 
   # Heading end tags: per spec, check if any h1-h6 is in scope.
@@ -1901,24 +1889,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     apply_pop_result(state, pop_until_tag_ref_block(stack, elements, tag))
   end
 
-  # Close HTML template only (not foreign templates like SVG/MathML)
-  defp close_html_template(%{stack: stack, elements: elements} = state) do
-    apply_pop_result(state, pop_until_html_template(stack, elements))
-  end
-
-  defp pop_until_html_template([], _elements), do: :not_found
-
-  defp pop_until_html_template([ref | rest], elements) when is_map_key(elements, ref) do
-    case elements[ref].tag do
-      "template" -> {:found, rest, elements[ref].parent_ref}
-      _ -> pop_until_html_template(rest, elements)
-    end
-  end
-
-  defp pop_until_html_template([_ref | rest], elements) do
-    pop_until_html_template(rest, elements)
-  end
-
   # Close block-level end tag: per spec check scope, generate implied end tags,
   # check current node, then pop.
   defp close_block_end_tag(state, tag) do
@@ -1982,11 +1952,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp remove_from_stack(%{stack: stack} = state, ref) do
     new_stack = List.delete(stack, ref)
     %{state | stack: new_stack, current_parent_ref: List.first(new_stack)}
-  end
-
-  # Check if there's a template element on the stack of open elements
-  defp has_template_on_stack?(state) do
-    find_ref(state, "template") != nil
   end
 
   # Close any heading element (h1-h6) per HTML5 spec
