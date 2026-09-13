@@ -26,8 +26,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   import PureHTML.TreeBuilder.Helpers
 
-  alias PureHTML.TreeBuilder.Modes.InTable
-
   # Table body elements
   @table_body_tags ~w(tbody tfoot thead)
 
@@ -43,12 +41,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   @impl true
   # Character tokens: process using in_table rules (delegation)
   def process({:character, _} = token, state) do
-    delegate_to_in_table(token, state)
+    process_in_table(state, token, :in_table_body)
   end
 
   # Comments: process using in_table rules (delegation)
   def process({:comment, _} = token, state) do
-    delegate_to_in_table(token, state)
+    process_in_table(state, token, :in_table_body)
   end
 
   # DOCTYPE: parse error, ignore
@@ -90,7 +88,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # delegation for one token. The tree construction dispatcher handles foreign
   # content routing for subsequent tokens.
   def process({:start_tag, _, _, _} = token, state) do
-    delegate_to_in_table(token, state)
+    process_in_table(state, token, :in_table_body)
   end
 
   # End tag: tbody, tfoot, thead - close if in scope
@@ -124,7 +122,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # Other end tags: process using in_table rules (delegation)
   def process({:end_tag, _} = token, state) do
-    delegate_to_in_table(token, state)
+    process_in_table(state, token, :in_table_body)
   end
 
   # EOF: reprocess in in_body
@@ -137,28 +135,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
-
-  # Per WHATWG spec: "Process the token using the rules for the 'in table'
-  # insertion mode" is a delegation — call InTable for one token. Restore mode
-  # to in_table_body only when InTable consumed the token without changing mode.
-  # If InTable changed the mode (e.g., to :in_select_in_table, :in_head), or
-  # said reprocess, respect that decision.
-  defp delegate_to_in_table(token, state) do
-    case InTable.process(token, %{state | mode: :in_table}) do
-      {:ok, %{mode: :in_table} = new_state} ->
-        new_state
-        |> set_mode(:in_table_body)
-        |> ok()
-
-      # InTable switched to in_table_text for character processing.
-      # Fix original_mode so in_table_text returns to in_table_body.
-      {:reprocess, %{mode: :in_table_text, original_mode: :in_table} = new_state} ->
-        reprocess(%{new_state | original_mode: :in_table_body})
-
-      other ->
-        other
-    end
-  end
 
   # Clear stack to table body context (tbody, tfoot, thead, template, html)
   defp clear_to_table_body_context(state) do

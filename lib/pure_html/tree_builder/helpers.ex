@@ -14,6 +14,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
 
   alias PureHTML.TreeBuilder.Modes.InBody
+  alias PureHTML.TreeBuilder.Modes.InTable
 
   # --------------------------------------------------------------------------
   # HTML5 Element Categories
@@ -324,6 +325,33 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def process_in_body(state, token), do: InBody.process(token, state)
 
+  @doc """
+  Processes the token with the "in table" rules on behalf of `mode` (in table
+  body, in row). Per spec this is a delegation for one token: `mode` is
+  restored when "in table" consumed the token without switching modes, and a
+  switch to "in table text" returns to `mode` afterwards.
+  """
+  def process_in_table(state, token, mode) do
+    token
+    |> InTable.process(set_mode(state, :in_table))
+    |> return_from_in_table(mode)
+  end
+
+  defp return_from_in_table({:ok, %{mode: :in_table} = state}, mode) do
+    state
+    |> set_mode(mode)
+    |> ok()
+  end
+
+  defp return_from_in_table(
+         {:reprocess, %{mode: :in_table_text, original_mode: :in_table} = state},
+         mode
+       ) do
+    reprocess(%{state | original_mode: mode})
+  end
+
+  defp return_from_in_table(result, _mode), do: result
+
   # Tags that are implicitly closed (popped) when generating implied end tags
   @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
 
@@ -377,6 +405,14 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def set_frameset_ok(state, value), do: %{state | frameset_ok: value}
 
   @doc """
+  Switches to `new_mode`, remembering the current mode so `pop_mode/1` can
+  return to it.
+  """
+  def push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
+  end
+
+  @doc """
   Pops the insertion mode from the template mode stack.
   Returns to the previous mode, or :in_body if stack is empty.
   """
@@ -404,14 +440,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
       # Fragment case: html root is a scope boundary — stop here
       "html" ->
-  @doc """
-  Switches to `new_mode`, remembering the current mode so `pop_mode/1` can
-  return to it.
-  """
-  def push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
-    %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
-  end
-
         {[ref], elements[ref].ref}
 
       _ ->
