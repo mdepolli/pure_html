@@ -1376,6 +1376,32 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "does not count a dt start tag that closes only the open dd" do
+      # Arrange
+      html = "<dd><dd><dt><dt><dd><li><li>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"dd", [], []},
+                     {"dd", [], []},
+                     {"dt", [], []},
+                     {"dt", [], []},
+                     {"dd", [], [{"li", [], []}, {"li", [], []}]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

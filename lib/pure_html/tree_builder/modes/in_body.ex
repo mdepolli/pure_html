@@ -42,9 +42,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Note: option and optgroup are handled specially in maybe_close_same/2
   # per HTML5 spec (they only close if current node matches, not stack search)
   @implicit_closes %{
-    "li" => [],
-    "dt" => ["dd"],
-    "dd" => ["dt"],
     "button" => [],
     "tr" => [],
     "td" => ["th"],
@@ -773,6 +770,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @closes_p do
     state
     |> in_body()
+    |> close_open_list_item(tag)
     |> maybe_close_p(tag)
     |> maybe_close_same(tag)
     |> maybe_ruby_parse_error(tag)
@@ -1706,7 +1704,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp pop_to_ref([_ | rest], elements, target), do: pop_to_ref(rest, elements, target)
 
   @implicit_close_boundaries ~w(table template body html)
-  @li_scope_boundaries ~w(ol ul table template body html)
   # Ruby elements should stop at ruby boundaries to handle nested ruby elements correctly
   @ruby_close_boundaries ~w(ruby table template body html)
 
@@ -1739,17 +1736,46 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # For button: "If the stack has a button in scope, this is a parse error."
   defp implicit_close_parse_error(state, "button", _closes), do: parse_error(state)
 
-  # Per spec: for li/dd/dt start tags:
-  #   1. Generate implied end tags, except for the target tag
-  #   2. If the current node is not the target tag, parse error
-  #   3. Pop until the target is popped
-  defp implicit_close_parse_error(state, tag, closes) when tag in ~w(li dd dt) do
-    state
-    |> generate_implied_end_tags_except(tag)
-    |> parse_error_unless_current_in(closes)
+  defp implicit_close_parse_error(state, _tag, _closes), do: state
+
+  # li, dd, dt start tags: walk the stack from the current node. An open item
+  # of the same kind (li, or dd/dt) is closed with implied end tags except
+  # itself, a parse error unless it is then the current node, and a pop up to
+  # and including it. A special element other than address, div, or p ends
+  # the walk.
+  defp close_open_list_item(%{stack: stack, elements: elements} = state, tag)
+       when tag in ~w(li dd dt) do
+    stack
+    |> find_open_list_item(elements, list_item_kind(tag))
+    |> close_list_item(state)
   end
 
-  defp implicit_close_parse_error(state, _tag, _closes), do: state
+  defp close_open_list_item(state, _tag), do: state
+
+  defp list_item_kind("li"), do: ["li"]
+  defp list_item_kind(_dd_or_dt), do: ["dd", "dt"]
+
+  defp find_open_list_item([], _elements, _kind), do: nil
+
+  defp find_open_list_item([ref | rest], elements, kind) do
+    tag = elements[ref].tag
+
+    cond do
+      tag in kind -> tag
+      tag in ~w(address div p) -> find_open_list_item(rest, elements, kind)
+      special_element_barrier?(tag) -> nil
+      true -> find_open_list_item(rest, elements, kind)
+    end
+  end
+
+  defp close_list_item(nil, state), do: state
+
+  defp close_list_item(tag, state) do
+    state
+    |> generate_implied_end_tags_except(tag)
+    |> parse_error_unless_current(tag)
+    |> close_tag_ref_forced(tag)
+  end
 
   defp replace_stack(state, stack, parent_ref) do
     %{state | stack: stack, current_parent_ref: parent_ref}
@@ -1774,12 +1800,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp mismatch_if_not(tag, tag, state), do: state
   defp mismatch_if_not(_current, _tag, state), do: parse_error(state)
 
-  defp parse_error_unless_current_in(state, closes) do
-    state
-    |> current_tag()
-    |> mismatch_if_not_in(closes, state)
-  end
-
   defp mismatch_if_not_in(tag, closes, state) do
     if tag in closes, do: state, else: parse_error(state)
   end
@@ -1790,9 +1810,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp pop_implicit_close(stack, elements, closes, boundaries, false = _close_all?),
     do: pop_to_implicit_close_ref(stack, elements, closes, boundaries)
 
-  defp get_implicit_close_config("li"), do: {["li"], @li_scope_boundaries, false}
-
-  for {tag, also_closes} <- @implicit_closes, tag != "li" do
+  for {tag, also_closes} <- @implicit_closes do
     closes = [tag | also_closes]
     close_all? = tag in @ruby_elements
 
