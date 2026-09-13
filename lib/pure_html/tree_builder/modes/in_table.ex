@@ -166,30 +166,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # SVG and math: per spec "Parse error." Foster parent as foreign elements.
-  defp process_in_table({:start_tag, "svg", attrs, self_closing}, state) do
-    state
-    |> parse_error()
-    |> foster_insert({:push_foreign, :svg, "svg", attrs, self_closing})
-    |> ok()
-  end
-
-  defp process_in_table({:start_tag, "math", attrs, self_closing}, state) do
-    state
-    |> parse_error()
-    |> foster_insert({:push_foreign, :math, "math", attrs, self_closing})
-    |> ok()
-  end
-
-  # Select: per spec "Parse error." Foster parent and push in_select_in_table mode.
-  defp process_in_table({:start_tag, "select", attrs, _}, state) do
-    state
-    |> parse_error()
-    |> foster_insert({:push, "select", attrs})
-    |> set_mode(:in_select_in_table)
-    |> ok()
-  end
-
   # Frameset/frame: per spec "Parse error." then in-body rules, which parse
   # error again and ignore the token (nothing is inserted, so no foster parenting).
   defp process_in_table({:start_tag, tag, _, _} = token, state)
@@ -242,14 +218,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     state
     |> parse_error()
     |> foster_insert({:element, {"br", [], []}})
-    |> ok()
-  end
-
-  # </select> special case: close select if in scope, but don't change mode
-  # (InBody's handler calls pop_mode which would incorrectly switch to in_body)
-  defp process_in_table({:end_tag, "select"}, state) do
-    state
-    |> close_select_in_scope()
     |> ok()
   end
 
@@ -442,29 +410,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
       _ ->
         do_close_table(rest, [ref | closed_refs], elements)
-    end
-  end
-
-  # Close select if in select scope (table/template/html are barriers)
-  # Returns state unchanged if select not in scope
-  @select_scope_barriers ~w(table template html)
-
-  defp close_select_in_scope(%{stack: stack, elements: elements} = state) do
-    do_close_select_in_scope(stack, elements, state)
-  end
-
-  defp do_close_select_in_scope([], _elements, state), do: state
-
-  defp do_close_select_in_scope([ref | rest], elements, state) do
-    case elements[ref] do
-      %{tag: "select", parent_ref: parent_ref} ->
-        %{state | stack: rest, current_parent_ref: parent_ref}
-
-      %{tag: tag} when tag in @select_scope_barriers ->
-        state
-
-      _ ->
-        do_close_select_in_scope(rest, elements, state)
     end
   end
 end

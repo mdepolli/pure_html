@@ -268,6 +268,133 @@ defmodule PureHTMLTest do
       assert error_count == 12
     end
 
+    test "processes a select start tag in a row with the in-table rules" do
+      # Arrange
+      html = "<!doctype html><table><tr><select><td>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"select", [], []},
+                     {"table", [], [{"tbody", [], [{"tr", [], [{"td", [], []}]}]}]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "foster-parents a select in a table and parses its option with the in-body rules" do
+      # Arrange
+      html = "<table><select><option>3</select></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"select", [], [{"option", [], ["3"]}]}, {"table", [], []}]}
+                ]}
+             ] = nodes
+
+      # No doctype; select, option, "3", and </select> are each a table parse error.
+      assert error_count == 5
+    end
+
+    test "counts a select end tag whose current node is a button as a parse error" do
+      # Arrange
+      html = "<select><button>button</select>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"select", [], [{"button", [], ["button"]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "parses button and selectedcontent inside select with the in-body rules" do
+      # Arrange
+      html = "<select><button><selectedcontent></button><option>X"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"select", [],
+                      [
+                        {"button", [], [{"selectedcontent", [], ["X"]}]},
+                        {"option", [], ["X"]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      # No doctype; </button> with selectedcontent as the current node; select open at EOF.
+      # html5lib webkit02:44 lists no errors at all, not even the doctype one; the text wins.
+      assert error_count == 3
+    end
+
+    test "ignores a select end tag in a select fragment with no select in scope" do
+      # Arrange
+      html = "</select><option>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "select")
+
+      # Assert
+      assert [{"option", [], []}] = nodes
+      assert error_count == 1
+    end
+
+    test "ignores an input start tag in a select fragment" do
+      # Arrange
+      html = "<input><option>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "select")
+
+      # Assert
+      assert [{"option", [], []}] = nodes
+      assert error_count == 1
+    end
+
+    test "parses a textarea in a select fragment as text" do
+      # Arrange
+      html = "<textarea><option>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "select")
+
+      # Assert
+      assert [{"textarea", [], ["<option>"]}] = nodes
+      assert error_count == 1
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

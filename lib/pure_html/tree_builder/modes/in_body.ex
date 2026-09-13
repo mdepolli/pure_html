@@ -9,7 +9,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
-  import PureHTML.TreeBuilder.Helpers, except: [close_select: 1]
+  import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.AdoptionAgency
 
@@ -37,7 +37,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # These do NOT use the "special element stops traversal" rule
   @block_end_tags ~w(address article aside blockquote button center details dialog dir div
                      dl fieldset figcaption figure footer form header hgroup listing main
-                     menu nav ol pre search section summary ul)
+                     menu nav ol pre search section select summary ul)
 
   # Note: option and optgroup are handled specially in maybe_close_same/2
   # per HTML5 spec (they only close if current node matches, not stack search)
@@ -187,21 +187,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       |> ok()
     else
       # Per spec: "parse error; ignore the token"
-      state
-      |> parse_error()
-      |> ok()
-    end
-  end
-
-  # Per spec: "If the stack of open elements does not have a select element in select scope,
-  # this is a parse error; ignore the token."
-  def process({:end_tag, "select"}, state) do
-    if in_scope?(state, "select", :select) do
-      state
-      |> close_tag_ref_forced("select")
-      |> pop_mode()
-      |> ok()
-    else
       state
       |> parse_error()
       |> ok()
@@ -429,10 +414,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp process_end_tag(state, token), do: do_process_end_tag(token, state)
 
-  defp process_html_start_tag(state, tag, attrs, self_closing) do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
-
   # HTML start tag in foreign content: parse error, then insertion-mode rules.
   # HTML integration points (e.g. svg desc) already use in-body rules.
   defp break_out_of_foreign_content(state) do
@@ -612,7 +593,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Template in body/table/select modes
   defp do_process_html_start_tag("template", attrs, _, %{mode: mode} = state)
-       when mode in [:in_body, :in_table, :in_select, :in_select_in_table] do
+       when mode in [:in_body, :in_table] do
     state
     |> find_ref("body")
     |> insert_template_with_body(attrs, state)
@@ -668,29 +649,32 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> insert_col_in_table(attrs, state)
   end
 
-  # Hr in select
-  defp do_process_html_start_tag("hr", attrs, _, %{mode: mode} = state)
-       when mode in [:in_select, :in_select_in_table] do
-    state
-    |> close_option_optgroup_in_select()
-    |> add_child_to_stack({"hr", attrs, []})
+  # Per spec: in a select fragment, "Parse error. Ignore the token."
+  defp do_process_html_start_tag("input", _attrs, _, %{context_element: {_ns, "select"}} = state) do
+    parse_error(state)
   end
 
-  # Input/keygen/textarea in select
-  defp do_process_html_start_tag(tag, attrs, self_closing, %{mode: mode} = state)
-       when tag in ["input", "keygen", "textarea"] and mode in [:in_select, :in_select_in_table] do
-    state
-    |> close_select()
-    |> process_html_start_tag(tag, attrs, self_closing)
-  end
-
-  # Input element - only non-hidden inputs disable frameset
+  # Per spec: with a select in scope, parse error and pop until a select has been
+  # popped; then reconstruct, insert and pop; non-hidden inputs set frameset-ok to "not ok".
   defp do_process_html_start_tag("input", attrs, _, state) do
     state
     |> in_body()
+    |> close_select_for_input()
     |> reconstruct_active_formatting()
     |> add_child_to_stack({"input", attrs, []})
     |> maybe_set_frameset_not_ok_for_input(attrs)
+  end
+
+  # Per spec: close a p in button scope; with a select in scope, generate implied
+  # end tags and parse-error if an option or optgroup is still in scope; insert
+  # and pop; set frameset-ok to "not ok". (No formatting reconstruction.)
+  defp do_process_html_start_tag("hr", attrs, _, state) do
+    state
+    |> in_body()
+    |> maybe_close_p("hr")
+    |> close_for_hr()
+    |> add_child_to_stack({"hr", attrs, []})
+    |> set_frameset_not_ok()
   end
 
   # Void elements
@@ -806,6 +790,26 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> in_body()
     |> close_p_unless_quirks("table")
+  # Per spec: with a select in scope, generate implied end tags except optgroup and
+  # parse-error if an option is still in scope; otherwise pop a current option.
+  defp do_process_html_start_tag("option", attrs, _, state) do
+    state
+    |> in_body()
+    |> close_for_option()
+    |> reconstruct_active_formatting()
+    |> push_element("option", attrs)
+  end
+
+  # Per spec: with a select in scope, generate implied end tags and parse-error if
+  # an option or optgroup is still in scope; otherwise pop a current option.
+  defp do_process_html_start_tag("optgroup", attrs, _, state) do
+    state
+    |> in_body()
+    |> close_for_optgroup()
+    |> reconstruct_active_formatting()
+    |> push_element("optgroup", attrs)
+  end
+
     |> push_element("table", attrs)
     |> push_mode(:in_table)
     |> set_frameset_not_ok()
@@ -828,14 +832,26 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     do_process_html_start_tag_form(attrs, state)
   end
 
-  # Select - use in_select_in_table if there's a table ancestor
+  # Per spec: in a select fragment, "Parse error. Ignore the token."
+  defp do_process_html_start_tag("select", _attrs, _, %{context_element: {_ns, "select"}} = state) do
+    parse_error(state)
+  end
+
+  # Per spec: with a select in scope, "Parse error. Ignore the token. Pop elements
+  # until a select element has been popped." Otherwise reconstruct, insert, and
+  # set frameset-ok to "not ok".
   defp do_process_html_start_tag("select", attrs, _, state) do
-    state
-    |> in_body()
-    |> reconstruct_active_formatting()
-    |> push_element("select", attrs)
-    |> push_select_mode()
-    |> set_frameset_not_ok()
+    if in_scope?(state, "select", :default) do
+      state
+      |> parse_error()
+      |> close_tag_ref_forced("select")
+    else
+      state
+      |> in_body()
+      |> reconstruct_active_formatting()
+      |> push_element("select", attrs)
+      |> set_frameset_not_ok()
+    end
   end
 
   # applet/marquee/object - push AF marker (scope boundary for formatting elements)
@@ -912,12 +928,51 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp close_p_unless_quirks(%{quirks_mode: true} = state, _tag), do: state
   defp close_p_unless_quirks(state, tag), do: maybe_close_p(state, tag)
 
-  # Use in_select_in_table if there's a table ancestor
-  defp push_select_mode(%{stack: stack, elements: elements} = state) do
-    if has_table_ancestor?(stack, elements) do
-      push_mode(state, :in_select_in_table)
+  defp close_for_option(state) do
+    if in_scope?(state, "select", :default) do
+      state
+      |> generate_implied_end_tags_except("optgroup")
+      |> parse_error_if_in_scope(["option"])
     else
-      push_mode(state, :in_select)
+      pop_if_current_tag(state, "option")
+    end
+  end
+
+  defp close_for_optgroup(state) do
+    if in_scope?(state, "select", :default) do
+      state
+      |> generate_implied_end_tags()
+      |> parse_error_if_in_scope(["option", "optgroup"])
+    else
+      pop_if_current_tag(state, "option")
+    end
+  end
+
+  defp close_for_hr(state) do
+    if in_scope?(state, "select", :default) do
+      state
+      |> generate_implied_end_tags()
+      |> parse_error_if_in_scope(["option", "optgroup"])
+    else
+      state
+    end
+  end
+
+  defp close_select_for_input(state) do
+    if in_scope?(state, "select", :default) do
+      state
+      |> parse_error()
+      |> close_tag_ref_forced("select")
+    else
+      state
+    end
+  end
+
+  defp parse_error_if_in_scope(state, tags) do
+    if in_scope?(state, tags, :default) do
+      parse_error(state)
+    else
+      state
     end
   end
 
@@ -1065,7 +1120,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp insert_as_head_element(tag, attrs, self_closing, %{mode: mode} = state)
-       when mode in [:in_template, :in_body, :in_table, :in_select, :in_select_in_table] do
+       when mode in [:in_template, :in_body, :in_table] do
     state
     |> find_ref("body")
     |> insert_head_element(mode, tag, attrs, self_closing, state)
@@ -1393,8 +1448,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Modes that can delegate to InBody without mode being changed
   @body_modes [
     :in_body,
-    :in_select,
-    :in_select_in_table,
     :in_table,
     :in_template,
     :in_cell,
@@ -1690,26 +1743,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Scope helpers
   # --------------------------------------------------------------------------
 
-  defp close_option_optgroup_in_select(state) do
-    state
-    |> current_tag()
-    |> close_option_optgroup(state)
-  end
-
-  defp close_option_optgroup(tag, state) when tag in ["option", "optgroup"] do
-    state
-    |> pop_element()
-    |> close_option_optgroup_in_select()
-  end
-
-  defp close_option_optgroup(_tag, state), do: state
-
-  defp close_select(state) do
-    state
-    |> close_tag_ref("select")
-    |> pop_mode()
-  end
-
   # --------------------------------------------------------------------------
   # Table context
   # --------------------------------------------------------------------------
@@ -1880,15 +1913,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @li_scope_boundaries ~w(ol ul table template body html)
   # Ruby elements should stop at ruby boundaries to handle nested ruby elements correctly
   @ruby_close_boundaries ~w(ruby table template body html)
-
-  # Per HTML5 spec, option/optgroup only close if current node matches (not stack search)
-  defp maybe_close_same(state, "option"), do: pop_if_current_tag(state, "option")
-
-  defp maybe_close_same(state, "optgroup") do
-    state
-    |> pop_if_current_tag("option")
-    |> pop_if_current_tag("optgroup")
-  end
 
   defp maybe_close_same(state, tag) do
     tag

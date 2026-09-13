@@ -607,14 +607,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Checks if an element with the given tag (or any tag in a list) is in the
   specified scope. Scope types: :default, :table, :select, :button
   """
-  def in_scope?(
-        %{stack: stack, elements: elements, context_element: context_element},
-        tag,
-        :select
-      ) do
-    do_in_select_scope?(stack, tag, elements, context_element)
-  end
-
   def in_scope?(%{stack: stack} = state, tag, scope_type) do
     do_in_scope?(stack, tag, scope_type, state)
   end
@@ -652,28 +644,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
     elem_tag in @scope_boundaries[scope_type] or
       (scope_type in @scopes_with_foreign_boundaries and foreign_scope_boundary?(elem_tag))
   end
-
-  defp do_in_select_scope?([], _tag, _elements, _context), do: false
-
-  defp do_in_select_scope?([ref | rest], tag, elements, context) do
-    elem_tag = select_scope_node_tag(ref, rest, elements, context)
-
-    cond do
-      elem_tag == tag ->
-        true
-
-      elem_tag in @select_scope_passthrough ->
-        do_in_select_scope?(rest, tag, elements, context)
-
-      true ->
-        false
-    end
-  end
-
-  # Fragment parsing: the last stack node is treated as the context element,
-  # matching "reset the insertion mode appropriately".
-  defp select_scope_node_tag(_ref, [], _elements, {_ns, ctx_tag}), do: ctx_tag
-  defp select_scope_node_tag(ref, _rest, elements, _context), do: elements[ref].tag
 
   # Check if a tag is a foreign scope boundary (for default/button scope)
   # SVG: compare case-insensitively (stored with camelCase like foreignObject)
@@ -1042,8 +1012,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
     "body" => :in_body,
     "frameset" => :in_frameset,
     "head" => :in_head,
-    "html" => :before_head,
-    "select" => :in_select
+    "html" => :before_head
   }
 
   @doc """
@@ -1072,14 +1041,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
     case determine_mode_for_tag(tag, scripting) do
       nil ->
         determine_mode_from_stack(rest, elements, context_element, scripting)
-
-      # Per HTML5 spec: if select and table ancestor exists, use in_select_in_table
-      :in_select ->
-        if has_table_ancestor?(rest, elements) do
-          :in_select_in_table
-        else
-          :in_select
-        end
 
       mode ->
         mode
