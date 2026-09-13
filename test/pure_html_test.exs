@@ -1228,6 +1228,20 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "does not count a doctype closed before any name as a missing whitespace" do
+      # Arrange
+      html = "<!DOCTYPE>Hello"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, _, _, _}, {"html", [], [{"head", [], []}, {"body", [], ["Hello"]}]}] =
+               nodes
+
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

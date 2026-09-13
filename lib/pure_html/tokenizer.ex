@@ -1536,10 +1536,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(%{state: :doctype, input: <<?>, _::binary>>} = state) do
-    # missing-whitespace-before-doctype-name parse error
-    state
-    |> parse_error()
-    |> continue(state: :before_doctype_name)
+    continue(state, state: :before_doctype_name)
   end
 
   defp step(%{state: :doctype, input: ""} = state) do
