@@ -1510,6 +1510,28 @@ defmodule PureHTMLTest do
 
       assert error_count == 0
     end
+
+    test "reconstructs the active formatting elements before inserting an svg element" do
+      # Arrange
+      html = "<p><b><p><svg></svg>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [{"p", [], [{"b", [], []}]}, {"p", [], [{"b", [], [{{:svg, "svg"}, [], []}]}]}]}
+                ]}
+             ] = nodes
+
+      # no doctype, the b still open when the second p closes the first, the
+      # reconstructed b open at EOF
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do

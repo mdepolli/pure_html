@@ -288,14 +288,18 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
+  # Per spec: reconstruct the active formatting elements, then insert a
+  # foreign element with the SVG (or MathML) and foreign attribute adjustments
   def process({:start_tag, "svg", attrs, self_closing}, state) do
     state
+    |> reconstruct_active_formatting()
     |> ForeignContent.insert_element(:svg, "svg", attrs, self_closing)
     |> ok()
   end
 
   def process({:start_tag, "math", attrs, self_closing}, state) do
     state
+    |> reconstruct_active_formatting()
     |> ForeignContent.insert_element(:math, "math", attrs, self_closing)
     |> ok()
   end
