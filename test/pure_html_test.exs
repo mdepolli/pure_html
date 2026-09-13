@@ -1455,6 +1455,26 @@ defmodule PureHTMLTest do
 
       assert error_count == 3
     end
+
+    test "does not count closing a p whose implied end tags reach the p" do
+      # Arrange
+      html = "<p><option>x<div>y"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"p", [], [{"option", [], ["x"]}]}, {"div", [], ["y"]}]}
+                ]}
+             ] = nodes
+
+      # no doctype, and the div still open at EOF
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

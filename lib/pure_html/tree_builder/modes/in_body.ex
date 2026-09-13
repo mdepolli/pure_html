@@ -56,12 +56,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
   @newline_skipping_elements ~w(pre listing)
 
-  # Scope boundary guards
-  @scope_boundaries ~w(applet caption html table td th marquee object template)
-  @button_scope_extras ~w(button)
-  defguardp is_button_scope_boundary(tag)
-            when tag in @scope_boundaries or tag in @button_scope_extras
-
   # --------------------------------------------------------------------------
   # Token processing
   # --------------------------------------------------------------------------
@@ -422,14 +416,20 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
-  # Helper for end tags that break out of foreign content
-  # Per spec: "If the stack of open elements does not have a p element in button scope,
-  # then this is a parse error; insert an HTML element for a 'p' start tag token with no attributes."
-  # Also: "Close a p element" — "If the current node is not a p element, then this is a parse error."
+  # Per spec: with no p element in button scope, parse error and insert a p
+  # element for a start tag with no attributes; then close a p element.
   defp do_process_end_tag({:end_tag, "p"}, state) do
-    state
-    |> find_p_in_scope_ref()
-    |> close_p_for_end_tag(state)
+    if in_scope?(state, "p", :button) do
+      state
+      |> close_p()
+      |> ok()
+    else
+      state
+      |> parse_error()
+      |> push_element("p", [])
+      |> close_p()
+      |> ok()
+    end
   end
 
   # Per spec: "</br> — Parse error. Drop the attributes from the token,
@@ -440,21 +440,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> in_body()
     |> reconstruct_active_formatting()
     |> add_child_to_stack({"br", [], []})
-    |> ok()
-  end
-
-  # Parse error: p not in button scope
-  defp close_p_for_end_tag(nil, state) do
-    state
-    |> parse_error()
-    |> add_child_to_stack({"p", [], []})
-    |> ok()
-  end
-
-  defp close_p_for_end_tag({p_ref, _refs_above}, state) do
-    state
-    |> parse_error_unless_current("p")
-    |> pop_to_element_ref(p_ref)
     |> ok()
   end
 
@@ -1656,59 +1641,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Implicit closing
   # --------------------------------------------------------------------------
 
+  # "If the stack of open elements has a p element in button scope, then close
+  # a p element."
   defp maybe_close_p(state, tag) when tag in @closes_p do
-    state
-    |> find_p_in_scope_ref()
-    |> close_p_ref(state)
+    if in_scope?(state, "p", :button), do: close_p(state), else: state
   end
 
   defp maybe_close_p(state, _tag), do: state
 
-  defp close_p_ref(nil, state), do: state
-
-  # Per spec "close a p element": "If the current node is not a p element,
-  # then this is a parse error."
-  defp close_p_ref({p_ref, _refs_above}, state) do
+  # Close a p element: generate implied end tags except p, parse error unless
+  # the current node is then a p, pop through the p.
+  defp close_p(state) do
     state
+    |> generate_implied_end_tags_except("p")
     |> parse_error_unless_current("p")
-    |> pop_to_element_ref(p_ref)
+    |> close_tag_ref_forced("p")
   end
-
-  # Pop to the element (children already in elements map)
-  defp pop_to_element_ref(%{stack: stack, elements: elements} = state, ref) do
-    {new_stack, _parent_ref} = pop_to_ref(stack, elements, ref)
-    %{state | stack: new_stack}
-  end
-
-  defp find_p_in_scope_ref(%{stack: stack, elements: elements}) do
-    do_find_p_in_scope_ref(stack, elements, [])
-  end
-
-  defp do_find_p_in_scope_ref([], _elements, _above), do: nil
-
-  defp do_find_p_in_scope_ref([ref | rest], elements, above) when is_map_key(elements, ref) do
-    case elements[ref].tag do
-      "p" ->
-        {ref, Enum.reverse(above)}
-
-      tag when is_button_scope_boundary(tag) ->
-        nil
-
-      {ns, _} when ns in [:svg, :math] ->
-        nil
-
-      _ ->
-        do_find_p_in_scope_ref(rest, elements, [ref | above])
-    end
-  end
-
-  defp do_find_p_in_scope_ref([_ref | rest], elements, above) do
-    do_find_p_in_scope_ref(rest, elements, above)
-  end
-
-  defp pop_to_ref([], _elements, _target), do: {[], nil}
-  defp pop_to_ref([ref | rest], elements, ref), do: {rest, elements[ref].parent_ref}
-  defp pop_to_ref([_ | rest], elements, target), do: pop_to_ref(rest, elements, target)
 
   @implicit_close_boundaries ~w(table template body html)
 
