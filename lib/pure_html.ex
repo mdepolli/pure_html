@@ -112,7 +112,6 @@ defmodule PureHTML do
   - `:quote_char` - Force `"'"` or `"\""` for attribute quotes (default: smart quoting)
   - `:minimize_boolean_attributes` - Output `disabled` vs `disabled=disabled` (default: true)
   - `:use_trailing_solidus` - Output `<br />` vs `<br>` (default: false)
-  - `:escape_lt_in_attrs` - Escape `<` in attribute values (default: false)
   - `:escape_rcdata` - Escape content in script/style (default: false)
   - `:strip_whitespace` - Collapse whitespace in text nodes (default: false)
 

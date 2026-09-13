@@ -84,6 +84,15 @@ defmodule PureHTML.SerializerTest do
                "<span title=\"a &amp; b\"></span>"
     end
 
+    test "escapes angle brackets in attribute values" do
+      # Per spec, escaping a string replaces < and > in attribute mode too
+      assert Serializer.serialize([{"span", [{"title", "foo<bar"}], []}]) ==
+               "<span title=foo&lt;bar></span>"
+
+      assert Serializer.serialize([{"span", [{"title", "foo>bar"}], []}]) ==
+               "<span title=\"foo&gt;bar\"></span>"
+    end
+
     test "empty attribute value renders as bare name" do
       assert Serializer.serialize([{"button", [{"disabled", ""}], []}]) ==
                "<button disabled></button>"
@@ -94,9 +103,9 @@ defmodule PureHTML.SerializerTest do
                "<span title=\"a=b\"></span>"
     end
 
-    test "double quoted with greater than" do
+    test "double quoted with greater than, escaped" do
       assert Serializer.serialize([{"span", [{"title", "a>b"}], []}]) ==
-               "<span title=\"a>b\"></span>"
+               "<span title=\"a&gt;b\"></span>"
     end
 
     test "multiple attributes" do

@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Closing a nested table now returns to the insertion mode it was opened from (off-by-one in the saved mode)
 - `<frameset>` in caption, cell, and table contexts is a parse error and is ignored; it is no longer silently accepted, nor inserted in fragments with no body
 - Query: redundant clauses for namespaced elements removed
+- Serializer: `<` and `>` are escaped in attribute values, per the spec's "escaping a string" algorithm; the `:escape_lt_in_attrs` option is removed since the escaping is no longer optional
 
 ### Changed
 

@@ -10,7 +10,6 @@ defmodule PureHTML.Serializer do
   - `:quote_char` - Force `"'"` or `"\""` for attribute quotes (default: smart quoting)
   - `:minimize_boolean_attributes` - Output `disabled` vs `disabled=disabled` (default: true)
   - `:use_trailing_solidus` - Output `<br />` vs `<br>` (default: false)
-  - `:escape_lt_in_attrs` - Escape `<` in attribute values (default: false)
   - `:escape_rcdata` - Escape content in script/style (default: false)
   - `:strip_whitespace` - Collapse whitespace in text nodes (default: false)
   """
@@ -136,14 +135,13 @@ defmodule PureHTML.Serializer do
   defp serialize_attr(name, value, opts) do
     quote_char = Keyword.get(opts, :quote_char)
     minimize = Keyword.get(opts, :minimize_boolean_attributes, true)
-    escape_lt = Keyword.get(opts, :escape_lt_in_attrs, false)
 
     case determine_quote_style(name, value, quote_char, minimize) do
       :empty_quoted -> [name, "=\"\""]
       :minimized -> name
-      :single -> [name, "='", escape_attr_single(value, escape_lt), "'"]
-      :double -> [name, "=\"", escape_attr_double(value, escape_lt), "\""]
-      :unquoted -> [name, "=", value]
+      :single -> [name, "='", escape_attr_single(value), "'"]
+      :double -> [name, "=\"", escape_attr_double(value), "\""]
+      :unquoted -> [name, "=", escape_angle_brackets(value)]
     end
   end
 
@@ -166,22 +164,26 @@ defmodule PureHTML.Serializer do
     end
   end
 
-  defp escape_attr_single(value, escape_lt) do
+  defp escape_attr_single(value) do
     value
     |> String.replace("&", "&amp;")
     |> String.replace("'", "&#39;")
-    |> maybe_escape_lt(escape_lt)
+    |> escape_angle_brackets()
   end
 
-  defp escape_attr_double(value, escape_lt) do
+  defp escape_attr_double(value) do
     value
     |> String.replace("&", "&amp;")
     |> String.replace("\"", "&quot;")
-    |> maybe_escape_lt(escape_lt)
+    |> escape_angle_brackets()
   end
 
-  defp maybe_escape_lt(value, true), do: String.replace(value, "<", "&lt;")
-  defp maybe_escape_lt(value, false), do: value
+  # Per spec, escaping a string replaces < and > in attribute mode as well
+  defp escape_angle_brackets(value) do
+    value
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+  end
 
   defp escape_text(text) do
     text
