@@ -143,9 +143,15 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # Close the td or th cell. Caller guarantees `tag` is in table scope.
   defp close_cell(state, tag) do
     state
+    |> generate_implied_end_tags()
+    |> parse_error_unless_current(tag)
+    |> pop_cell(tag)
+  end
+
+  defp parse_error_unless_current(state, tag) do
+    state
     |> current_tag()
     |> mismatch_if_not(tag, state)
-    |> pop_cell(tag)
   end
 
   defp mismatch_if_not(tag, tag, state), do: state

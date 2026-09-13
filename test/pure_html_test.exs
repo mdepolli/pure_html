@@ -1295,6 +1295,44 @@ defmodule PureHTMLTest do
 
       assert error_count == 0
     end
+
+    test "does not count a cell end tag that closes an open paragraph by implied end tags" do
+      # Arrange
+      html =
+        "<!DOCTYPE html><body><table><tbody><tr><td><svg><g>foo</g><g>bar</g></svg><p>baz</td></tr></tbody></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", _, _},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"tbody", [],
+                         [
+                           {"tr", [],
+                            [
+                              {"td", [],
+                               [
+                                 {{:svg, "svg"}, [],
+                                  [{{:svg, "g"}, [], ["foo"]}, {{:svg, "g"}, [], ["bar"]}]},
+                                 {"p", [], ["baz"]}
+                               ]}
+                            ]}
+                         ]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 0
+    end
   end
 
   describe "query/2" do
