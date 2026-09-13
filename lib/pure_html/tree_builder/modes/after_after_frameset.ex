@@ -40,12 +40,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
     |> handle_characters(text, state)
   end
 
-  def process({:start_tag, "html", _attrs, _self_closing}, state) do
-    # Process using "in body" rules
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
-  end
+  # Process using "in body" rules
+  def process({:start_tag, "html", _, _} = token, state), do: process_in_body(state, token)
 
   # Process using "in head" rules
   def process({:start_tag, "noframes", _, _} = token, state) do

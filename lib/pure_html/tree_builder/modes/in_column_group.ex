@@ -53,11 +53,8 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     |> ok()
   end
 
-  def process({:start_tag, "html", _, _}, state) do
-    state
-    |> current_tag()
-    |> html_start(state)
-  end
+  # Start tag: html - process using in_body rules
+  def process({:start_tag, "html", _, _} = token, state), do: process_in_body(state, token)
 
   # Start tag: col - insert void element
   def process({:start_tag, "col", attrs, _}, state) do
@@ -137,18 +134,6 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     state
     |> add_text_to_stack(ws)
     |> parse_error(String.length(rest))
-    |> ok()
-  end
-
-  defp html_start("colgroup", state) do
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
-  end
-
-  defp html_start(_tag, state) do
-    state
-    |> parse_error()
     |> ok()
   end
 
