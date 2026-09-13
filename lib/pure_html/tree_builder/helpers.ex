@@ -787,8 +787,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   defp find_last_table(stack, elements) do
     Enum.find(stack, fn ref ->
-      elem = elements[ref]
-      elem.tag == "table" and elem[:foster_parent_ref] == nil
+      elements[ref].tag == "table"
     end)
   end
 
@@ -930,10 +929,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
     actual_parent_ref =
       if foster_parent_ref == :document, do: nil, else: foster_parent_ref
 
-    elem =
-      elem
-      |> Map.put(:parent_ref, actual_parent_ref)
-      |> Map.put(:foster_parent_ref, actual_parent_ref)
+    elem = Map.put(elem, :parent_ref, actual_parent_ref)
 
     new_elements = Map.put(elements, elem.ref, elem)
 
