@@ -364,7 +364,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   def process({:start_tag, "body", attrs, _}, state) do
     state
-    |> break_out_of_foreign_content()
     |> process_html_body_start_tag(attrs)
     |> ok()
   end
@@ -414,18 +413,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp process_end_tag(state, token), do: do_process_end_tag(token, state)
 
-  # HTML start tag in foreign content: parse error, then insertion-mode rules.
-  # HTML integration points (e.g. svg desc) already use in-body rules.
-  defp break_out_of_foreign_content(state) do
-    if foreign_namespace(state) && not html_integration_point?(state) do
-      state
-      |> parse_error()
-      |> close_foreign_content()
-    else
-      state
-    end
-  end
-
   # Per spec: "Parse error." then "If there is a template element on the stack, ignore"
   defp process_html_body_start_tag(%{template_mode_stack: [_ | _]} = state, _attrs) do
     parse_error(state)
@@ -460,59 +447,19 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
-  # Dispatch start tag to the appropriate handler based on namespace and context.
-  # mglyph/malignmark stay in MathML namespace even at text integration points.
-  defp dispatch_start_tag(state, tag, attrs, self_closing) when tag in ~w(mglyph malignmark) do
-    if mathml_text_integration_point?(state) do
-      do_push_foreign_element(state, :math, tag, attrs, self_closing)
+  # Dispatch an HTML start tag with the in-body rules. The one namespace-aware
+  # case: a table start tag at an HTML integration point with a table ancestor
+  # is foster-parented past the foreign content.
+  defp dispatch_start_tag(state, "table", attrs, self_closing) do
+    if html_integration_point?(state) and has_table_ancestor?(state.stack, state.elements) do
+      handle_table_at_integration_point(state, "table", attrs)
     else
-      state
-      |> foreign_namespace()
-      |> dispatch_start_tag_default(tag, attrs, self_closing, state)
+      do_process_html_start_tag("table", attrs, self_closing, state)
     end
   end
 
   defp dispatch_start_tag(state, tag, attrs, self_closing) do
-    state
-    |> foreign_namespace()
-    |> dispatch_start_tag_in_namespace(tag, attrs, self_closing, state)
-  end
-
-  defp dispatch_start_tag_in_namespace(nil, tag, attrs, self_closing, state) do
     do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
-
-  defp dispatch_start_tag_in_namespace(ns, tag, attrs, self_closing, state) do
-    cond do
-      html_integration_point?(state) ->
-        dispatch_at_integration_point(state, ns, tag, attrs, self_closing)
-
-      html_breakout_tag?(tag) or (tag == "font" and font_breakout_tag?(attrs)) ->
-        handle_html_breakout_tag(state, tag, attrs, self_closing)
-
-      true ->
-        do_push_foreign_element(state, ns, tag, attrs, self_closing)
-    end
-  end
-
-  defp dispatch_at_integration_point(state, _ns, "table", attrs, _self_closing) do
-    if has_table_ancestor?(state.stack, state.elements) do
-      handle_table_at_integration_point(state, "table", attrs)
-    else
-      do_process_html_start_tag("table", attrs, false, state)
-    end
-  end
-
-  defp dispatch_at_integration_point(state, _ns, tag, attrs, self_closing) do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
-
-  defp dispatch_start_tag_default(nil, tag, attrs, self_closing, state) do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
-  end
-
-  defp dispatch_start_tag_default(ns, tag, attrs, self_closing, state) do
-    do_push_foreign_element(state, ns, tag, attrs, self_closing)
   end
 
   defp handle_table_at_integration_point(state, tag, attrs) do
@@ -521,25 +468,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> foster_insert({:push, tag, attrs})
     |> push_mode(:in_table)
     |> set_frameset_not_ok()
-  end
-
-  # Per spec: HTML start tag in foreign content is a parse error, then pop
-  # until an HTML/integration-point element and reprocess.
-  defp handle_html_breakout_tag(state, tag, attrs, self_closing) do
-    state
-    |> parse_error()
-    |> close_foreign_content()
-    |> insert_breakout_element(tag, attrs, self_closing)
-  end
-
-  defp insert_breakout_element(state, tag, attrs, self_closing) do
-    if needs_foster_parenting?(state) do
-      state
-      |> parse_error()
-      |> foster_insert({:push, tag, attrs})
-    else
-      do_process_html_start_tag(tag, attrs, self_closing, state)
-    end
   end
 
   # Helper for end tags that break out of foreign content
@@ -1149,6 +1077,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Foreign content
   # --------------------------------------------------------------------------
 
+  @doc """
+  Inserts a foreign element for a start tag processed by the foreign content
+  rules: the element goes into the adjusted current node's namespace with the
+  SVG tag and foreign attribute adjustments applied.
+  """
+  def insert_foreign_element({:start_tag, tag, attrs, self_closing}, state) do
+    state
+    |> do_push_foreign_element(foreign_namespace(state), tag, attrs, self_closing)
+    |> ok()
+  end
+
   # Push foreign element with adjustments (local version with self_closing handling)
   # Self-closing: add as child, don't push to stack
   defp do_push_foreign_element(state, ns, tag, attrs, true) do
@@ -1305,73 +1244,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp adjust_svg_tag(_ns, tag), do: tag
-
-  # Adjusted current node: in fragment mode with 1 element on stack,
-  # check the context element instead.
-  defp mathml_text_integration_point?(%{stack: [_single], context_element: {:math, tag}})
-       when tag in ~w(mi mo mn ms mtext),
-       do: true
-
-  defp mathml_text_integration_point?(%{stack: [ref | _], elements: elements}) do
-    case elements[ref].tag do
-      {:math, tag} when tag in ~w(mi mo mn ms mtext) -> true
-      _ -> false
-    end
-  end
-
-  defp mathml_text_integration_point?(_), do: false
-
-  @html_breakout_tags ~w(b big blockquote body br center code dd div dl dt em embed
-                         h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol
-                         p pre ruby s small span strong strike sub sup table tt u ul var)
-
-  defp html_breakout_tag?(tag), do: tag in @html_breakout_tags
-
-  # Per WHATWG spec: <font> is a breakout tag only when it has color, face, or size attributes
-  defp font_breakout_tag?(attrs) do
-    Enum.any?(attrs, fn {name, _} -> name in ~w(color face size) end)
-  end
-
-  defp close_foreign_content(%{stack: stack, elements: elements} = state) do
-    # Pop all foreign elements from the stack
-    # With ref-only architecture, children are already in elements map
-    {new_stack, parent_ref} = pop_foreign_elements(stack, elements)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
-  end
-
-  defp pop_foreign_elements([], _elements), do: {[], nil}
-
-  defp pop_foreign_elements([ref | rest] = stack, elements) do
-    elem = elements[ref]
-
-    case elem.tag do
-      # HTML element - stop here
-      tag when is_binary(tag) ->
-        {stack, ref}
-
-      # SVG HTML integration points - stop here
-      {:svg, svg_tag} when svg_tag in ~w(foreignObject desc title) ->
-        {stack, ref}
-
-      # MathML HTML integration point (with proper encoding)
-      {:math, "annotation-xml"} ->
-        if html_integration_encoding?(get_attr(elem.attrs, "encoding")) do
-          {stack, ref}
-        else
-          pop_foreign_elements(rest, elements)
-        end
-
-      # Other foreign elements - pop and continue
-      _ ->
-        pop_foreign_elements(rest, elements)
-    end
-  end
-
-  defp html_integration_encoding?(nil), do: false
-
-  defp html_integration_encoding?(encoding) do
-    String.downcase(encoding) in ~w(text/html application/xhtml+xml)
-  end
 
   # --------------------------------------------------------------------------
   # Document structure

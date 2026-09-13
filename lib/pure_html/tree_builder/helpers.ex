@@ -331,6 +331,68 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def disable_foster_parenting(state), do: %{state | foster_parenting: false}
 
+  @html_breakout_tags ~w(b big blockquote body br center code dd div dl dt em embed
+                         h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol
+                         p pre ruby s small span strong strike sub sup table tt u ul var)
+
+  @doc """
+  Whether an HTML start tag in foreign content breaks out of it, per the
+  foreign content rules (a font start tag only with color, face, or size).
+  """
+  def html_breakout_tag?(tag, attrs) do
+    tag in @html_breakout_tags or (tag == "font" and font_breakout_tag?(attrs))
+  end
+
+  # Per WHATWG spec: <font> is a breakout tag only when it has color, face, or size attributes
+  defp font_breakout_tag?(attrs) do
+    Enum.any?(attrs, fn {name, _} -> name in ~w(color face size) end)
+  end
+
+  @doc """
+  Pops elements while the current node is not a MathML text integration point,
+  an HTML integration point, or an element in the HTML namespace.
+  """
+  def close_foreign_content(%{stack: stack, elements: elements} = state) do
+    # Pop all foreign elements from the stack
+    # With ref-only architecture, children are already in elements map
+    {new_stack, parent_ref} = pop_foreign_elements(stack, elements)
+    %{state | stack: new_stack, current_parent_ref: parent_ref}
+  end
+
+  defp pop_foreign_elements([], _elements), do: {[], nil}
+
+  defp pop_foreign_elements([ref | rest] = stack, elements) do
+    elem = elements[ref]
+
+    case elem.tag do
+      # HTML element - stop here
+      tag when is_binary(tag) ->
+        {stack, ref}
+
+      # SVG HTML integration points - stop here
+      {:svg, svg_tag} when svg_tag in ~w(foreignObject desc title) ->
+        {stack, ref}
+
+      # MathML HTML integration point (with proper encoding)
+      {:math, "annotation-xml"} ->
+        if html_integration_encoding?(get_attr(elem.attrs, "encoding")) do
+          {stack, ref}
+        else
+          pop_foreign_elements(rest, elements)
+        end
+
+      # Other foreign elements - pop and continue
+      _ ->
+        pop_foreign_elements(rest, elements)
+    end
+  end
+
+  defp html_integration_encoding?(nil), do: false
+
+  defp html_integration_encoding?(encoding) do
+    String.downcase(encoding) in ~w(text/html application/xhtml+xml)
+  end
+
   @doc """
   Processes the token with the "in body" rules from inside a state pipe.
   """

@@ -421,6 +421,38 @@ defmodule PureHTMLTest do
       assert error_count == 4
     end
 
+    test "reprocesses an HTML breakout tag in foreign content with the current insertion mode" do
+      # Arrange
+      html = "<!DOCTYPE html><body><table><select><svg><g>foo</g><g>bar</g><p>baz</table><p>quux"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"select", [],
+                      [
+                        {{:svg, "svg"}, [],
+                         [{{:svg, "g"}, [], ["foo"]}, {{:svg, "g"}, [], ["bar"]}]},
+                        {"p", [], ["baz"]}
+                      ]},
+                     {"table", [], []},
+                     {"p", [], ["quux"]}
+                   ]}
+                ]}
+             ] = nodes
+
+      # select and svg in table; <p> once as a foreign-content breakout and once when
+      # reprocessed in table; one per character of "baz".
+      assert error_count == 7
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

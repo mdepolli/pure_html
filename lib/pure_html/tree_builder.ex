@@ -595,10 +595,19 @@ defmodule PureHTML.TreeBuilder do
   # Per WHATWG spec: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
   # --------------------------------------------------------------------------
 
-  # Start tags: delegate to InBody which has foreign content start tag handling
-  # (breakout tags, foreign element insertion) via dispatch_start_tag.
-  defp process_foreign_content({:start_tag, _, _, _} = token, state) do
-    InBody.process(token, state)
+  # Start tags. Per spec, an HTML breakout tag is a parse error; pop until the
+  # current node is an integration point or an HTML element, then reprocess the
+  # token with the rules for the current insertion mode (not the dispatcher).
+  # Other start tags insert a foreign element, which InBody handles.
+  defp process_foreign_content({:start_tag, tag, attrs, _} = token, state) do
+    if html_breakout_tag?(tag, attrs) do
+      state
+      |> parse_error()
+      |> close_foreign_content()
+      |> process_with_current_mode(token)
+    else
+      InBody.insert_foreign_element(token, state)
+    end
   end
 
   # End tags: walk the stack per spec. Match foreign elements by tag name,
@@ -627,6 +636,10 @@ defmodule PureHTML.TreeBuilder do
 
   # DOCTYPE: parse error, ignore
   defp process_foreign_content({:doctype, _, _, _, _}, state), do: {:ok, parse_error(state)}
+
+  defp process_with_current_mode(state, token) do
+    dispatch_to_insertion_mode(token, state.mode, state)
+  end
 
   # Foreign content end tag algorithm per WHATWG spec:
   # Walk down the stack from current node. If a foreign element's tag matches
