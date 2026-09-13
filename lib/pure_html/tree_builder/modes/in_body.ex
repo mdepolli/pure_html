@@ -1533,10 +1533,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Mode transitions
   # --------------------------------------------------------------------------
 
-  defp push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
-    %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
-  end
-
   defp reset_insertion_mode(
          %{
            stack: stack,
@@ -2316,11 +2312,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> reconstruct_entries_rest(rest)
   end
 
-  defp reconstruct_entries_rest(state, rest), do: reconstruct_entries(rest, state)
-
   defp repoint_af_entry(%{stack: [new_ref | _], af: af} = state, old_ref, tag, attrs) do
     %{state | af: update_af_entry(af, old_ref, {new_ref, tag, attrs})}
   end
+
+  defp reconstruct_entries_rest(state, rest), do: reconstruct_entries(rest, state)
 
   defp add_formatting_entry(%{stack: [ref | _], af: af} = state, tag, attrs) do
     %{state | af: apply_noahs_ark([{ref, tag, attrs} | af], tag, attrs)}

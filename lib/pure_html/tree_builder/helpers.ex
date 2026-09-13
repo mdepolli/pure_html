@@ -404,6 +404,14 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
       # Fragment case: html root is a scope boundary — stop here
       "html" ->
+  @doc """
+  Switches to `new_mode`, remembering the current mode so `pop_mode/1` can
+  return to it.
+  """
+  def push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
+    %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
+  end
+
         {[ref], elements[ref].ref}
 
       _ ->
