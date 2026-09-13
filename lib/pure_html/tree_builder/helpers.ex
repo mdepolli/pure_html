@@ -740,57 +740,37 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Pops elements from the stack until an element with the given tag is found.
   Returns {:ok, state} if found, {:not_found, state} otherwise.
   """
-  def pop_until_tag(%{stack: stack, af: af, elements: elements} = state, tag) do
-    case do_pop_until_tag(stack, tag, [], elements) do
-      {:found, new_stack, popped_refs, _parent_ref} ->
-        new_af = reject_refs_from_af(af, popped_refs)
-        {:ok, %{state | stack: new_stack, af: new_af}}
-
-      :not_found ->
-        {:not_found, state}
+  def pop_until_tag(%{stack: stack, elements: elements} = state, tag) do
+    case do_pop_until_tag(stack, tag, elements) do
+      {:found, new_stack} -> {:ok, %{state | stack: new_stack}}
+      :not_found -> {:not_found, state}
     end
   end
 
-  defp do_pop_until_tag([], _tag, _popped, _elements), do: :not_found
+  defp do_pop_until_tag([], _tag, _elements), do: :not_found
 
-  defp do_pop_until_tag([ref | rest], tag, popped, elements) do
-    elem = elements[ref]
-
-    case elem.tag do
-      ^tag ->
-        {:found, rest, [ref | popped], elem.parent_ref}
-
-      "template" ->
-        :not_found
-
-      _ ->
-        # Skip foster-parented elements from AF removal — they're logically
-        # outside the table and should stay in AF for reconstruction.
-        # Consistent with close_table's do_close_table behavior.
-        new_popped =
-          if elem[:foster_parent_ref], do: popped, else: [ref | popped]
-
-        do_pop_until_tag(rest, tag, new_popped, elements)
+  defp do_pop_until_tag([ref | rest], tag, elements) do
+    case elements[ref].tag do
+      ^tag -> {:found, rest}
+      "template" -> :not_found
+      _ -> do_pop_until_tag(rest, tag, elements)
     end
   end
 
   @doc """
   Pops elements from the stack until a tag in the given list is at the top.
   """
-  def pop_until_one_of(%{stack: stack, af: af, elements: elements} = state, tags)
-      when is_list(tags) do
-    {new_stack, popped_refs, _parent_ref} = do_pop_until_one_of(stack, tags, [], elements)
-    new_af = reject_refs_from_af(af, popped_refs)
-    %{state | stack: new_stack, af: new_af}
+  def pop_until_one_of(%{stack: stack, elements: elements} = state, tags) when is_list(tags) do
+    %{state | stack: do_pop_until_one_of(stack, tags, elements)}
   end
 
-  defp do_pop_until_one_of([], _tags, popped, _elements), do: {[], popped, nil}
+  defp do_pop_until_one_of([], _tags, _elements), do: []
 
-  defp do_pop_until_one_of([ref | rest] = stack, tags, popped, elements) do
+  defp do_pop_until_one_of([ref | rest] = stack, tags, elements) do
     if elements[ref].tag in tags do
-      {stack, popped, ref}
+      stack
     else
-      do_pop_until_one_of(rest, tags, [ref | popped], elements)
+      do_pop_until_one_of(rest, tags, elements)
     end
   end
 

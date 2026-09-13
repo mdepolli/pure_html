@@ -1668,20 +1668,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Per spec "close a p element": "If the current node is not a p element,
   # then this is a parse error."
-  defp close_p_ref({p_ref, refs_above}, state) do
+  defp close_p_ref({p_ref, _refs_above}, state) do
     state
     |> parse_error_unless_current("p")
-    |> drop_non_formatting_refs_from_af([p_ref | refs_above])
     |> pop_to_element_ref(p_ref)
-  end
-
-  defp drop_non_formatting_refs_from_af(%{af: af, elements: elements} = state, refs) do
-    non_formatting_refs =
-      refs
-      |> Enum.reject(fn ref -> elements[ref].tag in @formatting_elements end)
-      |> MapSet.new()
-
-    %{state | af: reject_refs_from_af(af, non_formatting_refs)}
   end
 
   # Pop to the element (children already in elements map)
@@ -2064,21 +2054,23 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Active formatting elements
   # --------------------------------------------------------------------------
 
+  # Reconstruct the active formatting elements: walking back from the end of
+  # the list, the entries after the last marker or still-open element are
+  # recreated in order.
   defp reconstruct_active_formatting(%{stack: stack, af: af} = state) do
     af
-    |> get_entries_to_reconstruct(stack)
+    |> entries_to_reconstruct(stack)
     |> reconstruct_entries(state)
   end
 
-  defp get_entries_to_reconstruct(af, stack) do
+  # The list head is its end; the oldest entry to recreate comes first.
+  defp entries_to_reconstruct(af, stack) do
     af
-    |> Enum.take_while(&(&1 != :marker))
+    |> Enum.take_while(fn
+      :marker -> false
+      {ref, _tag, _attrs} -> ref not in stack
+    end)
     |> Enum.reverse()
-    |> Enum.filter(fn {ref, _tag, _attrs} -> find_in_stack_by_ref(stack, ref) == nil end)
-  end
-
-  defp find_in_stack_by_ref(stack, target_ref) do
-    Enum.find_index(stack, &(&1 == target_ref))
   end
 
   defp reconstruct_entries([], state), do: state
