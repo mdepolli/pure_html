@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-13
+
 ### Added
 
 - `PureHTML.parse_with_errors/2`: parses like `parse/2` and returns `{nodes, error_count}`, where the count follows the WHATWG parse errors emitted by the tokenizer and tree builder
@@ -212,3 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active formatting reconstruction for void elements in table context
 - Row mode foster parenting with in_body rules delegation
 
+[Unreleased]: https://github.com/mdepolli/pure_html/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/mdepolli/pure_html/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/mdepolli/pure_html/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/mdepolli/pure_html/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/mdepolli/pure_html/releases/tag/v0.1.0

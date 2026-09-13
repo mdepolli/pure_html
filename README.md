@@ -33,7 +33,7 @@ Add `pure_html` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:pure_html, "~> 0.2.0"}
+    {:pure_html, "~> 0.4.0"}
   ]
 end
 ```
