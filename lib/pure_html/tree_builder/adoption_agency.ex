@@ -11,13 +11,6 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
 
   import PureHTML.TreeBuilder.Helpers
 
-  # Scope boundaries for the "in scope" check
-  @scope_boundaries ~w(
-    applet caption html table td th marquee object template
-    math mi mo mn ms mtext annotation-xml
-    svg foreignObject desc title
-  )
-
   # Use shared special_elements from Helpers
   @special_elements PureHTML.TreeBuilder.Helpers.special_elements()
 
@@ -93,7 +86,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   defp locate_formatting_element(%{af: af, stack: stack} = state, subject) do
     with {:ok, af_idx, {fe_ref, fe_tag, fe_attrs}} <- find_formatting_entry(af, subject),
          {:ok, stack_idx} <- find_in_stack(stack, fe_ref, af_idx),
-         :ok <- check_in_scope(state, stack_idx) do
+         :ok <- check_in_scope(state, fe_ref) do
       case find_furthest_block(state, stack_idx) do
         nil -> {:no_furthest_block, af_idx, stack_idx}
         fb_idx -> {:has_furthest_block, af_idx, fe_ref, fe_tag, fe_attrs, stack_idx, fb_idx}
@@ -123,29 +116,9 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
     end
   end
 
-  defp check_in_scope(state, stack_idx) do
-    if element_in_scope?(state, stack_idx), do: :ok, else: :not_in_scope
+  defp check_in_scope(state, fe_ref) do
+    if node_in_scope?(state, fe_ref), do: :ok, else: :not_in_scope
   end
-
-  defp element_in_scope?(%{stack: stack, elements: elements}, target_idx) do
-    do_element_in_scope?(stack, elements, target_idx)
-  end
-
-  defp do_element_in_scope?(_stack, _elements, 0), do: true
-
-  defp do_element_in_scope?([ref | rest], elements, idx) when is_map_key(elements, ref) do
-    if elements[ref].tag in @scope_boundaries do
-      false
-    else
-      do_element_in_scope?(rest, elements, idx - 1)
-    end
-  end
-
-  defp do_element_in_scope?([_ref | rest], elements, idx) do
-    do_element_in_scope?(rest, elements, idx)
-  end
-
-  defp do_element_in_scope?([], _elements, _idx), do: false
 
   # --------------------------------------------------------------------------
   # Finding furthest block

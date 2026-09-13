@@ -696,6 +696,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     parse_error(state)
   end
 
+  # Per spec: td and th in body are a parse error and ignored
+  defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state) when tag in @table_cells do
+    parse_error(state)
+  end
+
   # Table cells
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @table_cells do
     state
@@ -785,11 +790,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> enter_raw_text("noembed", attrs)
   end
 
-  # Table
-  defp do_process_html_start_tag("table", attrs, _, state) do
-    state
-    |> in_body()
-    |> close_p_unless_quirks("table")
   # Per spec: with a select in scope, generate implied end tags except optgroup and
   # parse-error if an option is still in scope; otherwise pop a current option.
   defp do_process_html_start_tag("option", attrs, _, state) do
@@ -810,6 +810,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_element("optgroup", attrs)
   end
 
+  # Table
+  defp do_process_html_start_tag("table", attrs, _, state) do
+    state
+    |> in_body()
+    |> close_p_unless_quirks("table")
     |> push_element("table", attrs)
     |> push_mode(:in_table)
     |> set_frameset_not_ok()

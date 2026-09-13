@@ -109,12 +109,23 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Pushes a new foreign element onto the stack.
   """
-  def push_foreign_element(
-        %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
-        ns,
-        tag,
-        attrs
-      ) do
+  def push_foreign_element(%{foster_parenting: true} = state, ns, tag, attrs) do
+    if needs_foster_parenting?(state) do
+      foster_insert(state, {:push_foreign, ns, tag, attrs, false})
+    else
+      do_push_foreign_element(state, ns, tag, attrs)
+    end
+  end
+
+  def push_foreign_element(state, ns, tag, attrs),
+    do: do_push_foreign_element(state, ns, tag, attrs)
+
+  defp do_push_foreign_element(
+         %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
+         ns,
+         tag,
+         attrs
+       ) do
     elem = new_foreign_element(ns, tag, attrs, parent_ref)
 
     # Add to elements map
@@ -587,10 +598,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # --------------------------------------------------------------------------
 
   @scope_boundaries %{
-    default: ~w(applet caption html table td th marquee object template),
-    list_item: ~w(applet caption html table td th marquee object template ol ul),
+    default: ~w(applet caption html table td th marquee object select template),
+    list_item: ~w(applet caption html table td th marquee object select template ol ul),
     table: ~w(html table template),
-    button: ~w(applet caption html table td th marquee object template button)
+    button: ~w(applet caption html table td th marquee object select template button)
   }
 
   # Select scope walks through these HTML elements and stops at any other type.

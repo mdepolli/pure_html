@@ -86,13 +86,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # Start tag: col - ensure colgroup wrapper
-  defp process_in_table({:start_tag, "col", attrs, _}, state) do
+  # Start tag: col - per spec, clear to table context, insert a colgroup, switch to
+  # "in column group", and reprocess
+  defp process_in_table({:start_tag, "col", _, _}, state) do
     state
     |> clear_to_table_context()
-    |> ensure_colgroup()
-    |> add_child_to_stack({"col", attrs, []})
-    |> ok()
+    |> push_element("colgroup", [])
+    |> set_mode(:in_column_group)
+    |> reprocess()
   end
 
   # Start tags: tbody, thead, tfoot
@@ -300,16 +301,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       do_clear_to_table_context(tl(stack), elements)
     end
   end
-
-  defp ensure_colgroup(%{stack: [ref | _], elements: elements} = state) do
-    case elements[ref].tag do
-      "colgroup" -> state
-      "table" -> push_element(state, "colgroup", [])
-      _ -> state
-    end
-  end
-
-  defp ensure_colgroup(state), do: state
 
   defp ensure_tbody(%{stack: [ref | _], elements: elements, context_element: ctx} = state) do
     case elements[ref].tag do
