@@ -302,43 +302,43 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
-  def process({:start_tag, tag, attrs, self_closing}, state) do
+  def process({:start_tag, tag, _, _} = token, state) do
     tag
     |> correct_tag()
-    |> process_corrected_start_tag(tag, attrs, self_closing, state)
+    |> process_corrected_start_tag(token, state)
   end
 
-  defp process_corrected_start_tag(tag, tag, attrs, self_closing, state) do
+  defp process_corrected_start_tag(tag, {:start_tag, tag, _, _} = token, state) do
     state
-    |> dispatch_start_tag(tag, attrs, self_closing)
+    |> dispatch_start_tag(token)
     |> ok()
   end
 
   # Per spec: <image> — "Parse error. Change the token's tag name to 'img'."
-  defp process_corrected_start_tag(corrected_tag, _original_tag, attrs, self_closing, state) do
+  defp process_corrected_start_tag(corrected_tag, {:start_tag, _, attrs, self_closing}, state) do
     state
     |> parse_error()
-    |> dispatch_start_tag(corrected_tag, attrs, self_closing)
+    |> dispatch_start_tag({:start_tag, corrected_tag, attrs, self_closing})
     |> ok()
   end
 
   # Dispatch an HTML start tag with the in-body rules. The one namespace-aware
   # case: a table start tag at an HTML integration point with a table ancestor
   # is foster-parented past the foreign content.
-  defp dispatch_start_tag(state, "table", attrs, self_closing) do
+  defp dispatch_start_tag(state, {:start_tag, "table", attrs, _} = token) do
     if html_integration_point?(state) and has_table_ancestor?(state.stack, state.elements) do
       handle_table_at_integration_point(state, "table", attrs)
     else
-      do_process_html_start_tag("table", attrs, self_closing, state)
+      start_tag(token, state)
     end
   end
 
   # Per spec, a start tag whose self-closing flag is not acknowledged by the
   # tree construction stage is a parse error; only void elements (and foreign
   # elements, handled elsewhere) acknowledge it.
-  defp dispatch_start_tag(state, tag, attrs, self_closing) do
-    tag
-    |> do_process_html_start_tag(attrs, self_closing, state)
+  defp dispatch_start_tag(state, {:start_tag, tag, _, self_closing} = token) do
+    token
+    |> start_tag(state)
     |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
   end
 
@@ -381,55 +381,55 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
 
   # <noscript> with scripting enabled: process using "in head" rules (RAWTEXT)
-  defp do_process_html_start_tag("noscript", attrs, self_closing, %{scripting: true} = state) do
+  defp start_tag({:start_tag, "noscript", attrs, self_closing}, %{scripting: true} = state) do
     process_in_head(state, {:start_tag, "noscript", attrs, self_closing})
   end
 
   # <noscript> with scripting disabled: reconstruct AF, push element (parsed as HTML)
-  defp do_process_html_start_tag("noscript", attrs, _, state) do
+  defp start_tag({:start_tag, "noscript", attrs, _}, state) do
     state
     |> reconstruct_active_formatting()
     |> push_element("noscript", attrs)
   end
 
   # Other head elements: process using "in head" rules
-  defp do_process_html_start_tag(tag, attrs, self_closing, state)
+  defp start_tag({:start_tag, tag, attrs, self_closing}, state)
        when tag in @head_elements do
     process_in_head(state, {:start_tag, tag, attrs, self_closing})
   end
 
   # Per HTML5 spec: "Parse error." Then ignore if only one element on stack
   # (fragment case), if the second element is not body, or if frameset-ok is "not ok".
-  defp do_process_html_start_tag("frameset", attrs, _, %{frameset_ok: true} = state) do
+  defp start_tag({:start_tag, "frameset", attrs, _}, %{frameset_ok: true} = state) do
     state
     |> parse_error()
     |> insert_frameset_in_body(attrs)
   end
 
-  defp do_process_html_start_tag("frameset", _, _, state), do: parse_error(state)
+  defp start_tag({:start_tag, "frameset", _, _}, state), do: parse_error(state)
 
   # Frame in frameset. Otherwise: parse error, ignore.
-  defp do_process_html_start_tag("frame", attrs, _, state) do
+  defp start_tag({:start_tag, "frame", attrs, _}, state) do
     state
     |> current_tag()
     |> insert_frame(attrs, state)
   end
 
   # Col in table mode
-  defp do_process_html_start_tag("col", attrs, _, %{mode: :in_table} = state) do
+  defp start_tag({:start_tag, "col", attrs, _}, %{mode: :in_table} = state) do
     state
     |> find_ref("table")
     |> insert_col_in_table(attrs, state)
   end
 
   # Per spec: in a select fragment, "Parse error. Ignore the token."
-  defp do_process_html_start_tag("input", _attrs, _, %{context_element: {_ns, "select"}} = state) do
+  defp start_tag({:start_tag, "input", _attrs, _}, %{context_element: {_ns, "select"}} = state) do
     parse_error(state)
   end
 
   # Per spec: with a select in scope, parse error and pop until a select has been
   # popped; then reconstruct, insert and pop; non-hidden inputs set frameset-ok to "not ok".
-  defp do_process_html_start_tag("input", attrs, _, state) do
+  defp start_tag({:start_tag, "input", attrs, _}, state) do
     state
     |> close_select_for_input()
     |> reconstruct_active_formatting()
@@ -440,7 +440,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Per spec: close a p in button scope; with a select in scope, generate implied
   # end tags and parse-error if an option or optgroup is still in scope; insert
   # and pop; set frameset-ok to "not ok". (No formatting reconstruction.)
-  defp do_process_html_start_tag("hr", attrs, _, state) do
+  defp start_tag({:start_tag, "hr", attrs, _}, state) do
     state
     |> maybe_close_p("hr")
     |> close_for_hr()
@@ -449,7 +449,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Void elements
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @void_elements do
     state
     |> reconstruct_active_formatting()
     |> maybe_close_p(tag)
@@ -458,21 +458,21 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Col in other contexts - parse error, ignore
-  defp do_process_html_start_tag("col", _, _, state), do: parse_error(state)
+  defp start_tag({:start_tag, "col", _, _}, state), do: parse_error(state)
 
   # Table structure in body mode (ignored per spec: parse error)
-  defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state)
+  defp start_tag({:start_tag, tag, _, _}, %{mode: :in_body} = state)
        when tag in @table_structure_elements do
     parse_error(state)
   end
 
   # Per spec: td and th in body are a parse error and ignored
-  defp do_process_html_start_tag(tag, _, _, %{mode: :in_body} = state) when tag in @table_cells do
+  defp start_tag({:start_tag, tag, _, _}, %{mode: :in_body} = state) when tag in @table_cells do
     parse_error(state)
   end
 
   # Table cells
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @table_cells do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @table_cells do
     state
     |> current_tag()
     |> mismatch_if_not_in(@table_cells, state)
@@ -485,7 +485,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Table structure in table-related modes: create if table context exists
   @table_related_modes [:in_table, :in_table_body, :in_row, :in_cell, :in_caption]
 
-  defp do_process_html_start_tag(tag, attrs, _, %{mode: mode} = state)
+  defp start_tag({:start_tag, tag, attrs, _}, %{mode: mode} = state)
        when tag in @table_structure_elements and mode in @table_related_modes do
     state
     |> find_ref("table")
@@ -495,7 +495,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Tr - requires table context
   # In :in_body mode without table, this is a parse error - ignore
   # In table-related modes (:in_table, etc.) or with table on stack, create tr
-  defp do_process_html_start_tag("tr", attrs, _, %{mode: mode} = state) do
+  defp start_tag({:start_tag, "tr", attrs, _}, %{mode: mode} = state) do
     state
     |> find_ref("table")
     |> insert_tr(mode, attrs, state)
@@ -504,7 +504,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Per spec: an a element in the active formatting list after the last marker
   # is a parse error; run the adoption agency algorithm, then remove that
   # element from the list and the stack if the algorithm didn't already.
-  defp do_process_html_start_tag("a", attrs, _, state) do
+  defp start_tag({:start_tag, "a", attrs, _}, state) do
     state
     |> close_existing_anchor()
     |> reconstruct_active_formatting()
@@ -514,7 +514,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Per spec: reconstruct; if a nobr element is in scope, parse error, run the
   # adoption agency algorithm, and reconstruct again.
-  defp do_process_html_start_tag("nobr", attrs, _, state) do
+  defp start_tag({:start_tag, "nobr", attrs, _}, state) do
     state
     |> reconstruct_active_formatting()
     |> close_nobr_in_scope()
@@ -523,7 +523,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Formatting elements
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @formatting_elements do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @formatting_elements do
     state
     |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
@@ -532,7 +532,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Per spec: xmp closes a p in button scope, reconstructs active formatting,
   # sets frameset-ok to "not ok", then follows the generic raw text algorithm.
-  defp do_process_html_start_tag("xmp", attrs, _, state) do
+  defp start_tag({:start_tag, "xmp", attrs, _}, state) do
     state
     |> maybe_close_p("xmp")
     |> reconstruct_active_formatting()
@@ -541,14 +541,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Per spec: iframe sets frameset-ok to "not ok", then generic raw text.
-  defp do_process_html_start_tag("iframe", attrs, _, state) do
+  defp start_tag({:start_tag, "iframe", attrs, _}, state) do
     state
     |> set_frameset_not_ok()
     |> enter_raw_text("iframe", attrs)
   end
 
   # Per spec: noembed follows the generic raw text algorithm.
-  defp do_process_html_start_tag("noembed", attrs, _, state) do
+  defp start_tag({:start_tag, "noembed", attrs, _}, state) do
     state
     |> enter_raw_text("noembed", attrs)
   end
@@ -556,7 +556,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Per spec: insert the textarea, switch the tokenizer to RCDATA, set
   # frameset-ok to "not ok", and enter the text mode. The text mode drops a
   # line feed that immediately follows the start tag.
-  defp do_process_html_start_tag("textarea", attrs, _, state) do
+  defp start_tag({:start_tag, "textarea", attrs, _}, state) do
     state
     |> push_element("textarea", attrs)
     |> set_frameset_not_ok()
@@ -565,7 +565,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Per spec: close a p in button scope, insert the element, and switch the
   # tokenizer to PLAINTEXT; the insertion mode stays.
-  defp do_process_html_start_tag("plaintext", attrs, _, state) do
+  defp start_tag({:start_tag, "plaintext", attrs, _}, state) do
     state
     |> maybe_close_p("plaintext")
     |> push_element("plaintext", attrs)
@@ -574,7 +574,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Per spec: with a select in scope, generate implied end tags except optgroup and
   # parse-error if an option is still in scope; otherwise pop a current option.
-  defp do_process_html_start_tag("option", attrs, _, state) do
+  defp start_tag({:start_tag, "option", attrs, _}, state) do
     state
     |> close_for_option()
     |> reconstruct_active_formatting()
@@ -583,7 +583,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Per spec: with a select in scope, generate implied end tags and parse-error if
   # an option or optgroup is still in scope; otherwise pop a current option.
-  defp do_process_html_start_tag("optgroup", attrs, _, state) do
+  defp start_tag({:start_tag, "optgroup", attrs, _}, state) do
     state
     |> close_for_optgroup()
     |> reconstruct_active_formatting()
@@ -591,7 +591,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Table
-  defp do_process_html_start_tag("table", attrs, _, state) do
+  defp start_tag({:start_tag, "table", attrs, _}, state) do
     state
     |> close_p_unless_quirks("table")
     |> push_element("table", attrs)
@@ -601,30 +601,30 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Form - Per spec: "If the form element pointer is not null, and there is no
   # template element on the stack of open elements, then this is a parse error; ignore the token."
-  defp do_process_html_start_tag("form", attrs, _, %{form_element: f} = state)
+  defp start_tag({:start_tag, "form", attrs, _}, %{form_element: f} = state)
        when not is_nil(f) do
     if has_template_on_stack?(state) do
       # With template, process normally (form_element won't be set again)
-      do_process_html_start_tag_form(attrs, state)
+      insert_form(attrs, state)
     else
       # Parse error, ignore the form tag
       parse_error(state)
     end
   end
 
-  defp do_process_html_start_tag("form", attrs, _, state) do
-    do_process_html_start_tag_form(attrs, state)
+  defp start_tag({:start_tag, "form", attrs, _}, state) do
+    insert_form(attrs, state)
   end
 
   # Per spec: in a select fragment, "Parse error. Ignore the token."
-  defp do_process_html_start_tag("select", _attrs, _, %{context_element: {_ns, "select"}} = state) do
+  defp start_tag({:start_tag, "select", _attrs, _}, %{context_element: {_ns, "select"}} = state) do
     parse_error(state)
   end
 
   # Per spec: with a select in scope, "Parse error. Ignore the token. Pop elements
   # until a select element has been popped." Otherwise reconstruct, insert, and
   # set frameset-ok to "not ok".
-  defp do_process_html_start_tag("select", attrs, _, state) do
+  defp start_tag({:start_tag, "select", attrs, _}, state) do
     if in_scope?(state, "select", :default) do
       state
       |> parse_error()
@@ -638,7 +638,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # applet/marquee/object - push AF marker (scope boundary for formatting elements)
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @af_marker_elements do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @af_marker_elements do
     state
     |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
@@ -648,7 +648,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # rb, rtc: with a ruby element in scope, generate implied end tags; a parse
   # error unless the current node is then a ruby element.
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in ~w(rb rtc) do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in ~w(rb rtc) do
     state
     |> close_ruby_parts(tag)
     |> push_element(tag, attrs)
@@ -656,14 +656,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # rp, rt: the same, keeping an open rtc; the current node must then be an
   # rtc or a ruby element.
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in ~w(rp rt) do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in ~w(rp rt) do
     state
     |> close_ruby_parts(tag)
     |> push_element(tag, attrs)
   end
 
   # Generic - block-level elements close p, inline elements reconstruct AF
-  defp do_process_html_start_tag(tag, attrs, _, state) when tag in @closes_p do
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @closes_p do
     state
     |> close_open_list_item(tag)
     |> maybe_close_p(tag)
@@ -673,7 +673,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  defp do_process_html_start_tag(tag, attrs, _self_closing, state) do
+  defp start_tag({:start_tag, tag, attrs, _self_closing}, state) do
     state
     |> reconstruct_active_formatting()
     |> maybe_close_same(tag)
@@ -695,8 +695,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp maybe_parse_error_unacknowledged_self_closing(state, _tag, _self_closing), do: state
 
-  # Helper function for form handling (separate to allow grouping of do_process_html_start_tag clauses)
-  defp do_process_html_start_tag_form(attrs, state) do
+  # form: the form element pointer must be null unless a template is open
+  defp insert_form(attrs, state) do
     state
     |> maybe_close_p("form")
     |> push_element("form", attrs)
