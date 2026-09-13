@@ -87,16 +87,6 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     end
   end
 
-  # Special start tags that need in_table/in_head handling: delegate properly
-  # These have special mode transitions or namespace handling we shouldn't override
-  @delegate_to_table ~w(template script style svg math)
-
-  def process({:start_tag, tag, _, _}, state) when tag in @delegate_to_table do
-    state
-    |> set_mode(:in_table)
-    |> reprocess()
-  end
-
   # Other start tags: per spec, process the token using the rules for the
   # "in table" insertion mode.
   def process({:start_tag, _, _, _} = token, state) do
