@@ -421,38 +421,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def switch_tokenizer(state, tokenizer_state), do: %{state | tokenizer_state: tokenizer_state}
 
   @doc """
-  Processes the token with the "in table" rules on behalf of `mode` (in table
-  body, in row). Per spec this is a delegation for one token: `mode` is
-  restored when "in table" consumed the token without switching modes, and a
-  switch to "in table text" returns to `mode` afterwards.
+  Processes the token with the "in table" rules (in table body, in row): a
+  delegation for one token that leaves the insertion mode to those rules.
   """
-  def process_in_table(state, token, mode) do
-    token
-    |> InTable.process(set_mode(state, :in_table))
-    |> return_from_in_table(mode)
-  end
-
-  defp return_from_in_table({:ok, %{mode: :in_table} = state}, mode) do
-    state
-    |> set_mode(mode)
-    |> ok()
-  end
-
-  defp return_from_in_table(
-         {:ok, %{mode: :in_table_text, original_mode: :in_table} = state},
-         mode
-       ) do
-    ok(%{state | original_mode: mode})
-  end
-
-  defp return_from_in_table(
-         {:reprocess, %{mode: :in_table_text, original_mode: :in_table} = state},
-         mode
-       ) do
-    reprocess(%{state | original_mode: mode})
-  end
-
-  defp return_from_in_table(result, _mode), do: result
+  def process_in_table(state, token), do: InTable.process(token, state)
 
   # Tags that are implicitly closed (popped) when generating implied end tags
   @implied_end_tag_tags ~w(dd dt li optgroup option p rb rp rt rtc)
@@ -501,26 +473,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Sets the frameset-ok flag.
   """
   def set_frameset_ok(state, value), do: %{state | frameset_ok: value}
-
-  @doc """
-  Switches to `new_mode`, remembering the current mode so `pop_mode/1` can
-  return to it.
-  """
-  def push_mode(%{mode: current_mode, template_mode_stack: stack} = state, new_mode) do
-    %{state | mode: new_mode, template_mode_stack: [current_mode | stack]}
-  end
-
-  @doc """
-  Pops the insertion mode from the template mode stack.
-  Returns to the previous mode, or :in_body if stack is empty.
-  """
-  def pop_mode(%{template_mode_stack: [prev_mode | rest]} = state) do
-    %{state | mode: prev_mode, template_mode_stack: rest}
-  end
-
-  def pop_mode(%{template_mode_stack: []} = state) do
-    %{state | mode: :in_body}
-  end
 
   @doc """
   Switches the current template insertion mode.
@@ -772,20 +724,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
     else
       do_pop_until_one_of(rest, tags, elements)
     end
-  end
-
-  @doc """
-  Removes formatting entries from the active formatting list that have refs in the given set.
-  """
-  def reject_refs_from_af(af, %MapSet{} = ref_set) do
-    Enum.reject(af, fn
-      :marker -> false
-      {ref, _, _} -> MapSet.member?(ref_set, ref)
-    end)
-  end
-
-  def reject_refs_from_af(af, refs) when is_list(refs) do
-    reject_refs_from_af(af, MapSet.new(refs))
   end
 
   # --------------------------------------------------------------------------
@@ -1061,62 +999,41 @@ defmodule PureHTML.TreeBuilder.Helpers do
   }
 
   @doc """
-  Determines the appropriate insertion mode by walking the stack of open elements.
-
-  Used by the "reset the insertion mode appropriately" algorithm. When a
-  `context_element` is provided (fragment parsing), it is used as the fallback
-  when the bottom of the stack is reached.
+  "Reset the insertion mode appropriately": walk the stack of open elements
+  from the current node; in the fragment case the last node is the context
+  element.
   """
-  # Empty stack, no fragment context
-  def determine_mode_from_stack([], _elements, nil, _scripting, _head), do: :in_body
-
-  # Empty stack with fragment context — use the context element
-  def determine_mode_from_stack([], _elements, {_ns, tag}, scripting, head) do
-    determine_mode_for_tag(tag, scripting, head) || :in_body
+  def reset_insertion_mode(%{stack: stack} = state) do
+    set_mode(state, mode_from_stack(stack, state))
   end
 
-  # Last node in stack + fragment context: per spec, set node to context element
-  def determine_mode_from_stack([_ref], _elements, {_ns, _tag} = context, scripting, head) do
-    determine_mode_from_stack([], nil, context, scripting, head)
+  defp mode_from_stack([], %{context_element: nil}), do: :in_body
+
+  defp mode_from_stack([], %{context_element: {_ns, tag}} = state) do
+    mode_for_node(tag, state) || :in_body
   end
 
-  def determine_mode_from_stack([ref | rest], elements, context_element, scripting, head) do
-    tag = elements[ref].tag
-
-    case determine_mode_for_tag(tag, scripting, head) do
-      nil ->
-        determine_mode_from_stack(rest, elements, context_element, scripting, head)
-
-      mode ->
-        mode
-    end
+  defp mode_from_stack([_last], %{context_element: {_ns, _tag}} = state) do
+    mode_from_stack([], state)
   end
 
+  defp mode_from_stack([ref | rest], %{elements: elements} = state) do
+    elements[ref].tag
+    |> mode_for_node(state)
+    |> mode_or_previous_node(rest, state)
+  end
+
+  defp mode_or_previous_node(nil, rest, state), do: mode_from_stack(rest, state)
+  defp mode_or_previous_node(mode, _rest, _state), do: mode
+
+  # template: the current template insertion mode
+  defp mode_for_node("template", %{template_mode_stack: [mode | _]}), do: mode
   # noscript with scripting enabled maps to :in_head per WHATWG spec
-  defp determine_mode_for_tag("noscript", true, _head), do: :in_head
+  defp mode_for_node("noscript", %{scripting: true}), do: :in_head
   # html: "before head" until the head element pointer is set, "after head" from then on
-  defp determine_mode_for_tag("html", _scripting, nil), do: :before_head
-  defp determine_mode_for_tag("html", _scripting, _head), do: :after_head
-  defp determine_mode_for_tag(tag, _scripting, _head), do: Map.get(@tag_to_mode, tag)
-
-  @doc """
-  "Reset the insertion mode appropriately": pick the mode from the stack of
-  open elements (and the fragment context element).
-  """
-  def reset_insertion_mode(
-        %{
-          stack: stack,
-          elements: elements,
-          context_element: context_element,
-          scripting: scripting,
-          head_element: head_element
-        } = state
-      ) do
-    set_mode(
-      state,
-      determine_mode_from_stack(stack, elements, context_element, scripting, head_element)
-    )
-  end
+  defp mode_for_node("html", %{head_element: nil}), do: :before_head
+  defp mode_for_node("html", _state), do: :after_head
+  defp mode_for_node(tag, _state), do: Map.get(@tag_to_mode, tag)
 
   def has_template_on_stack?(state), do: find_ref(state, "template") != nil
 
@@ -1124,19 +1041,25 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Pops elements from the stack of open elements until an HTML template
   element has been popped.
   """
-  def close_html_template(state) do
+  def close_html_template(state), do: pop_through(state, "template")
+
+  @doc """
+  Pops elements from the stack of open elements until an HTML element with
+  the given tag name has been popped.
+  """
+  def pop_through(state, tag) do
     state
     |> current_tag()
-    |> pop_through_template(state)
+    |> pop_through_tag(tag, state)
   end
 
-  defp pop_through_template(nil, state), do: state
-  defp pop_through_template("template", state), do: pop_element(state)
+  defp pop_through_tag(nil, _tag, state), do: state
+  defp pop_through_tag(tag, tag, state), do: pop_element(state)
 
-  defp pop_through_template(_tag, state) do
+  defp pop_through_tag(_current, tag, state) do
     state
     |> pop_element()
-    |> close_html_template()
+    |> pop_through(tag)
   end
 
   def push_template_mode(%{template_mode_stack: modes} = state, mode) do

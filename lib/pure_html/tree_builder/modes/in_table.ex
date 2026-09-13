@@ -38,38 +38,37 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @table_sections ~w(tbody thead tfoot)
   @table_context ~w(table tbody template tfoot thead tr)
   @ignored_end_tags ~w(body caption col colgroup html tbody td tfoot th thead tr)
-  @formatting_element_tags ~w(a b big code em font i nobr s small strike strong tt u)
 
   @impl true
   def process(token, state) do
-    process_in_table(token, state)
+    do_process(token, state)
   end
 
   # Character tokens in table context elements: switch to in_table_text mode
-  defp process_in_table({:character, text}, %{stack: [ref | _], elements: elements} = state) do
+  defp do_process({:character, text}, %{stack: [ref | _], elements: elements} = state) do
     do_process_character(elements[ref], text, state)
   end
 
-  defp process_in_table({:character, text}, state) do
+  defp do_process({:character, text}, state) do
     InBody.process({:character, text}, state)
   end
 
   # Comments: insert
-  defp process_in_table({:comment, text}, state) do
+  defp do_process({:comment, text}, state) do
     state
     |> add_child_to_stack({:comment, text})
     |> ok()
   end
 
   # DOCTYPE: parse error, ignore
-  defp process_in_table({:doctype, _, _, _, _}, state) do
+  defp do_process({:doctype, _, _, _, _}, state) do
     state
     |> parse_error()
     |> ok()
   end
 
   # Start tag: caption
-  defp process_in_table({:start_tag, "caption", attrs, _}, state) do
+  defp do_process({:start_tag, "caption", attrs, _}, state) do
     state
     |> clear_to_table_context()
     |> push_af_marker()
@@ -79,7 +78,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: colgroup
-  defp process_in_table({:start_tag, "colgroup", attrs, _}, state) do
+  defp do_process({:start_tag, "colgroup", attrs, _}, state) do
     state
     |> clear_to_table_context()
     |> push_element("colgroup", attrs)
@@ -89,7 +88,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Start tag: col - per spec, clear to table context, insert a colgroup, switch to
   # "in column group", and reprocess
-  defp process_in_table({:start_tag, "col", _, _}, state) do
+  defp do_process({:start_tag, "col", _, _}, state) do
     state
     |> clear_to_table_context()
     |> push_element("colgroup", [])
@@ -98,7 +97,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tags: tbody, thead, tfoot
-  defp process_in_table({:start_tag, tag, attrs, _}, state) when tag in @table_sections do
+  defp do_process({:start_tag, tag, attrs, _}, state) when tag in @table_sections do
     state
     |> clear_to_table_context()
     |> push_element(tag, attrs)
@@ -107,7 +106,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tags: td, th, tr - ensure tbody, reprocess
-  defp process_in_table({:start_tag, tag, _, _}, state) when tag in ~w(td th tr) do
+  defp do_process({:start_tag, tag, _, _}, state) when tag in ~w(td th tr) do
     state
     |> clear_to_table_context()
     |> ensure_tbody()
@@ -116,11 +115,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: nested table - parse error, close current table, reprocess
-  defp process_in_table({:start_tag, "table", _, _}, state) do
+  defp do_process({:start_tag, "table", _, _}, state) do
     if in_scope?(state, "table", :table) do
       state
       |> parse_error()
       |> close_table()
+      |> reset_insertion_mode()
       |> reprocess()
     else
       state
@@ -130,18 +130,18 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tags: style, script - process using in_head rules
-  defp process_in_table({:start_tag, tag, _, _} = token, state) when tag in ~w(style script) do
+  defp do_process({:start_tag, tag, _, _} = token, state) when tag in ~w(style script) do
     InHead.process(token, state)
   end
 
   # Start tag: template - process using in_head rules
-  defp process_in_table({:start_tag, "template", _, _} = token, state) do
+  defp do_process({:start_tag, "template", _, _} = token, state) do
     InHead.process(token, state)
   end
 
   # Start tag: input - check for type=hidden
   # Per spec: "Parse error." for both hidden and non-hidden cases in table.
-  defp process_in_table({:start_tag, "input", attrs, _}, state) do
+  defp do_process({:start_tag, "input", attrs, _}, state) do
     attrs
     |> get_attr("type", "")
     |> String.downcase()
@@ -149,14 +149,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tag: form - Per spec: "Parse error."
-  defp process_in_table({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
+  defp do_process({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
     state
     |> parse_error()
     |> insert_table_form(attrs)
   end
 
   # Per spec: "Parse error." Form element pointer already set, ignore.
-  defp process_in_table({:start_tag, "form", _, _}, state) do
+  defp do_process({:start_tag, "form", _, _}, state) do
     state
     |> parse_error()
     |> ok()
@@ -164,7 +164,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Frameset/frame: per spec "Parse error." then in-body rules, which parse
   # error again and ignore the token (nothing is inserted, so no foster parenting).
-  defp process_in_table({:start_tag, tag, _, _} = token, state)
+  defp do_process({:start_tag, tag, _, _} = token, state)
        when tag in ["frameset", "frame"] do
     state
     |> parse_error()
@@ -173,7 +173,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Other start tags: per spec "Parse error. Enable foster parenting, process
   # the token using the rules for the 'in body' insertion mode."
-  defp process_in_table({:start_tag, _, _, _} = token, state) do
+  defp do_process({:start_tag, _, _, _} = token, state) do
     state
     |> parse_error()
     |> enable_foster_parenting()
@@ -183,10 +183,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # End tag: table
   # Per spec: "If the stack of open elements does not have a table element in table scope,
   # this is a parse error; ignore the token."
-  defp process_in_table({:end_tag, "table"}, state) do
+  defp do_process({:end_tag, "table"}, state) do
     if in_scope?(state, "table", :table) do
       state
       |> close_table()
+      |> reset_insertion_mode()
       |> ok()
     else
       state
@@ -196,19 +197,19 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # End tag: template - process using in_head rules
-  defp process_in_table({:end_tag, "template"} = token, state) do
+  defp do_process({:end_tag, "template"} = token, state) do
     InHead.process(token, state)
   end
 
   # Ignored end tags: parse error, ignore
-  defp process_in_table({:end_tag, tag}, state) when tag in @ignored_end_tags do
+  defp do_process({:end_tag, tag}, state) when tag in @ignored_end_tags do
     state
     |> parse_error()
     |> ok()
   end
 
   # </br> special case: per spec "Parse error." Foster parent a <br> element.
-  defp process_in_table({:end_tag, "br"}, state) do
+  defp do_process({:end_tag, "br"}, state) do
     state
     |> parse_error()
     |> foster_insert({:element, {"br", [], []}})
@@ -218,7 +219,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Other end tags: per spec "Parse error. Enable foster parenting, process the
   # token using the rules for the 'in body' insertion mode, and then disable
   # foster parenting."
-  defp process_in_table({:end_tag, _} = token, state) do
+  defp do_process({:end_tag, _} = token, state) do
     state
     |> parse_error()
     |> enable_foster_parenting()
@@ -226,7 +227,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # EOF: process using in_body rules
-  defp process_in_table(:eof, state), do: process_in_body(state, :eof)
+  defp do_process(:eof, state), do: process_in_body(state, :eof)
 
   # --------------------------------------------------------------------------
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
@@ -261,8 +262,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> process_in_body({:character, text})
   end
 
-  defp start_table_text(state, text) do
-    %{state | mode: :in_table_text, original_mode: :in_table, pending_table_text: text}
+  # "Let the original insertion mode be the current insertion mode. Switch the
+  # insertion mode to in table text."
+  defp start_table_text(%{mode: mode} = state, text) do
+    %{state | mode: :in_table_text, original_mode: mode, pending_table_text: text}
   end
 
   # Clear stack to table context (table, template, html)
@@ -329,61 +332,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     %{state | form_element: form_ref}
   end
 
-  defp close_table(%{stack: stack, elements: elements} = state) do
-    stack
-    |> do_close_table([], elements)
-    |> finish_close_table(state)
-  end
-
-  # Fragment case: if nothing was actually closed (hit html boundary),
-  # keep the current state unchanged
-  defp finish_close_table({_new_stack, [], _parent_ref}, state), do: state
-
-  defp finish_close_table(
-         {new_stack, closed_refs, _parent_ref},
-         %{af: af, elements: elements} = state
-       ) do
-    new_af = reject_refs_from_af(af, closed_refs)
-
-    # Pop any orphaned formatting element from stack top (removed from AF by AA)
-    {final_stack, _top} = pop_orphaned_formatting_element(new_stack, new_af, elements)
-
-    state
-    |> Map.merge(%{stack: final_stack, af: new_af})
-    |> pop_mode()
-  end
-
-  defp pop_orphaned_formatting_element([], _af, _elements), do: {[], nil}
-
-  defp pop_orphaned_formatting_element([top | rest] = stack, af, elements) do
-    elem = elements[top]
-    in_af = Enum.any?(af, &match?({^top, _, _}, &1))
-
-    # Pop formatting elements removed from AF so content after table goes to correct parent
-    if elem != nil and elem.tag in @formatting_element_tags and not in_af do
-      {rest, List.first(rest)}
-    else
-      {stack, top}
-    end
-  end
-
-  defp do_close_table([], closed_refs, _elements), do: {[], closed_refs, nil}
-
-  defp do_close_table([ref | rest], closed_refs, elements) do
-    case elements[ref] do
-      %{tag: "table", parent_ref: parent_ref} ->
-        {rest, [ref | closed_refs], parent_ref}
-
-      %{tag: boundary} when boundary in ["template", "html"] ->
-        {[ref | rest], closed_refs, ref}
-
-      # Skip foster-parented elements - they're outside the table
-      # and should stay in AF for reconstruction
-      %{foster_parent_ref: fpr} when not is_nil(fpr) ->
-        do_close_table(rest, closed_refs, elements)
-
-      _ ->
-        do_close_table(rest, [ref | closed_refs], elements)
-    end
-  end
+  # "Pop elements from this stack until a table element has been popped from
+  # the stack."
+  defp close_table(state), do: pop_through(state, "table")
 end

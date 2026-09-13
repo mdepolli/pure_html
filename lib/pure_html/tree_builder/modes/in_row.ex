@@ -41,12 +41,12 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   @impl true
   # Character tokens: process using in_table rules
   def process({:character, _} = token, state) do
-    process_in_table(state, token, :in_row)
+    process_in_table(state, token)
   end
 
   # Comments: process using in_table rules
   def process({:comment, _} = token, state) do
-    process_in_table(state, token, :in_row)
+    process_in_table(state, token)
   end
 
   # DOCTYPE: parse error, ignore
@@ -83,7 +83,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Other start tags: per spec, process the token using the rules for the
   # "in table" insertion mode.
   def process({:start_tag, _, _, _} = token, state) do
-    process_in_table(state, token, :in_row)
+    process_in_table(state, token)
   end
 
   # End tag: tr - close row, switch to in_table_body
@@ -138,7 +138,7 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   # Other end tags: per spec, process the token using the rules for the
   # "in table" insertion mode.
   def process({:end_tag, _} = token, state) do
-    process_in_table(state, token, :in_row)
+    process_in_table(state, token)
   end
 
   # EOF: process using in_body rules

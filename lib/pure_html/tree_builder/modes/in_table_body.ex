@@ -41,12 +41,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   @impl true
   # Character tokens: process using in_table rules (delegation)
   def process({:character, _} = token, state) do
-    process_in_table(state, token, :in_table_body)
+    process_in_table(state, token)
   end
 
   # Comments: process using in_table rules (delegation)
   def process({:comment, _} = token, state) do
-    process_in_table(state, token, :in_table_body)
+    process_in_table(state, token)
   end
 
   # DOCTYPE: parse error, ignore
@@ -88,7 +88,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
   # delegation for one token. The tree construction dispatcher handles foreign
   # content routing for subsequent tokens.
   def process({:start_tag, _, _, _} = token, state) do
-    process_in_table(state, token, :in_table_body)
+    process_in_table(state, token)
   end
 
   # End tag: tbody, tfoot, thead - close if in scope
@@ -122,7 +122,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableBody do
 
   # Other end tags: process using in_table rules (delegation)
   def process({:end_tag, _} = token, state) do
-    process_in_table(state, token, :in_table_body)
+    process_in_table(state, token)
   end
 
   # EOF: process using in_body rules

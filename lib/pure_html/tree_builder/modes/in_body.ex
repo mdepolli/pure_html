@@ -12,6 +12,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.AdoptionAgency
+  alias PureHTML.TreeBuilder.Modes.InTemplate
 
   # --------------------------------------------------------------------------
   # Element categories
@@ -153,22 +154,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  def process({:end_tag, "table"}, state) do
-    if in_scope?(state, "table", :table) do
-      state
-      |> drop_table_refs_from_af()
-      |> clear_to_table_context()
-      |> close_tag_ref_forced("table")
-      |> pop_mode()
-      |> ok()
-    else
-      # Per spec: "parse error; ignore the token"
-      state
-      |> parse_error()
-      |> ok()
-    end
-  end
-
   # Template end tag: process using the "in head" rules
   def process({:end_tag, "template"} = token, state) do
     state
@@ -271,15 +256,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # EOF: if a template is still open, use "in template" (which parse-errors and
   # reprocesses EOF after popping the template).
-  def process(:eof, %{template_mode_stack: [_ | _]} = state) do
-    if has_template_on_stack?(state) do
-      state
-      |> set_mode(:in_template)
-      |> reprocess()
-    else
-      eof_in_body(state)
-    end
-  end
+  # "If the stack of template insertion modes is not empty, then process the
+  # token using the rules for the in template insertion mode."
+  def process(:eof, %{template_mode_stack: [_ | _]} = state), do: InTemplate.process(:eof, state)
 
   def process(:eof, state), do: eof_in_body(state)
 
@@ -412,7 +391,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> close_foreign_content()
     |> foster_insert({:push, tag, attrs})
-    |> push_mode(:in_table)
+    |> set_mode(:in_table)
     |> set_frameset_not_ok()
   end
 
@@ -447,23 +426,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # HTML start tag processing
   # --------------------------------------------------------------------------
 
-  # Template in template mode
-  defp do_process_html_start_tag("template", attrs, _, %{mode: :in_template} = state) do
-    state
-    |> reconstruct_active_formatting()
-    |> push_element("template", attrs)
-    |> push_mode(:in_template)
-    |> push_af_marker()
-  end
-
-  # Template in body/table/select modes
-  defp do_process_html_start_tag("template", attrs, _, %{mode: mode} = state)
-       when mode in [:in_body, :in_table] do
-    state
-    |> find_ref("body")
-    |> insert_template_with_body(attrs, state)
-  end
-
   # <noscript> with scripting enabled: process using "in head" rules (RAWTEXT)
   defp do_process_html_start_tag("noscript", attrs, self_closing, %{scripting: true} = state) do
     process_in_head(state, {:start_tag, "noscript", attrs, self_closing})
@@ -475,13 +437,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> in_body()
     |> reconstruct_active_formatting()
     |> push_element("noscript", attrs)
-  end
-
-  # Template in other contexts
-  defp do_process_html_start_tag("template", attrs, _, state) do
-    state
-    |> find_ref("body")
-    |> insert_template_elsewhere(attrs, state)
   end
 
   # Other head elements: process using "in head" rules
@@ -703,7 +658,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> in_body()
     |> close_p_unless_quirks("table")
     |> push_element("table", attrs)
-    |> push_mode(:in_table)
+    |> set_mode(:in_table)
     |> set_frameset_not_ok()
   end
 
@@ -963,26 +918,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp push_body_if_no_frameset(_ref, state), do: state
 
-  defp insert_template_with_body(nil, attrs, state) do
-    do_process_html_start_tag_head_context("template", attrs, state)
-  end
-
-  defp insert_template_with_body(_body_ref, attrs, state) do
-    state
-    |> reconstruct_active_formatting()
-    |> push_element("template", attrs)
-    |> push_mode(:in_template)
-    |> push_af_marker()
-  end
-
-  defp insert_template_elsewhere(nil, attrs, state) do
-    do_process_html_start_tag_head_context("template", attrs, state)
-  end
-
-  defp insert_template_elsewhere(_body_ref, attrs, state) do
-    process_start_tag(state, "template", attrs, false)
-  end
-
   defp insert_col_in_table(nil, attrs, state) do
     add_child_to_stack(state, {"col", attrs, []})
   end
@@ -999,24 +934,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> clear_to_table_context()
     |> push_element(tag, attrs)
-  end
-
-  defp do_process_html_start_tag_head_context("template", attrs, state) do
-    state
-    |> ensure_html()
-    |> ensure_head()
-    |> maybe_reopen_head()
-    |> push_element("template", attrs)
-    |> push_mode(:in_template)
-    |> push_af_marker()
-  end
-
-  defp process_start_tag(state, tag, attrs, _self_closing) when tag in @void_elements do
-    add_child_to_stack(state, {tag, attrs, []})
-  end
-
-  defp process_start_tag(state, tag, attrs, _self_closing) do
-    push_element(state, tag, attrs)
   end
 
   # --------------------------------------------------------------------------
@@ -1324,26 +1241,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ensure_body()
   end
 
-  # Reopen head element (put it back on the stack)
-  defp maybe_reopen_head(state) do
-    state
-    |> current_tag()
-    |> reopen_head_unless_current(state)
-  end
-
-  defp reopen_head_unless_current("head", state), do: state
-  defp reopen_head_unless_current(_tag, state), do: do_reopen_head(state)
-
-  defp do_reopen_head(%{stack: stack, elements: elements} = state) do
-    with html_ref when html_ref != nil <- find_ref(state, "html"),
-         head_ref when head_ref != nil <-
-           find_ref_in_children(elements[html_ref].children, elements, "head") do
-      %{state | stack: [head_ref | stack]}
-    else
-      _ -> push_element(state, "head", [])
-    end
-  end
-
   # Merge attributes from second <body> onto existing body element
   # Per HTML5: adds attributes that don't already exist
   defp merge_body_attrs(state, new_attrs) do
@@ -1557,22 +1454,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp clear_to_table_context(state) do
     pop_until_one_of(state, @table_boundaries)
-  end
-
-  # Drop the refs that closing the table will pop from the active formatting list
-  defp drop_table_refs_from_af(%{stack: stack, elements: elements, af: af} = state) do
-    closed_refs = do_get_refs_to_close_for_table(stack, elements, MapSet.new())
-    %{state | af: reject_refs_from_af(af, closed_refs)}
-  end
-
-  defp do_get_refs_to_close_for_table([], _elements, acc), do: acc
-
-  defp do_get_refs_to_close_for_table([ref | rest], elements, acc) do
-    case elements[ref].tag do
-      "table" -> MapSet.put(acc, ref)
-      tag when tag in ["template", "html"] -> acc
-      _ -> do_get_refs_to_close_for_table(rest, elements, MapSet.put(acc, ref))
-    end
   end
 
   defp ensure_table_context(state) do
