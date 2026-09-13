@@ -35,7 +35,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   alias PureHTML.TreeBuilder.Modes.InBody
 
   @table_sections ~w(tbody thead tfoot)
-  @table_context ~w(table tbody thead tfoot tr)
+  @table_context ~w(table tbody template tfoot thead tr)
   @ignored_end_tags ~w(body caption col colgroup html tbody td tfoot th thead tr)
   @formatting_element_tags ~w(a b big code em font i nobr s small strike strong tt u)
 

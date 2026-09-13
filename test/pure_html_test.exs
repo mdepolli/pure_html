@@ -1271,6 +1271,30 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "does not count whitespace in a table section when the current node is a template" do
+      # Arrange
+      html = "<!DOCTYPE HTML><template> <tr> <td>cell</td> </tr> </template>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", _, _},
+               {"html", [],
+                [
+                  {"head", [],
+                   [
+                     {"template", [],
+                      [content: [" ", {"tr", [], [" ", {"td", [], ["cell"]}, " "]}, " "]]}
+                   ]},
+                  {"body", [], []}
+                ]}
+             ] = nodes
+
+      assert error_count == 0
+    end
   end
 
   describe "query/2" do
