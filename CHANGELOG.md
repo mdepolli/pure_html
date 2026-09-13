@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tree builder internals: insertion modes are unary state pipelines; foster parenting is enabled for one token and settled by the tree builder; the in-table "anything else" rules delegate to the in-body rules instead of a second implementation; scope walks take the scope type and state; implied end tags and the in-body delegation helpers live in `Helpers`
 - html5lib-tests submodule pinned at `9329e64` (2026-06-20), the last upstream commit with the tree-construction fixtures before they moved to web-platform-tests; it adds the `void-in-phrasing` fixtures, an adoption case, and corrects `<input><option>` in a select-context fragment
 - html5lib tree-construction tests count `#errors` lines only; `#new-errors` are renamed tokenizer codes, not extra errors
+- html5lib tokenizer and tree-construction suites run one test per fixture file, looping over the cases at run time; the full suite drops from about 68 seconds to under one, since compiling 10,000 generated test functions was the cost. `HTML5LIB_CASE=file:index` runs a single case
 - Tool versions: Erlang 28.4.2 and Elixir 1.20.4; dev dependencies grouped and upgraded
 
 ## [0.3.0] - 2026-02-15

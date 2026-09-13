@@ -2,66 +2,21 @@ defmodule PureHTML.Html5libTokenizerTest do
   use ExUnit.Case, async: true
 
   alias PureHTML.Test.Html5libTokenizerTests, as: H5
-  alias PureHTML.Tokenizer
 
-  # Map html5lib state names to our atom names
-  @state_map %{
-    "Data state" => :data,
-    "RCDATA state" => :rcdata,
-    "RAWTEXT state" => :rawtext,
-    "Script data state" => :script_data,
-    "PLAINTEXT state" => :plaintext,
-    "CDATA section state" => :cdata_section
-  }
-
+  # One test per fixture file; the cases and their initial states run in a loop
+  # at run time. Generating a test function per case made compiling this file
+  # the slowest part of the suite.
   for path <- H5.list_test_files() do
     filename = Path.basename(path, ".test")
-    {tests, xml_violation_mode} = H5.parse_file(path)
 
-    describe filename do
-      for {test, index} <- Enum.with_index(tests) do
-        normalized = H5.normalize_test(test)
-        description = normalized.description || "test #{index}"
+    @tag :html5lib
+    @tag :tokenizer
+    @tag test_file: filename
+    test filename do
+      failures = H5.failures(unquote(path))
 
-        for initial_state <- normalized.initial_states do
-          state_atom = @state_map[initial_state]
-
-          if state_atom do
-            @tag :html5lib
-            @tag :tokenizer
-            @tag test_file: filename
-            test "##{index}: #{description} (#{initial_state})" do
-              normalized = unquote(Macro.escape(normalized))
-              state_atom = unquote(state_atom)
-              xml_violation_mode = unquote(xml_violation_mode)
-
-              opts = [initial_state: state_atom, xml_violation_mode: xml_violation_mode]
-
-              opts =
-                if normalized.last_start_tag do
-                  Keyword.put(opts, :last_start_tag, normalized.last_start_tag)
-                else
-                  opts
-                end
-
-              actual =
-                normalized.input
-                |> Tokenizer.tokenize(opts)
-                |> Enum.to_list()
-                |> Enum.map(&normalize_token_attrs/1)
-
-              assert actual == normalized.expected_tokens
-            end
-          end
-        end
-      end
+      assert failures == [],
+             "#{length(failures)} failing case(s):\n\n" <> Enum.join(failures, "\n")
     end
   end
-
-  # Sort attrs in start tags for deterministic comparison
-  defp normalize_token_attrs({:start_tag, name, attrs, sc}) do
-    {:start_tag, name, Enum.sort(attrs), sc}
-  end
-
-  defp normalize_token_attrs(other), do: other
 end

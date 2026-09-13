@@ -93,6 +93,65 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   end
 
   @doc """
+  Runs every case of a fixture file in the given scripting mode and returns one
+  report per failing case. Set `HTML5LIB_CASE=file:index` (for example
+  `webkit02:12`) to run a single case.
+  """
+  def failures(path, scripting) do
+    filename = Path.basename(path, ".dat")
+
+    path
+    |> parse_file()
+    |> Enum.with_index()
+    |> Enum.filter(&(selected?(filename, &1) and runs_with_scripting?(elem(&1, 0), scripting)))
+    |> Enum.reject(&passes?(&1, scripting))
+    |> Enum.map(&failure_report(filename, &1, scripting))
+  end
+
+  defp selected?(filename, {_test, index}) do
+    case System.get_env("HTML5LIB_CASE") do
+      nil -> true
+      only -> only == "#{filename}:#{index}"
+    end
+  end
+
+  defp runs_with_scripting?(%{script_off: true}, scripting), do: scripting == false
+  defp runs_with_scripting?(%{script_on: true}, scripting), do: scripting == true
+  defp runs_with_scripting?(_test, _scripting), do: true
+
+  defp passes?({test, _index}, scripting) do
+    actual_document(test, scripting) == expected_document(test)
+  end
+
+  defp actual_document(test, scripting) do
+    {document, _error_count} = PureHTML.parse_with_errors(test.data, parse_opts(test, scripting))
+
+    document
+    |> serialize_document()
+    |> String.trim_trailing("\n")
+  end
+
+  defp expected_document(test), do: String.trim_trailing(test.document, "\n")
+
+  defp parse_opts(%{document_fragment: nil}, scripting), do: [scripting: scripting]
+
+  defp parse_opts(%{document_fragment: context}, scripting) do
+    [scripting: scripting, context: context]
+  end
+
+  defp failure_report(filename, {test, index}, scripting) do
+    """
+    #{filename}:#{index} [script-#{if scripting, do: "on", else: "off"}]
+    #data
+    #{test.data}
+    #expected
+    #{expected_document(test)}
+    #actual
+    #{actual_document(test, scripting)}
+    """
+  end
+
+  @doc """
   Serializes a document to the html5lib tree format for comparison.
 
   Document format: list of nodes where:

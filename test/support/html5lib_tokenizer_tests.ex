@@ -42,6 +42,80 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   defp extract_tests(%{"xmlViolationTests" => tests}), do: {tests, true}
   defp extract_tests(_), do: {[], false}
 
+  @state_map %{
+    "Data state" => :data,
+    "RCDATA state" => :rcdata,
+    "RAWTEXT state" => :rawtext,
+    "Script data state" => :script_data,
+    "PLAINTEXT state" => :plaintext,
+    "CDATA section state" => :cdata_section
+  }
+
+  @doc """
+  Runs every case of a fixture file in each of its initial states and returns
+  one report per failing case. Set `HTML5LIB_CASE=file:index` (for example
+  `test1:41`) to run a single case.
+  """
+  def failures(path) do
+    filename = Path.basename(path, ".test")
+    {tests, xml_violation_mode} = parse_file(path)
+
+    tests
+    |> Enum.with_index()
+    |> Enum.filter(&selected?(filename, &1))
+    |> Enum.flat_map(&case_runs(&1, xml_violation_mode))
+    |> Enum.reject(&passes?/1)
+    |> Enum.map(&failure_report(filename, &1))
+  end
+
+  defp selected?(filename, {_test, index}) do
+    case System.get_env("HTML5LIB_CASE") do
+      nil -> true
+      only -> only == "#{filename}:#{index}"
+    end
+  end
+
+  defp case_runs({test, index}, xml_violation_mode) do
+    normalized = normalize_test(test)
+
+    for state <- normalized.initial_states, state_atom = @state_map[state], state_atom != nil do
+      opts =
+        [initial_state: state_atom, xml_violation_mode: xml_violation_mode]
+        |> put_last_start_tag(normalized.last_start_tag)
+
+      {index, state, normalized, opts}
+    end
+  end
+
+  defp put_last_start_tag(opts, nil), do: opts
+  defp put_last_start_tag(opts, tag), do: Keyword.put(opts, :last_start_tag, tag)
+
+  defp passes?({_index, _state, normalized, opts}) do
+    actual_tokens(normalized, opts) == normalized.expected_tokens
+  end
+
+  defp actual_tokens(normalized, opts) do
+    normalized.input
+    |> PureHTML.Tokenizer.tokenize(opts)
+    |> Enum.map(&sort_start_tag_attrs/1)
+  end
+
+  # Sort attrs in start tags for deterministic comparison
+  defp sort_start_tag_attrs({:start_tag, name, attrs, self_closing}) do
+    {:start_tag, name, Enum.sort(attrs), self_closing}
+  end
+
+  defp sort_start_tag_attrs(token), do: token
+
+  defp failure_report(filename, {index, state, normalized, opts}) do
+    """
+    #{filename}:#{index} (#{state}): #{normalized.description}
+    input:    #{inspect(normalized.input)}
+    expected: #{inspect(normalized.expected_tokens)}
+    actual:   #{inspect(actual_tokens(normalized, opts))}
+    """
+  end
+
   @doc """
   Normalizes a raw test map into a structured format.
 
