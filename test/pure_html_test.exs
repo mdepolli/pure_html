@@ -1242,6 +1242,35 @@ defmodule PureHTMLTest do
 
       assert error_count == 2
     end
+
+    test "does not count an ampersand followed by an unknown name without a semicolon" do
+      # Arrange
+      html = "&x-test"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["&x-test"]}]}] = nodes
+      assert error_count == 1
+    end
+
+    test "does not count an unknown name without a semicolon inside an attribute value" do
+      # Arrange
+      html = ~s(<div bar="ZZ&prod_id=23"></div>)
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"div", [{"bar", "ZZ&prod_id=23"}], []}]}]}
+             ] =
+               nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

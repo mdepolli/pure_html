@@ -2262,11 +2262,10 @@ defmodule PureHTML.Tokenizer do
         consume_named_entity(state, input, chars, rest)
 
       nil ->
-        # unknown-named-character-reference parse error
         <<_, after_amp::binary>> = input
 
         state
-        |> parse_error()
+        |> ambiguous_ampersand_error(after_amp)
         |> flush_char_ref("&", after_amp)
     end
   end
@@ -2718,6 +2717,21 @@ defmodule PureHTML.Tokenizer do
       flush_char_ref(state, "&", after_amp)
     end
   end
+
+  # Ambiguous ampersand state: the alphanumerics after the ampersand go back to
+  # the return state as ordinary characters. Only a semicolon ending that run
+  # is an unknown-named-character-reference parse error.
+  defp ambiguous_ampersand_error(state, input) do
+    case skip_ascii_alphanumerics(input) do
+      <<?;, _::binary>> -> parse_error(state)
+      _ -> state
+    end
+  end
+
+  defp skip_ascii_alphanumerics(<<c, rest::binary>>) when is_ascii_alpha(c) or is_ascii_digit(c),
+    do: skip_ascii_alphanumerics(rest)
+
+  defp skip_ascii_alphanumerics(rest), do: rest
 
   # The matched text is the prefix of input that Entities.lookup consumed.
   # Legacy references like "&amp" match without a terminating semicolon.
