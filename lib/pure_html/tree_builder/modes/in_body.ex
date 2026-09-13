@@ -111,11 +111,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # End tags
   # --------------------------------------------------------------------------
 
-  # End tags that break out of foreign content
   def process({:end_tag, tag} = token, state) when tag in ~w(p br) do
-    state
-    |> foreign_namespace()
-    |> break_out_for_end_tag(token, state)
+    do_process_end_tag(token, state)
   end
 
   # Per spec: "If the stack of open elements does not have a body element in scope,
@@ -293,19 +290,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
-  # </svg> and </math>: close foreign root element (ignores internal barriers)
-  def process({:end_tag, "svg"}, state) do
-    state
-    |> close_foreign_root(:svg)
-    |> ok()
-  end
-
-  def process({:end_tag, "math"}, state) do
-    state
-    |> close_foreign_root(:math)
-    |> ok()
-  end
-
   # Any other end tag per spec:
   # Walk the stack. If node matches tag:
   #   - "If node is not the current node, then this is a parse error."
@@ -401,17 +385,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> dispatch_start_tag(corrected_tag, attrs, self_closing)
     |> ok()
   end
-
-  defp break_out_for_end_tag(nil, token, state), do: do_process_end_tag(token, state)
-
-  # Break out of foreign content first
-  defp break_out_for_end_tag(_ns, token, state) do
-    state
-    |> close_foreign_content()
-    |> process_end_tag(token)
-  end
-
-  defp process_end_tag(state, token), do: do_process_end_tag(token, state)
 
   # Per spec: "Parse error." then "If there is a template element on the stack, ignore"
   defp process_html_body_start_tag(%{template_mode_stack: [_ | _]} = state, _attrs) do
@@ -1946,26 +1919,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Close foreign root element (svg or math) - ignores internal barriers
-  # This is needed because </svg> and </math> should close all children
-  defp close_foreign_root(%{stack: stack, elements: elements} = state, ns) do
-    apply_pop_result(state, pop_until_foreign_root(stack, elements, ns))
-  end
-
-  defp pop_until_foreign_root([], _elements, _ns), do: :not_found
-
-  defp pop_until_foreign_root([ref | rest], elements, ns) do
-    case elements[ref].tag do
-      # Found the root foreign element (e.g., {:svg, "svg"} or {:math, "math"})
-      {^ns, tag} when tag in ["svg", "math"] ->
-        {:found, rest, elements[ref].parent_ref}
-
-      # Keep looking past other elements (including foreign children)
-      _ ->
-        pop_until_foreign_root(rest, elements, ns)
-    end
-  end
-
   # Close tag for specifically-handled end tags (template, table, select, frameset)
   # Does NOT respect special element stops - only template is a barrier
   defp close_tag_ref_forced(%{stack: stack, elements: elements} = state, tag) do
@@ -2158,7 +2111,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Apply the result of a pop_until_* function to the state.
-  # Shared by close_tag_ref, close_tag_ref_forced, close_foreign_root, and do_close_block_end_tag.
+  # Shared by close_tag_ref, close_tag_ref_forced, and do_close_block_end_tag.
   defp apply_pop_result(state, {:found, [new_top | _] = new_stack, _parent_ref}) do
     %{state | stack: new_stack, current_parent_ref: new_top}
   end

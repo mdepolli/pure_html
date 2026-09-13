@@ -613,6 +613,16 @@ defmodule PureHTML.TreeBuilder do
   # End tags: walk the stack per spec. Match foreign elements by tag name,
   # fall through to insertion mode when reaching an HTML element.
   # First step: if the current node's tag name does not match, parse error.
+  # Per spec, "An end tag whose tag name is 'br', 'p'": parse error; pop until
+  # an integration point or an HTML element; reprocess the token with the
+  # rules for the current insertion mode.
+  defp process_foreign_content({:end_tag, tag} = token, state) when tag in ~w(br p) do
+    state
+    |> parse_error()
+    |> close_foreign_content()
+    |> process_with_current_mode(token)
+  end
+
   defp process_foreign_content({:end_tag, tag}, %{stack: stack} = state) do
     state =
       if current_node_matches_end_tag?(state, tag) do
@@ -646,6 +656,11 @@ defmodule PureHTML.TreeBuilder do
   # (case-insensitive), pop until it's popped. If an HTML element is reached,
   # process using the current insertion mode's rules instead.
   defp foreign_content_end_tag(_tag, [], _count, state), do: {:ok, state}
+
+  # Per spec: "If node is the topmost element in the stack of open elements,
+  # then return. (fragment case)" — checked before the tag match and before
+  # any hand-off to the current insertion mode.
+  defp foreign_content_end_tag(_tag, [_topmost], _count, state), do: ok(state)
 
   defp foreign_content_end_tag(tag, [ref | rest], count, %{elements: elements} = state) do
     case elements[ref].tag do

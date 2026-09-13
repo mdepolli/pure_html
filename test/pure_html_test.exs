@@ -453,6 +453,28 @@ defmodule PureHTMLTest do
       assert error_count == 7
     end
 
+    test "ignores a foreign end tag that reaches in body at a special element" do
+      # Arrange
+      html = "<math><annotation-xml></svg>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{{:math, "math"}, [], [{{:math, "annotation-xml"}, [], ["x"]}]}]}
+                ]}
+             ] = nodes
+
+      # No doctype; the foreign end-tag walk finds no svg (parse error) and hands the
+      # token to in body, where any-other-end-tag stops at the special annotation-xml
+      # (parse error); math is still open at EOF.
+      assert error_count == 4
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
