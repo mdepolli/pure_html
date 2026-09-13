@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The body start tag follows the text: parse error, ignored with a template on the stack or when the second element of the stack is not a body, otherwise frameset-ok "not ok" and merged attributes
 - Closing a table (or a nested table start tag) pops through the table and resets the insertion mode appropriately, where a template node yields the current template insertion mode
 - The adoption agency follows the text step by step: the early exit for a current node not in the list, the formatting element search bounded by the last marker, lastNode inserted at the appropriate place for the common ancestor (foster parented when foster parenting is on), and the any-other-end-tag step for a missing entry on any iteration
+- A CDATA section is recognized whenever the adjusted current node is not in the HTML namespace, including inside an SVG or MathML integration point such as `<svg><title>`; it was a bogus comment there
+- The in-body `<svg>` and `<math>` entries reconstruct the active formatting elements before inserting the element, as their text says
 
 ### Removed
 
