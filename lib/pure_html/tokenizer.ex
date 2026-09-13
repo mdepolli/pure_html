@@ -4,7 +4,10 @@ defmodule PureHTML.Tokenizer do
 
   The tokenizer is implemented as a state machine. Each call to `next_token/1`
   advances the machine until it produces a token, then returns the token and
-  the updated state.
+  the updated state. The tree builder switches the state for raw text, RCDATA,
+  script data, and plaintext elements with `set_state/2`, and tells the
+  tokenizer whether the adjusted current node is foreign with
+  `set_foreign_content/2` (for CDATA sections).
 
   ## Usage
 

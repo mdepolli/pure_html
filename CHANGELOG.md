@@ -23,20 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fragment parsing: form element pointer now set when context element is `<form>` (WHATWG spec step 13)
-- `in_select` foreign namespace check now uses adjusted current node instead of scanning entire stack
 - Parse error counts now follow the WHATWG rules
   - Tokenizer: end tags with attributes, trailing solidus on non-void start tags, C1 control and unknown named character references, EOF inside script comment-like text
   - Foreign content: HTML and `<body>` start tags inside foreign content, mismatched foreign end tags; no error at HTML integration points
   - Tables: ignored `<tr>` and table-structure start tags, mismatched cell end tags, foster-parented characters and end tags (including `</p>`, which now foster-parents through the in-body rules), an implied cell when the current node is not a cell, `<frameset>` and `<frame>` inside a table, and end tags in a nested table, which no longer bypass the in-table rules
-  - Column groups and templates: `<col>` outside a colgroup, `<colgroup>` in body or inside a template, SVG and HTML breakout inside a colgroup, `<tr>` after non-table template content, foster-parented tags in a template row, `<html>` and `<a>` inside template table content, mismatched `</template>`, and characters and EOF in frameset, column group, select, and template contexts
+  - Column groups and templates: `<col>` outside a colgroup, `<colgroup>` in body or inside a template, SVG and HTML breakout inside a colgroup, `<tr>` after non-table template content, foster-parented tags in a template row, `<html>` and `<a>` inside template table content, mismatched `</template>`, and characters and EOF in frameset, column group, and template contexts
   - Elsewhere: `<rp>`/`<rt>` outside `ruby`, `<frame>` outside a frameset, `</html>` and `</frameset>` on a fragment root, `</frameset>` in body, caption-closing tokens and mismatched caption end tags, and `</form>` whose form element is out of scope (the form now stays open, as specified)
 - EOF is dispatched through the insertion modes per the spec instead of being handled once at the end
-- A select closes when the current node is an `option` and a closing token arrives
 - Closing a caption now generates implied end tags first and clears the active formatting list to its marker, so formatting elements opened before the table are reconstructed after it
 - `xmp`, `iframe`, and `noembed` in body now switch to the text insertion mode, so EOF inside them is counted once for the raw text element and once for other open elements
 - Duplicate `<a>` start tags follow the spec: the adoption agency runs, then the old element is removed from the active formatting list and the stack even when a table put it out of scope; `<nobr>` uses its own scope-based rule
 - Reconstructed formatting elements are foster-parented when foster parenting applies
-- Closing a nested table now returns to the insertion mode it was opened from (off-by-one in the saved mode)
 - `<frameset>` in caption, cell, and table contexts is a parse error and is ignored; it is no longer silently accepted, nor inserted in fragments with no body
 - Query: redundant clauses for namespaced elements removed
 - `select` is a scope boundary, as in the current standard, so an end tag for an element opened outside a select is ignored inside it
@@ -79,9 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In body's start tag entries take the token, and the adoption agency works on element refs with one function per step of the text; elements no longer carry a foster-parent marker
 - The `selectedcontent` mirroring of the customizable select is replayed by `PureHTML.TreeBuilder.SelectedContent` after parsing, documented as the forms chapter's "update a select's selectedcontent" rather than a tree construction step
 - Foreign content has its own module, `PureHTML.TreeBuilder.ForeignContent`, mirroring the text's section: the dispatcher decision, the rules for parsing tokens in foreign content, the tokenizer's CDATA test, element insertion with the SVG tag and foreign attribute adjustments, the integration point tests, and breaking out
-- html5lib-tests submodule pinned at `9329e64` (2026-06-20), the last upstream commit with the tree-construction fixtures before they moved to web-platform-tests; it adds the `void-in-phrasing` fixtures, an adoption case, and corrects `<input><option>` in a select-context fragment
+- html5lib-tests submodule pinned at `9329e64` (2026-06-22), the last upstream commit with the tree-construction fixtures before they moved to web-platform-tests; it adds the `void-in-phrasing` fixtures, an adoption case, and corrects `<input><option>` in a select-context fragment
 - html5lib tree-construction tests count `#errors` lines only; `#new-errors` are renamed tokenizer codes, not extra errors
-- html5lib tokenizer and tree-construction suites run one test per fixture file, looping over the cases at run time; the full suite drops from about 68 seconds to under one, since compiling 10,000 generated test functions was the cost. `HTML5LIB_CASE=file:index` runs a single case
+- html5lib tokenizer and tree-construction suites run one test per fixture file, looping over the cases at run time; the full suite drops from about 68 seconds to under one, since compiling the generated per-case test functions was the cost. `HTML5LIB_CASE=file:index` runs a single case
 - Tool versions: Erlang 28.4.2 and Elixir 1.20.4; dev dependencies grouped and upgraded
 
 ## [0.3.0] - 2026-02-15

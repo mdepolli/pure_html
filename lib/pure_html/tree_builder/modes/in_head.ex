@@ -10,16 +10,18 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   - DOCTYPE: Parse error, ignore
   - <html> start tag: Process using "in body" rules
   - <base>, <basefont>, <bgsound>, <link>, <meta>: Insert void element
-  - <title>: Insert and switch to RCDATA (handled by tokenizer)
-  - <noscript>, <noframes>, <style>: Insert and switch to RAWTEXT
-  - <script>: Insert and switch to script data state
-  - <template>: Insert, push mode, set up template
-  - </head>: Pop head, switch to "after head"
+  - <title>: generic RCDATA element parsing
+  - <noscript> (scripting on), <noframes>, <style>: generic raw text element parsing
+  - <noscript> (scripting off): insert, switch to "in head noscript"
+  - <script>: insert, switch the tokenizer to script data, switch to "text"
+  - <template>: insert, marker, frameset-ok "not ok", push "in template"
+  - </head>: pop the current node, switch to "after head"
   - </body>, </html>, </br>: Act as "anything else"
-  - </template>: Process template end tag
+  - </template>: pop through the template, clear formatting to the marker, pop the
+    template insertion mode, reset the insertion mode
   - <head>: Parse error, ignore
   - Any other end tag: Parse error, ignore
-  - Anything else: Close head (implied </head>), switch to "after head", reprocess
+  - Anything else: pop the current node, switch to "after head", reprocess
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
   """

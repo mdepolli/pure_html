@@ -1,22 +1,22 @@
 defmodule PureHTML.TreeBuilder do
   @moduledoc """
-  Builds an HTML document tree from a tokenizer.
+  Builds an HTML document tree from a tokenizer, following the WHATWG tree
+  construction stage.
 
   ## Architecture
 
-  The tree builder separates parsing context from DOM construction:
-
-  - **Parsing context**: Stack tracks "open elements" for scope checks and mode decisions.
-    Active formatting list tracks formatting elements for the adoption agency algorithm.
-  - **DOM structure**: Elements stored in a map with explicit parent_ref relationships.
-    Foster parenting resolved at insertion time via appropriate_insertion_location.
-
-  ## Data Structures
-
-  - State struct: parsing context + DOM storage
-  - Elements: %{ref, tag, attrs, parent_ref, children}
-  - make_ref() for element IDs (no counter to pass around)
-  - Insertion modes for O(1) context checks
+  - **Parsing context**: the stack of open elements (refs), the list of active
+    formatting elements, the insertion mode, the stack of template insertion
+    modes, and the element pointers, all in the `State` struct.
+  - **DOM structure**: elements stored in a map keyed by `make_ref()`, each with
+    its tag, attributes, children, and parent ref. The stack top is the
+    insertion parent; foster parenting is resolved at insertion time.
+  - **Dispatch**: each token goes to the foreign content rules
+    (`PureHTML.TreeBuilder.ForeignContent`) or to the module for the current
+    insertion mode. The modes switch the tokenizer state for raw text, RCDATA,
+    script data, and plaintext.
+  - **After parsing**: `PureHTML.TreeBuilder.SelectedContent` replays the
+    customizable select's selectedcontent mirroring over the finished tree.
 
   ## Output
 

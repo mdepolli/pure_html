@@ -11,13 +11,15 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   - <html> start tag: Process using "in body" rules
   - <body> start tag: Insert body element, switch to "in body"
   - <frameset> start tag: Insert frameset element, switch to "in frameset"
-  - Head elements (<base>, <link>, <meta>, <script>, <style>, <template>, <title>):
-    Parse error, reprocess using "in head" rules
+  - Head elements (<base>, <basefont>, <bgsound>, <link>, <meta>, <noframes>,
+    <script>, <style>, <template>, <title>): parse error; push the head element,
+    process using "in head" rules, remove the head element from the stack
   - </template>: Process using "in head" rules
   - </body>, </html>, </br>: Act as "anything else"
   - <head> start tag: Parse error, ignore
   - Any other end tag: Parse error, ignore
-  - Anything else: Insert implied <body>, switch to "in body", reprocess
+  - Anything else (EOF included): insert a body element, frameset-ok "ok",
+    switch to "in body", reprocess
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode
   """

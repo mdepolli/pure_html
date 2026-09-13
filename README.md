@@ -20,7 +20,8 @@ PureHTML has **zero dependencies**. It's pure Elixir code all the way down.
 PureHTML implements the [WHATWG HTML5 specification](https://html.spec.whatwg.org/multipage/parsing.html). It handles all the complex error-recovery rules that browsers use.
 
 - **Spec compliant**: Implements the full HTML5 tree construction algorithm including adoption agency, foster parenting, and foreign content (SVG/MathML).
-- **100% html5lib compliance**: Passes all 8,634 tests from the official [html5lib-tests](https://github.com/html5lib/html5lib-tests) suite used by browser vendors.
+- **100% html5lib compliance**: Passes all 8,602 tree-construction and tokenizer cases of the official [html5lib-tests](https://github.com/html5lib/html5lib-tests) suite used by browser vendors, the tree-construction cases in both scripting modes.
+- **Parse errors**: `parse_with_errors/2` reports the number of parse errors the WHATWG tokenizer and tree builder define, so you can tell well-formed input from recovered input.
 
 ### Fast Enough
 
@@ -52,6 +53,13 @@ PureHTML.parse("<p>One<p>Two")
 # Convert back to HTML
 PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
 # => "<html><head></head><body><p>Hello</p></body></html>"
+
+# Count the parse errors the WHATWG rules report (here: no doctype)
+PureHTML.parse_with_errors("<p>Hello</p>")
+# => {[{"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["Hello"]}]}]}], 1}
+
+# Parse as if scripting were disabled (affects <noscript>)
+PureHTML.parse("<noscript><p>Hi</p></noscript>", scripting: false)
 ```
 
 ## Querying

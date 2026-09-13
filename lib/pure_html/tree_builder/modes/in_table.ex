@@ -5,25 +5,29 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   This mode handles content inside a <table> element.
 
   Per HTML5 spec:
-  - Character tokens: foster parent via in_body (except whitespace in table context)
+  - Character tokens with a table, tbody, template, tfoot, thead, or tr as the
+    current node: collect them in "in table text"
   - Comments: insert comment
   - DOCTYPE: parse error, ignore
   - Start tags:
     - caption: clear to table context, insert marker, insert caption, switch to in_caption
     - colgroup: clear to table context, insert colgroup, switch to in_column_group
-    - col: ensure colgroup, insert col
+    - col: clear to table context, insert colgroup, switch to in_column_group, reprocess
     - tbody/thead/tfoot: clear to table context, insert element, switch to in_table_body
-    - td/th/tr: ensure tbody, reprocess
-    - table: parse error, close table, reprocess
+    - td/th/tr: clear to table context, insert tbody, switch to in_table_body, reprocess
+    - table: parse error; with a table in table scope, pop through it, reset the
+      insertion mode, reprocess
     - style/script/template: process using in_head rules
-    - input type=hidden: insert directly (no foster parenting)
-    - form: special handling
-    - Anything else: foster parent via in_body
+    - input type=hidden: parse error, insert and pop
+    - form: parse error; with no template on the stack and a null form pointer,
+      insert the form, point to it, and pop it
+    - Anything else: parse error, enable foster parenting, process using in_body rules
   - End tags:
-    - table: close table
+    - table: with a table in table scope, pop through it and reset the insertion mode
     - body/caption/col/colgroup/html/tbody/td/tfoot/th/thead/tr: parse error, ignore
     - template: process using in_head rules
-    - Anything else: foster parent via in_body
+    - Anything else: parse error, enable foster parenting, process using in_body rules
+  - EOF: process using in_body rules
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intable
   """

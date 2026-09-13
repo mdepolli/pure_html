@@ -81,9 +81,22 @@ defmodule PureHTML do
   end
 
   @doc """
-  Parses HTML and returns both the document tree and the parse error count.
+  Parses HTML like `parse/2` and returns `{nodes, error_count}`.
 
-  Same as `parse/2` but returns `{nodes, error_count}`.
+  The count follows the parse errors the WHATWG tokenizer and tree
+  construction rules define (a missing doctype, an unexpected end tag, an
+  element still open at the end of the input, and so on). Well-formed input
+  yields `0`. Takes the same options as `parse/2`.
+
+  ## Examples
+
+      iex> PureHTML.parse_with_errors("<!DOCTYPE html><p>Hi</p>")
+      {[{:doctype, "html", nil, nil}, {"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["Hi"]}]}]}], 0}
+
+      iex> {_nodes, errors} = PureHTML.parse_with_errors("<p>Hi")
+      iex> errors
+      1
+
   """
   @spec parse_with_errors(String.t(), keyword()) :: {[term()], non_neg_integer()}
   def parse_with_errors(html, opts \\ []) when is_binary(html) do

@@ -2,14 +2,15 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   @moduledoc """
   HTML5 "text" insertion mode.
 
-  This mode handles RAWTEXT and RCDATA content (script, style, title, etc.).
+  This mode handles the content of raw text, RCDATA, and script elements.
 
   Per HTML5 spec:
-  - Character tokens: Insert the character into the current node
-  - End tag matching current element: Close element, switch to original mode
-  - End tag (script): Special handling (we simplify to same as above)
-  - EOF: Parse error, close element, switch to original mode, reprocess
-  - Anything else: Should not happen (tokenizer handles RAWTEXT/RCDATA)
+  - Character tokens: insert the characters (a textarea drops a line feed that
+    immediately follows its start tag)
+  - End tag: pop the current node, switch to the original insertion mode (the
+    script end tag has no script execution steps here)
+  - EOF: parse error, pop the current node, switch to the original insertion
+    mode, reprocess
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata
   """

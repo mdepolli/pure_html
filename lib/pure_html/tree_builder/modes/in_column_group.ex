@@ -20,6 +20,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     - col: parse error, ignore
     - template: process using "in head" rules
     - Anything else: close colgroup, reprocess in "in table"
+  - EOF: process using "in body" rules
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incolgroup
   """

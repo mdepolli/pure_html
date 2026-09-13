@@ -19,6 +19,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   - End tags:
     - template: process using "in head" rules
     - Anything else: parse error, ignore
+  - EOF: with no template on the stack, stop; otherwise parse error, pop through
+    the template, clear formatting to the marker, pop the template insertion
+    mode, reset the insertion mode, reprocess
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intemplate
   """
