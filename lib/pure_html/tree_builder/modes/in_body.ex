@@ -60,7 +60,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                                   keygen applet marquee object table button img hr br wbr area
                                   dd dt li plaintext rb rtc)
 
-  @adopt_on_duplicate_elements ~w(a nobr)
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
   @ruby_elements ~w(rb rt rtc rp)
   @newline_skipping_elements ~w(pre textarea listing)
@@ -744,16 +743,27 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> insert_tr(mode, attrs, state)
   end
 
-  # Adopt-on-duplicate formatting elements
-  # Per HTML5 spec: run AA BEFORE reconstructing active formatting
-  defp do_process_html_start_tag(tag, attrs, _, state)
-       when tag in @adopt_on_duplicate_elements do
+  # Per spec: an a element in the active formatting list after the last marker
+  # is a parse error; run the adoption agency algorithm, then remove that
+  # element from the list and the stack if the algorithm didn't already.
+  defp do_process_html_start_tag("a", attrs, _, state) do
     state
     |> in_body()
-    |> maybe_close_existing_formatting(tag)
+    |> close_existing_anchor()
     |> reconstruct_active_formatting()
-    |> push_element(tag, attrs)
-    |> add_formatting_entry(tag, attrs)
+    |> push_element("a", attrs)
+    |> add_formatting_entry("a", attrs)
+  end
+
+  # Per spec: reconstruct; if a nobr element is in scope, parse error, run the
+  # adoption agency algorithm, and reconstruct again.
+  defp do_process_html_start_tag("nobr", attrs, _, state) do
+    state
+    |> in_body()
+    |> reconstruct_active_formatting()
+    |> close_nobr_in_scope()
+    |> push_element("nobr", attrs)
+    |> add_formatting_entry("nobr", attrs)
   end
 
   # Formatting elements
@@ -2297,102 +2307,61 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp reconstruct_entries([], state), do: state
 
-  defp reconstruct_entries(
-         [{old_ref, tag, attrs} | rest],
-         %{stack: stack, af: af, elements: elements, current_parent_ref: parent_ref} = state
-       ) do
-    # Create new element with proper parent
-    new_elem = new_element(tag, attrs, parent_ref)
+  # Per spec: create a new element for the entry, insert it (foster-parented
+  # when foster parenting applies), push it, and repoint the entry to it.
+  defp reconstruct_entries([{old_ref, tag, attrs} | rest], state) do
+    state
+    |> push_element(tag, attrs)
+    |> repoint_af_entry(old_ref, tag, attrs)
+    |> reconstruct_entries_rest(rest)
+  end
 
-    # Add to elements map
-    new_elements = Map.put(elements, new_elem.ref, new_elem)
+  defp reconstruct_entries_rest(state, rest), do: reconstruct_entries(rest, state)
 
-    # Add as child of current parent
-    new_elements =
-      if parent_ref && is_map_key(new_elements, parent_ref) do
-        Map.update!(new_elements, parent_ref, fn p ->
-          %{p | children: [new_elem.ref | p.children]}
-        end)
-      else
-        new_elements
-      end
-
-    # Push ref onto stack (not the whole element)
-    new_stack = [new_elem.ref | stack]
-
-    # Update AF entry to point to new ref
-    new_af = update_af_entry(af, old_ref, {new_elem.ref, tag, attrs})
-
-    # Continue with updated state, new element becomes current parent
-    reconstruct_entries(rest, %{
-      state
-      | stack: new_stack,
-        af: new_af,
-        elements: new_elements,
-        current_parent_ref: new_elem.ref
-    })
+  defp repoint_af_entry(%{stack: [new_ref | _], af: af} = state, old_ref, tag, attrs) do
+    %{state | af: update_af_entry(af, old_ref, {new_ref, tag, attrs})}
   end
 
   defp add_formatting_entry(%{stack: [ref | _], af: af} = state, tag, attrs) do
     %{state | af: apply_noahs_ark([{ref, tag, attrs} | af], tag, attrs)}
   end
 
-  # Per spec: for <a> and <nobr>, if there's already one in the AF list,
-  # "this is a parse error" and run the adoption agency algorithm.
-  defp maybe_close_existing_formatting(%{af: af} = state, tag) do
+  defp close_existing_anchor(%{af: af} = state) do
     af
-    |> find_formatting_entry(tag)
-    |> close_existing_formatting(tag, state)
+    |> anchor_ref_after_last_marker()
+    |> close_anchor(state)
   end
 
-  defp close_existing_formatting(nil, _tag, state), do: state
+  # The list head is its end; entries up to the first marker are in scope.
+  defp anchor_ref_after_last_marker(af) do
+    af
+    |> Enum.take_while(&(&1 != :marker))
+    |> Enum.find_value(fn
+      {ref, "a", _attrs} -> ref
+      _entry -> nil
+    end)
+  end
 
-  defp close_existing_formatting({_idx, {ref, _tag, _attrs}}, tag, state) do
+  defp close_anchor(nil, state), do: state
+
+  defp close_anchor(ref, state) do
     state
     |> parse_error()
-    |> do_close_existing_formatting(tag, ref)
+    |> AdoptionAgency.run("a", &close_tag_ref/2)
+    |> remove_af_entry(ref)
+    |> remove_from_stack_if_present(ref)
   end
 
-  defp do_close_existing_formatting(%{stack: stack} = state, tag, ref) do
-    in_stack = Enum.member?(stack, ref)
-    in_table_context = has_table_in_stack?(state)
-
-    cond do
-      in_stack ->
-        # Element is in stack - run Adoption Agency to close it
-        close_formatting_in_stack(state, tag, ref)
-
-      in_table_context ->
-        # Element was foster-parented but we're still in table context
-        # Keep in AF for reconstruction after table closes
-        state
-
-      true ->
-        # Element was foster-parented and table is closed
-        # Remove from AF to prevent reconstruction
-        %{state | af: remove_formatting_entry(state.af, tag)}
-    end
+  defp remove_af_entry(%{af: af} = state, ref) do
+    %{state | af: Enum.reject(af, &match?({^ref, _, _}, &1))}
   end
 
-  defp close_formatting_in_stack(%{af: old_af} = state, tag, ref) do
-    state
-    |> AdoptionAgency.run(tag, &close_tag_ref/2)
-    |> drop_stale_formatting_entry(tag, ref, old_af)
-  end
-
-  # Remove from AF only if AA didn't handle it AND element was actually closed
-  defp drop_stale_formatting_entry(%{af: af, stack: stack} = state, tag, ref, old_af) do
-    if af == old_af and ref not in stack do
-      %{state | af: remove_formatting_entry(af, tag)}
+  defp remove_from_stack_if_present(%{stack: stack} = state, ref) do
+    if ref in stack do
+      remove_from_stack(state, ref)
     else
       state
     end
-  end
-
-  defp has_table_in_stack?(%{stack: stack, elements: elements}) do
-    Enum.any?(stack, fn ref ->
-      match?(%{tag: "table"}, elements[ref])
-    end)
   end
 
   # Noah's Ark clause: if there are already 3 formatting elements with same tag/attrs
@@ -2416,20 +2385,15 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  defp find_formatting_entry(af, tag) do
-    af
-    |> Enum.with_index()
-    |> Enum.find_value(fn
-      {{ref, ^tag, attrs}, idx} -> {idx, {ref, tag, attrs}}
-      _ -> nil
-    end)
-  end
-
-  defp remove_formatting_entry(af, tag) do
-    Enum.reject(af, fn
-      {_, ^tag, _} -> true
-      _ -> false
-    end)
+  defp close_nobr_in_scope(state) do
+    if in_scope?(state, "nobr", :default) do
+      state
+      |> parse_error()
+      |> AdoptionAgency.run("nobr", &close_tag_ref/2)
+      |> reconstruct_active_formatting()
+    else
+      state
+    end
   end
 
   # Pop element if current tag matches target
