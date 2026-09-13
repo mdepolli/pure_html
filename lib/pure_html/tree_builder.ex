@@ -137,6 +137,7 @@ defmodule PureHTML.TreeBuilder do
             mode: insertion_mode(),
             template_mode_stack: [insertion_mode()],
             original_mode: insertion_mode() | nil,
+            tokenizer_state: atom() | nil,
             pending_table_text: String.t(),
             frameset_ok: boolean(),
             head_element: element_ref() | nil,
@@ -162,6 +163,8 @@ defmodule PureHTML.TreeBuilder do
       template_mode_stack: [],
       # Original insertion mode (saved when switching to text/in_table_text)
       original_mode: nil,
+      # Tokenizer state to switch to before the next token (raw text, RCDATA, script, plaintext)
+      tokenizer_state: nil,
       # Pending table character tokens (for in_table_text mode)
       pending_table_text: "",
       # Frameset-ok flag
@@ -350,9 +353,25 @@ defmodule PureHTML.TreeBuilder do
         merge_tokenizer_errors(acc, tokenizer)
 
       {token, tokenizer} ->
-        acc = process_token(token, acc)
+        {tokenizer, acc} =
+          token
+          |> process_token(acc)
+          |> apply_tokenizer_switch(tokenizer)
+
         build_loop(tokenizer, acc)
     end
+  end
+
+  # The insertion modes ask for a tokenizer state ("switch the tokenizer to
+  # the RAWTEXT state"); it takes effect before the next token is read.
+  defp apply_tokenizer_switch({_, %State{tokenizer_state: nil}, _} = acc, tokenizer),
+    do: {tokenizer, acc}
+
+  defp apply_tokenizer_switch(
+         {doctype, %State{tokenizer_state: next} = state, comments},
+         tokenizer
+       ) do
+    {Tokenizer.set_state(tokenizer, next), {doctype, %{state | tokenizer_state: nil}, comments}}
   end
 
   defp merge_tokenizer_errors({doctype, state, comments}, %Tokenizer{error_count: n}) do

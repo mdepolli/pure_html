@@ -411,13 +411,21 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Generic raw text and RCDATA element parsing, after the element is inserted:
-  the original insertion mode is the current one, then switch to "text".
+  switch the tokenizer, keep the current insertion mode as the original one,
+  then switch to "text".
   """
-  def enter_text_mode(%{mode: mode} = state) do
+  def enter_text_mode(%{mode: mode} = state, tokenizer_state) do
     state
+    |> switch_tokenizer(tokenizer_state)
     |> Map.put(:original_mode, mode)
     |> set_mode(:text)
   end
+
+  @doc """
+  Asks the tree builder to switch the tokenizer to `tokenizer_state` before
+  the next token.
+  """
+  def switch_tokenizer(state, tokenizer_state), do: %{state | tokenizer_state: tokenizer_state}
 
   @doc """
   Processes the token with the "in table" rules on behalf of `mode` (in table

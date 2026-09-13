@@ -71,14 +71,14 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   def process({:start_tag, "title", attrs, _self_closing}, state) do
     # Generic RCDATA element parsing
     state
-    |> switch_to_text_mode("title", attrs)
+    |> switch_to_text_mode("title", attrs, :rcdata)
     |> ok()
   end
 
   # <noscript> with scripting enabled: treat as RAWTEXT (content is raw text)
   def process({:start_tag, "noscript", attrs, _self_closing}, %{scripting: true} = state) do
     state
-    |> switch_to_text_mode("noscript", attrs)
+    |> switch_to_text_mode("noscript", attrs, :rawtext)
     |> ok()
   end
 
@@ -94,14 +94,14 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
       when tag in @raw_text_elements do
     # Insert element, switch to text mode (RAWTEXT)
     state
-    |> switch_to_text_mode(tag, attrs)
+    |> switch_to_text_mode(tag, attrs, :rawtext)
     |> ok()
   end
 
   def process({:start_tag, "script", attrs, _self_closing}, state) do
     # Insert script element, switch to text mode
     state
-    |> switch_to_text_mode("script", attrs)
+    |> switch_to_text_mode("script", attrs, :script_data)
     |> ok()
   end
 
@@ -195,9 +195,9 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   defp pop_if_tag(tag, tag, state), do: pop_element(state)
   defp pop_if_tag(_current, _expected, state), do: state
 
-  defp switch_to_text_mode(state, tag, attrs) do
+  defp switch_to_text_mode(state, tag, attrs, tokenizer_state) do
     state
     |> push_element(tag, attrs)
-    |> enter_text_mode()
+    |> enter_text_mode(tokenizer_state)
   end
 end

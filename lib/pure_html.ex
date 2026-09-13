@@ -68,7 +68,7 @@ defmodule PureHTML do
     case Keyword.get(opts, :context) do
       nil ->
         html
-        |> Tokenizer.new(scripting: scripting)
+        |> Tokenizer.new()
         |> TreeBuilder.build(scripting)
 
       context ->
@@ -92,7 +92,7 @@ defmodule PureHTML do
     case Keyword.get(opts, :context) do
       nil ->
         html
-        |> Tokenizer.new(scripting: scripting)
+        |> Tokenizer.new()
         |> TreeBuilder.build_with_errors(scripting)
 
       context ->
@@ -313,29 +313,19 @@ defmodule PureHTML do
 
   # Foreign elements always use :data state — the tokenizer state rules
   # only apply to HTML namespace context elements.
-  defp fragment_tokenizer_opts(ns, _tag, scripting) when ns in [:svg, :math] do
-    [scripting: scripting]
+  defp fragment_tokenizer_opts(ns, _tag, _scripting) when ns in [:svg, :math], do: []
+
+  defp fragment_tokenizer_opts(_ns, tag, _scripting) when tag in @rcdata_elements do
+    [initial_state: :rcdata]
   end
 
-  defp fragment_tokenizer_opts(_ns, tag, scripting) when tag in @rcdata_elements do
-    [initial_state: :rcdata, scripting: scripting]
+  defp fragment_tokenizer_opts(_ns, "script", _scripting), do: [initial_state: :script_data]
+  defp fragment_tokenizer_opts(_ns, "plaintext", _scripting), do: [initial_state: :plaintext]
+  defp fragment_tokenizer_opts(_ns, "noscript", true = _scripting), do: [initial_state: :rawtext]
+
+  defp fragment_tokenizer_opts(_ns, tag, _scripting) when tag in @raw_text_elements do
+    [initial_state: :rawtext]
   end
 
-  defp fragment_tokenizer_opts(_ns, "script", scripting) do
-    [initial_state: :script_data, scripting: scripting]
-  end
-
-  defp fragment_tokenizer_opts(_ns, "plaintext", scripting) do
-    [initial_state: :plaintext, scripting: scripting]
-  end
-
-  defp fragment_tokenizer_opts(_ns, "noscript", true = scripting) do
-    [initial_state: :rawtext, scripting: scripting]
-  end
-
-  defp fragment_tokenizer_opts(_ns, tag, scripting) when tag in @raw_text_elements do
-    [initial_state: :rawtext, scripting: scripting]
-  end
-
-  defp fragment_tokenizer_opts(_ns, _tag, scripting), do: [scripting: scripting]
+  defp fragment_tokenizer_opts(_ns, _tag, _scripting), do: []
 end

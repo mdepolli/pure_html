@@ -19,11 +19,12 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   import PureHTML.TreeBuilder.Helpers
 
   @impl true
+  # A textarea ignores a line feed that immediately follows its start tag.
   def process({:character, text}, state) do
-    # Insert text as child of current element
     state
-    |> add_text_to_stack(text)
-    |> ok()
+    |> current_element()
+    |> drop_textarea_newline(text)
+    |> insert_text(state)
   end
 
   def process({:end_tag, tag}, state) do
@@ -43,6 +44,17 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   def process(_token, state) do
     # Anything else shouldn't happen, but handle gracefully
     ok(state)
+  end
+
+  defp drop_textarea_newline(%{tag: "textarea", children: []}, "\n" <> rest), do: rest
+  defp drop_textarea_newline(_element, text), do: text
+
+  defp insert_text("", state), do: ok(state)
+
+  defp insert_text(text, state) do
+    state
+    |> add_text_to_stack(text)
+    |> ok()
   end
 
   # Close current element and restore original mode

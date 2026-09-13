@@ -54,7 +54,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                                   dd dt li plaintext rb rtc)
 
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
-  @newline_skipping_elements ~w(pre textarea listing)
+  @newline_skipping_elements ~w(pre listing)
 
   # Scope boundary guards
   @scope_boundaries ~w(applet caption html table td th marquee object template)
@@ -682,6 +682,28 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> enter_raw_text("noembed", attrs)
   end
 
+  # Per spec: insert the textarea, switch the tokenizer to RCDATA, set
+  # frameset-ok to "not ok", and enter the text mode. The text mode drops a
+  # line feed that immediately follows the start tag.
+  defp do_process_html_start_tag("textarea", attrs, _, state) do
+    state
+    |> in_body()
+    |> push_element("textarea", attrs)
+    |> set_frameset_not_ok()
+    |> enter_text_mode(:rcdata)
+  end
+
+  # Per spec: close a p in button scope, insert the element, and switch the
+  # tokenizer to PLAINTEXT; the insertion mode stays.
+  defp do_process_html_start_tag("plaintext", attrs, _, state) do
+    state
+    |> in_body()
+    |> maybe_close_p("plaintext")
+    |> push_element("plaintext", attrs)
+    |> switch_tokenizer(:plaintext)
+    |> maybe_set_frameset_not_ok_for_element("plaintext")
+  end
+
   # Per spec: with a select in scope, generate implied end tags except optgroup and
   # parse-error if an option is still in scope; otherwise pop a current option.
   defp do_process_html_start_tag("option", attrs, _, state) do
@@ -801,11 +823,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  # Generic raw text element parsing. The tokenizer switches to RAWTEXT itself.
+  # Generic raw text element parsing
   defp enter_raw_text(state, tag, attrs) do
     state
     |> push_element(tag, attrs)
-    |> enter_text_mode()
+    |> enter_text_mode(:rawtext)
   end
 
   defp maybe_parse_error_unacknowledged_self_closing(state, tag, true)

@@ -1441,6 +1441,20 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "does not switch the tokenizer for a plaintext start tag ignored in frameset" do
+      # Arrange
+      html = "<!doctype html><frameset><plaintext></plaintext>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, "html", _, _}, {"html", [], [{"head", [], []}, {"frameset", [], []}]}] =
+               nodes
+
+      assert error_count == 3
+    end
   end
 
   describe "query/2" do
