@@ -225,12 +225,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> process_in_body(token)
   end
 
-  # EOF: reprocess in in_body
-  defp process_in_table(:eof, state) do
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
-  end
+  # EOF: process using in_body rules
+  defp process_in_table(:eof, state), do: process_in_body(state, :eof)
 
   # --------------------------------------------------------------------------
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
@@ -273,8 +269,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   @table_boundaries ["table", "template", "html"]
 
   defp clear_to_table_context(%{stack: stack, elements: elements} = state) do
-    {new_stack, parent_ref} = do_clear_to_table_context(stack, elements)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
+    {new_stack, _parent_ref} = do_clear_to_table_context(stack, elements)
+    %{state | stack: new_stack}
   end
 
   defp do_clear_to_table_context([], _elements), do: {[], nil}
@@ -350,11 +346,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     new_af = reject_refs_from_af(af, closed_refs)
 
     # Pop any orphaned formatting element from stack top (removed from AF by AA)
-    {final_stack, current_parent_ref} =
-      pop_orphaned_formatting_element(new_stack, new_af, elements)
+    {final_stack, _top} = pop_orphaned_formatting_element(new_stack, new_af, elements)
 
     state
-    |> Map.merge(%{stack: final_stack, af: new_af, current_parent_ref: current_parent_ref})
+    |> Map.merge(%{stack: final_stack, af: new_af})
     |> pop_mode()
   end
 

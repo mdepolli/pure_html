@@ -1215,13 +1215,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     elem = new_element("html", [], nil)
     elements = Map.put(state.elements, elem.ref, elem)
 
-    %{
-      state
-      | stack: [elem.ref],
-        elements: elements,
-        current_parent_ref: elem.ref,
-        mode: :before_head
-    }
+    %{state | stack: [elem.ref], elements: elements, mode: :before_head}
   end
 
   defp ensure_html(state), do: state
@@ -1359,7 +1353,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     with html_ref when html_ref != nil <- find_ref(state, "html"),
          head_ref when head_ref != nil <-
            find_ref_in_children(elements[html_ref].children, elements, "head") do
-      %{state | stack: [head_ref | stack], current_parent_ref: head_ref}
+      %{state | stack: [head_ref | stack]}
     else
       _ -> push_element(state, "head", [])
     end
@@ -1390,8 +1384,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp close_body_for_frameset(%{stack: stack, elements: elements} = state) do
-    {new_stack, new_elements, parent_ref} = do_close_body_for_frameset(stack, elements)
-    %{state | stack: new_stack, elements: new_elements, current_parent_ref: parent_ref}
+    {new_stack, new_elements, _parent_ref} = do_close_body_for_frameset(stack, elements)
+    %{state | stack: new_stack, elements: new_elements}
   end
 
   defp do_close_body_for_frameset([], elements), do: {[], elements, nil}
@@ -1692,8 +1686,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Pop to the element (children already in elements map)
   defp pop_to_element_ref(%{stack: stack, elements: elements} = state, ref) do
-    {new_stack, parent_ref} = pop_to_ref(stack, elements, ref)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
+    {new_stack, _parent_ref} = pop_to_ref(stack, elements, ref)
+    %{state | stack: new_stack}
   end
 
   defp find_p_in_scope_ref(%{stack: stack, elements: elements}) do
@@ -1794,9 +1788,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> close_tag_ref_forced(tag)
   end
 
-  defp replace_stack(state, stack, parent_ref) do
-    %{state | stack: stack, current_parent_ref: parent_ref}
-  end
+  defp replace_stack(state, stack, _parent_ref), do: %{state | stack: stack}
 
   defp close_ruby_parts(state, tag) when tag in ~w(rb rtc) do
     if in_scope?(state, "ruby", :default) do
@@ -1950,8 +1942,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   defp remove_from_stack(%{stack: stack} = state, ref) do
-    new_stack = List.delete(stack, ref)
-    %{state | stack: new_stack, current_parent_ref: List.first(new_stack)}
+    %{state | stack: List.delete(stack, ref)}
   end
 
   # Close any heading element (h1-h6) per HTML5 spec
@@ -2053,13 +2044,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # Apply the result of a pop_until_* function to the state.
   # Shared by close_tag_ref, close_tag_ref_forced, and do_close_block_end_tag.
-  defp apply_pop_result(state, {:found, [new_top | _] = new_stack, _parent_ref}) do
-    %{state | stack: new_stack, current_parent_ref: new_top}
-  end
-
-  defp apply_pop_result(state, {:found, [], _parent_ref}) do
-    %{state | stack: [], current_parent_ref: nil}
-  end
+  defp apply_pop_result(state, {:found, new_stack, _parent_ref}), do: %{state | stack: new_stack}
 
   defp apply_pop_result(state, :not_found), do: state
 

@@ -49,10 +49,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   end
 
   def process({:comment, text}, state) do
-    # Insert comment as child of current element (html)
-    # Use top of stack to handle case where current_parent_ref may be stale
     state
-    |> add_child_to_top_of_stack({:comment, text})
+    |> add_child_to_stack({:comment, text})
     |> ok()
   end
 
@@ -126,13 +124,6 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     |> ok()
   end
 
-  # EOF: reprocess in in_body (without inserting implied body)
-  def process(:eof, state) do
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
-  end
-
   def process(_token, state) do
     # Anything else: insert implied <body>, switch to "in body", reprocess
     state
@@ -140,20 +131,18 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     |> reprocess()
   end
 
-  # Insert an implied body element and switch to :in_body mode
-  # First reset current_parent_ref to top of stack in case it's stale
-  defp insert_implied_body(%{stack: [top_ref | _]} = state) do
-    %{state | current_parent_ref: top_ref}
+  # Anything else: insert a body element, frameset-ok "ok", switch to in body
+  defp insert_implied_body(state) do
+    state
     |> push_element("body", [])
+    |> set_frameset_ok(true)
     |> set_mode(:in_body)
   end
-
-  defp insert_implied_body(state), do: set_mode(state, :in_body)
 
   # Push head element onto stack (for processing head elements in after_head)
   defp push_head_onto_stack(%{head_element: head_ref, stack: stack} = state)
        when not is_nil(head_ref) do
-    %{state | stack: [head_ref | stack], current_parent_ref: head_ref}
+    %{state | stack: [head_ref | stack]}
   end
 
   defp push_head_onto_stack(state), do: state
@@ -161,24 +150,10 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   # Remove head element from stack (wherever it is)
   defp remove_head_from_stack(%{head_element: head_ref, stack: stack} = state)
        when not is_nil(head_ref) do
-    new_stack = List.delete(stack, head_ref)
-    %{state | stack: new_stack, current_parent_ref: List.first(new_stack)}
+    %{state | stack: List.delete(stack, head_ref)}
   end
 
   defp remove_head_from_stack(state), do: state
-
-  # Add child using top of stack as parent (ignores current_parent_ref)
-  # This is needed when current_parent_ref may be stale (e.g., after returning from text mode)
-  defp add_child_to_top_of_stack(%{stack: [parent_ref | _], elements: elements} = state, child) do
-    new_elements =
-      Map.update!(elements, parent_ref, fn parent ->
-        %{parent | children: [child | parent.children]}
-      end)
-
-    %{state | elements: new_elements}
-  end
-
-  defp add_child_to_top_of_stack(%{stack: []} = state, _child), do: state
 
   # Add text using top of stack as parent, merging adjacent text
   defp add_text_to_top_of_stack(%{stack: [parent_ref | _], elements: elements} = state, text) do

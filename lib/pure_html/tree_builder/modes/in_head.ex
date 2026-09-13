@@ -175,9 +175,11 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   end
 
   # Close head element and switch to after_head mode
+  # "Pop the current node (which will be the head element) off the stack of
+  # open elements. Switch the insertion mode to 'after head'."
   defp close_head(state) do
     state
-    |> pop_head_if_current()
+    |> pop_element()
     |> set_mode(:after_head)
   end
 
@@ -199,15 +201,6 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     |> close_head()
     |> reprocess_with({:character, rest})
   end
-
-  defp pop_head_if_current(state) do
-    state
-    |> current_tag()
-    |> pop_if_tag("head", state)
-  end
-
-  defp pop_if_tag(tag, tag, state), do: pop_element(state)
-  defp pop_if_tag(_current, _expected, state), do: state
 
   defp parse_error_unless_current(state, tag) do
     state

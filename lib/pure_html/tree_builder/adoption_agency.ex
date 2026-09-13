@@ -23,7 +23,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   return".
 
   ## Parameters
-    - state: Parser state with stack, elements, af (active formatting), current_parent_ref
+    - state: Parser state with stack, elements, af (active formatting)
     - subject: The tag name being processed (e.g., "b", "i", "a")
     - any_other_end_tag: the in-body "any other end tag" step (fn state, tag -> state)
   """
@@ -146,17 +146,9 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
        ) do
     {_above_fe, [_fe_ref | rest]} = Enum.split(stack, stack_idx)
 
-    # Use new stack top as current_parent_ref (not element's parent_ref)
-    # This handles foster-parented elements correctly
-    new_parent_ref =
-      case rest do
-        [top | _] -> top
-        [] -> nil
-      end
-
     new_af = List.delete_at(af, af_idx)
 
-    %{state | stack: rest, af: new_af, current_parent_ref: new_parent_ref}
+    %{state | stack: rest, af: new_af}
   end
 
   # --------------------------------------------------------------------------
@@ -195,15 +187,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
     new_af = update_af_with_new_fe(state.af, fe_ref, new_fe.ref, fe_tag, fe_attrs, bookmark)
     new_stack = update_stack_with_new_fe(state.stack, fe_ref, new_fe.ref, fb_ref)
 
-    new_parent_ref = List.first(new_stack)
-
-    %{
-      state
-      | stack: new_stack,
-        af: new_af,
-        elements: new_elements,
-        current_parent_ref: new_parent_ref
-    }
+    %{state | stack: new_stack, af: new_af, elements: new_elements}
   end
 
   # Get common ancestor, handling foster-parented formatting elements

@@ -145,7 +145,6 @@ defmodule PureHTML.TreeBuilder do
             scripting: boolean(),
             # DOM Structure
             elements: %{element_ref() => element()},
-            current_parent_ref: element_ref() | nil,
             document_children: [child()],
             post_html_nodes: [child()],
             error_count: non_neg_integer()
@@ -186,7 +185,6 @@ defmodule PureHTML.TreeBuilder do
       # Element storage: ref => %{ref, tag, attrs, parent_ref, children}
       elements: %{},
       # Current parent element ref (for O(1) parent lookup during insertion)
-      current_parent_ref: nil,
       # Top-level document children (comments before <html>)
       document_children: [],
       # Post-html nodes (comments after </html>)
@@ -321,7 +319,6 @@ defmodule PureHTML.TreeBuilder do
     state = %State{
       stack: stack,
       elements: elements,
-      current_parent_ref: html_ref,
       context_element: context,
       template_mode_stack: template_mode_stack,
       scripting: scripting
@@ -694,9 +691,7 @@ defmodule PureHTML.TreeBuilder do
 
   defp foreign_content_match_or_continue(tag, etag, rest, count, state) do
     if String.downcase(etag) == tag do
-      new_stack = Enum.drop(state.stack, count + 1)
-      parent_ref = List.first(new_stack)
-      {:ok, %{state | stack: new_stack, current_parent_ref: parent_ref}}
+      {:ok, %{state | stack: Enum.drop(state.stack, count + 1)}}
     else
       foreign_content_end_tag(tag, rest, count + 1, state)
     end

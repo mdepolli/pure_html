@@ -8,7 +8,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   Elements map holds all data: ref => %{tag, attrs, children, parent_ref}
 
   Children are added to parent's children list at push time.
-  Pop just removes ref from stack and updates current_parent_ref.
+  Pop just removes the ref from the stack; the stack top is the insertion parent.
 
   Mode modules import this module to get access to these functions.
   """
@@ -91,11 +91,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def push_element(state, tag, attrs), do: do_push_element(state, tag, attrs)
 
-  defp do_push_element(
-         %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
-         tag,
-         attrs
-       ) do
+  defp do_push_element(%{stack: stack, elements: elements} = state, tag, attrs) do
+    parent_ref = List.first(stack)
     elem = new_element(tag, attrs, parent_ref)
 
     # Add to elements map
@@ -104,7 +101,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
     # Add ref to parent's children (if parent exists)
     new_elements = add_ref_to_parent_children(new_elements, elem.ref, parent_ref)
 
-    %{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref}
+    %{state | stack: [elem.ref | stack], elements: new_elements}
   end
 
   @doc """
@@ -121,12 +118,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def push_foreign_element(state, ns, tag, attrs),
     do: do_push_foreign_element(state, ns, tag, attrs)
 
-  defp do_push_foreign_element(
-         %{stack: stack, elements: elements, current_parent_ref: parent_ref} = state,
-         ns,
-         tag,
-         attrs
-       ) do
+  defp do_push_foreign_element(%{stack: stack, elements: elements} = state, ns, tag, attrs) do
+    parent_ref = List.first(stack)
     elem = new_foreign_element(ns, tag, attrs, parent_ref)
 
     # Add to elements map
@@ -135,14 +128,14 @@ defmodule PureHTML.TreeBuilder.Helpers do
     # Add ref to parent's children (if parent exists)
     new_elements = add_ref_to_parent_children(new_elements, elem.ref, parent_ref)
 
-    %{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref}
+    %{state | stack: [elem.ref | stack], elements: new_elements}
   end
 
   @doc """
   Adds a child (text, comment, or tuple element) to the current element.
   Updates children in elements map.
   """
-  def add_child_to_stack(%{current_parent_ref: nil} = state, _child), do: state
+  def add_child_to_stack(%{stack: []} = state, _child), do: state
 
   def add_child_to_stack(%{foster_parenting: true} = state, child) do
     # Foster parenting enabled - use foster_parent only if current element is table-related
@@ -156,7 +149,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def add_child_to_stack(state, child), do: do_add_child_to_stack(state, child)
 
-  defp do_add_child_to_stack(%{current_parent_ref: parent_ref, elements: elements} = state, child) do
+  defp do_add_child_to_stack(%{stack: [parent_ref | _], elements: elements} = state, child) do
     new_elements = add_child_to_elements(elements, parent_ref, child)
     %{state | elements: new_elements}
   end
@@ -164,7 +157,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   @doc """
   Adds text to the current element, merging with previous text if present.
   """
-  def add_text_to_stack(%{current_parent_ref: nil} = state, _text), do: state
+  def add_text_to_stack(%{stack: []} = state, _text), do: state
 
   def add_text_to_stack(%{foster_parenting: true} = state, text) do
     # Foster parenting enabled - use foster_parent only if current element is table-related
@@ -178,7 +171,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def add_text_to_stack(state, text), do: do_add_text_to_stack(state, text)
 
-  defp do_add_text_to_stack(%{current_parent_ref: parent_ref, elements: elements} = state, text) do
+  defp do_add_text_to_stack(%{stack: [parent_ref | _], elements: elements} = state, text) do
     new_elements = add_text_to_elements(elements, parent_ref, text)
     %{state | elements: new_elements}
   end
@@ -356,8 +349,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def close_foreign_content(%{stack: stack, elements: elements} = state) do
     # Pop all foreign elements from the stack
     # With ref-only architecture, children are already in elements map
-    {new_stack, parent_ref} = pop_foreign_elements(stack, elements)
-    %{state | stack: new_stack, current_parent_ref: parent_ref}
+    {new_stack, _parent_ref} = pop_foreign_elements(stack, elements)
+    %{state | stack: new_stack}
   end
 
   defp pop_foreign_elements([], _elements), do: {[], nil}
@@ -496,11 +489,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
     tag = elements[ref].tag
 
     if is_binary(tag) and tag != except and tag in tags do
-      pop_implied_end_tags(
-        %{state | stack: rest, current_parent_ref: elements[ref].parent_ref},
-        tags,
-        except
-      )
+      pop_implied_end_tags(%{state | stack: rest}, tags, except)
     else
       state
     end
@@ -740,13 +729,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Pops the current element from the stack.
-  Just removes ref and updates current_parent_ref.
+  Just removes the ref; the new stack top is the insertion parent.
   Children are already in elements map (added at push time).
   """
-  def pop_element(%{stack: [ref | rest], elements: elements} = state) do
-    parent_ref = elements[ref].parent_ref
-    %{state | stack: rest, current_parent_ref: parent_ref}
-  end
+  def pop_element(%{stack: [_ref | rest]} = state), do: %{state | stack: rest}
 
   def pop_element(%{stack: []} = state), do: state
 
@@ -756,9 +742,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def pop_until_tag(%{stack: stack, af: af, elements: elements} = state, tag) do
     case do_pop_until_tag(stack, tag, [], elements) do
-      {:found, new_stack, popped_refs, parent_ref} ->
+      {:found, new_stack, popped_refs, _parent_ref} ->
         new_af = reject_refs_from_af(af, popped_refs)
-        {:ok, %{state | stack: new_stack, af: new_af, current_parent_ref: parent_ref}}
+        {:ok, %{state | stack: new_stack, af: new_af}}
 
       :not_found ->
         {:not_found, state}
@@ -793,9 +779,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def pop_until_one_of(%{stack: stack, af: af, elements: elements} = state, tags)
       when is_list(tags) do
-    {new_stack, popped_refs, parent_ref} = do_pop_until_one_of(stack, tags, [], elements)
+    {new_stack, popped_refs, _parent_ref} = do_pop_until_one_of(stack, tags, [], elements)
     new_af = reject_refs_from_af(af, popped_refs)
-    %{state | stack: new_stack, af: new_af, current_parent_ref: parent_ref}
+    %{state | stack: new_stack, af: new_af}
   end
 
   defp do_pop_until_one_of([], _tags, popped, _elements), do: {[], popped, nil}
@@ -963,8 +949,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
         new_elements
       end
 
-    {%{state | stack: [elem.ref | stack], elements: new_elements, current_parent_ref: elem.ref},
-     elem.ref}
+    {%{state | stack: [elem.ref | stack], elements: new_elements}, elem.ref}
   end
 
   # --------------------------------------------------------------------------

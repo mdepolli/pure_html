@@ -17,7 +17,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
     - noscript: pop noscript, switch to "in head"
     - br: parse error, pop noscript, switch to "in head", reprocess
     - Anything else: parse error, ignore
-  - EOF: process using "in head" rules
+  - EOF: anything else (parse error, pop noscript, switch to "in head", reprocess)
 
   See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inheadnoscript
   """
@@ -102,9 +102,12 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
     |> ok()
   end
 
-  # EOF: process using "in head" rules
+  # EOF is not an entry of its own: anything else
   def process(:eof, state) do
-    InHead.process(:eof, state)
+    state
+    |> parse_error()
+    |> pop_noscript()
+    |> reprocess()
   end
 
   # --------------------------------------------------------------------------
@@ -121,19 +124,11 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
     |> reprocess()
   end
 
-  # Pop noscript element and switch to in_head mode
+  # "Pop the current node (which will be a noscript element) off the stack of
+  # open elements. Switch the insertion mode to 'in head'."
   defp pop_noscript(state) do
     state
-    |> pop_noscript_if_current()
+    |> pop_element()
     |> set_mode(:in_head)
   end
-
-  defp pop_noscript_if_current(state) do
-    state
-    |> current_tag()
-    |> pop_if_tag("noscript", state)
-  end
-
-  defp pop_if_tag(tag, tag, state), do: pop_element(state)
-  defp pop_if_tag(_current, _expected, state), do: state
 end

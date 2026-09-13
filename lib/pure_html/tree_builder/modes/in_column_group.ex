@@ -102,11 +102,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   end
 
   # EOF: process using "in body" rules
-  def process(:eof, state) do
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
-  end
+  def process(:eof, state), do: process_in_body(state, :eof)
 
   # --------------------------------------------------------------------------
   # Helpers

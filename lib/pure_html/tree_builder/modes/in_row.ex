@@ -141,12 +141,8 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     process_in_table(state, token, :in_row)
   end
 
-  # EOF: reprocess in in_body
-  def process(:eof, state) do
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
-  end
+  # EOF: process using in_body rules
+  def process(:eof, state), do: process_in_body(state, :eof)
 
   # --------------------------------------------------------------------------
   # Helpers
