@@ -230,6 +230,44 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "counts an end tag in a nested table as a table voodoo error before the adoption agency" do
+      # Arrange
+      html = "<!doctype html><table><td><table><i>a<div>b<b>c</i>d"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"tbody", [],
+                         [
+                           {"tr", [],
+                            [
+                              {"td", [],
+                               [
+                                 {"i", [], ["a"]},
+                                 {"div", [],
+                                  [{"i", [], ["b", {"b", [], ["c"]}]}, {"b", [], ["d"]}]},
+                                 {"table", [], []}
+                               ]}
+                            ]}
+                         ]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 12
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
