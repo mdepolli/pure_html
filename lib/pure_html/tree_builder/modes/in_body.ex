@@ -50,9 +50,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   }
 
   # Note: input is handled specially - only non-hidden inputs disable frameset
-  @frameset_disabling_elements ~w(pre listing form textarea xmp iframe noembed noframes select embed
-                                  keygen applet marquee object table button img hr br wbr area
-                                  dd dt li plaintext rb rtc)
+  # Start tags whose in-body entries set the frameset-ok flag to "not ok"
+  # (input is handled by its own entry: only when its type is not hidden)
+  @frameset_disabling_elements ~w(pre listing textarea xmp iframe select embed keygen applet
+                                  marquee object table button img hr br wbr area dd dt li)
 
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
   @newline_skipping_elements ~w(pre listing)
@@ -570,7 +571,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_close_p("plaintext")
     |> push_element("plaintext", attrs)
     |> switch_tokenizer(:plaintext)
-    |> maybe_set_frameset_not_ok_for_element("plaintext")
   end
 
   # Per spec: with a select in scope, generate implied end tags except optgroup and
@@ -653,7 +653,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> close_ruby_parts(tag)
     |> push_element(tag, attrs)
-    |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
   # rp, rt: the same, keeping an open rtc; the current node must then be an

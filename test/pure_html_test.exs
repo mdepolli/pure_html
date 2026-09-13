@@ -1475,6 +1475,21 @@ defmodule PureHTMLTest do
       # no doctype, and the div still open at EOF
       assert error_count == 2
     end
+
+    test "keeps frameset-ok after an rb element" do
+      # Arrange
+      html = "<!DOCTYPE html><rb></rb><frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, "html", _, _}, {"html", [], [{"head", [], []}, {"frameset", [], []}]}] =
+               nodes
+
+      # the frameset start tag in body, and EOF inside the frameset
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do
