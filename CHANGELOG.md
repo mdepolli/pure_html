@@ -12,8 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PureHTML.parse_with_errors/2`: parses like `parse/2` and returns `{nodes, error_count}`, where the count follows the WHATWG parse errors emitted by the tokenizer and tree builder
 - `scripting:` option for `PureHTML.parse/2` (default: `true`)
   - When `false`, `<noscript>` content is parsed as HTML instead of raw text
-  - Per WHATWG spec, affects `in_head`, `in_body`, and `in_template` insertion modes
-  - Tokenizer state for `<noscript>` is now scripting-aware (RAWTEXT vs data state)
+  - Per WHATWG spec, affects `in_head`, `in_body`, and `in_template` insertion modes: `<noscript>` content is raw text only when scripting is on
 - html5lib tree construction tests now run in both scripting modes per the test README
   - Tests without `#script-off`/`#script-on` run in both modes
   - `#script-off` tests are no longer skipped
@@ -44,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Foreign content follows the tree construction dispatcher and the foreign content rules as written: a token at an integration point is processed with the current insertion mode; an HTML breakout start tag, and `</br>`/`</p>`, pop out of foreign content and are reprocessed with the current mode; the end-tag walk returns at the topmost node in a fragment; a foreign end tag that reaches in body is any other end tag; the scope walk covers the stack of open elements only
 - A start tag whose self-closing flag is never acknowledged is a parse error for every non-void HTML element, not only those on the generic path; `</td>` and `</th>` in body are any other end tag
 - Serializer: `<` and `>` are escaped in attribute values, per the spec's "escaping a string" algorithm; the `:escape_lt_in_attrs` option is removed since the escaping is no longer optional
+- Tokenizer: `>` right after `<!DOCTYPE` is only the missing-doctype-name error; an ampersand followed by a name that matches no character reference is an error only when a semicolon ends the name (the ambiguous ampersand state)
+- Table text is collected when the current node is a `template`; a cell end tag generates implied end tags before checking the current node; character and comment tokens in a row are processed with the in-table rules for that token, so the row is the mode that resumes
+- Head elements (`base`, `link`, `meta`, `title`, `style`, `script`, `noframes`, `template`, and `noscript` with scripting on) are processed with the in-head rules from every mode that delegates to them, and the text insertion mode returns to the mode that opened the element; in body no longer inserts them itself or treats characters under them as raw text by checking the current tag
+- Opening a template pushes "in template" onto the stack of template insertion modes; its end tag pops that entry and resets the insertion mode appropriately, which yields "after head" for the html node once the head element pointer is set
+- `li`, `dd`, and `dt` start tags close an open item by walking the stack as specified: an item of the same kind is closed with implied end tags except itself, and a special element other than `address`, `div`, or `p` ends the walk; `menuitem` is no longer in the special category
+- `rb`, `rtc`, `rp`, and `rt` have their own in-body entries: implied end tags (except `rtc` for `rp`/`rt`) with a ruby element in scope, then a parse error unless the current node is what the text names; they no longer close a `p`
+- A formatting end tag with no entry in the active formatting list is handled by the any-other-end-tag step without an error of its own, on any iteration of the adoption agency's outer loop
+- `textarea` follows the generic RCDATA algorithm (text insertion mode, a leading line feed dropped there); `plaintext` switches the tokenizer without leaving the current mode, so a `<plaintext>` ignored in frameset leaves the tokenizer alone
 
 ### Removed
 
@@ -52,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Tree builder internals: insertion modes are unary state pipelines; foster parenting is enabled for one token and settled by the tree builder; the in-table "anything else" rules delegate to the in-body rules instead of a second implementation; scope walks take the scope type and state; implied end tags and the in-body delegation helpers live in `Helpers`
+- The tree builder switches the tokenizer state (RCDATA, RAWTEXT, script data, PLAINTEXT) as the text describes; the tokenizer no longer switches on its own when it emits a start tag, and no longer takes a `scripting` option
 - html5lib-tests submodule pinned at `9329e64` (2026-06-20), the last upstream commit with the tree-construction fixtures before they moved to web-platform-tests; it adds the `void-in-phrasing` fixtures, an adoption case, and corrects `<input><option>` in a select-context fragment
 - html5lib tree-construction tests count `#errors` lines only; `#new-errors` are renamed tokenizer codes, not extra errors
 - html5lib tokenizer and tree-construction suites run one test per fixture file, looping over the cases at run time; the full suite drops from about 68 seconds to under one, since compiling 10,000 generated test functions was the cost. `HTML5LIB_CASE=file:index` runs a single case
