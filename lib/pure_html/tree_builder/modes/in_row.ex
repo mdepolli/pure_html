@@ -40,20 +40,13 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
 
   @impl true
   # Character tokens: process using in_table rules
-  def process({:character, _}, state) do
-    # Delegate to in_table mode (handles foster parenting)
-    # Set original_mode so in_table_text returns to in_row after text handling
-    state
-    |> Map.put(:original_mode, :in_row)
-    |> set_mode(:in_table)
-    |> reprocess()
+  def process({:character, _} = token, state) do
+    process_in_table(state, token, :in_row)
   end
 
   # Comments: process using in_table rules
-  def process({:comment, _}, state) do
-    state
-    |> set_mode(:in_table)
-    |> reprocess()
+  def process({:comment, _} = token, state) do
+    process_in_table(state, token, :in_row)
   end
 
   # DOCTYPE: parse error, ignore

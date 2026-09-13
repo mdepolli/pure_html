@@ -1333,6 +1333,32 @@ defmodule PureHTMLTest do
 
       assert error_count == 0
     end
+
+    test "returns to the row after foster parenting characters from a table row" do
+      # Arrange
+      html =
+        "<!DOCTYPE html><body><table><tbody><tr><math><mi>foo</mi><mi>bar</mi></math></tr></tbody></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", _, _},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {{:math, "math"}, [],
+                      [{{:math, "mi"}, [], ["foo"]}, {{:math, "mi"}, [], ["bar"]}]},
+                     {"table", [], [{"tbody", [], [{"tr", [], []}]}]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 7
+    end
   end
 
   describe "query/2" do

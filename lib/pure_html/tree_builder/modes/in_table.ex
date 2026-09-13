@@ -272,13 +272,8 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> process_in_body({:character, text})
   end
 
-  # Preserve original_mode if already set (e.g., delegated from in_row)
-  defp start_table_text(%{original_mode: nil} = state, text) do
-    %{state | mode: :in_table_text, original_mode: :in_table, pending_table_text: text}
-  end
-
   defp start_table_text(state, text) do
-    %{state | mode: :in_table_text, pending_table_text: text}
+    %{state | mode: :in_table_text, original_mode: :in_table, pending_table_text: text}
   end
 
   # Clear stack to table context (table, template, html)

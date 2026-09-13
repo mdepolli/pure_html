@@ -417,6 +417,13 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   defp return_from_in_table(
+         {:ok, %{mode: :in_table_text, original_mode: :in_table} = state},
+         mode
+       ) do
+    ok(%{state | original_mode: mode})
+  end
+
+  defp return_from_in_table(
          {:reprocess, %{mode: :in_table_text, original_mode: :in_table} = state},
          mode
        ) do
