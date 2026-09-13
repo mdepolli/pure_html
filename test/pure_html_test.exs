@@ -475,6 +475,34 @@ defmodule PureHTMLTest do
       assert error_count == 4
     end
 
+    test "counts an unacknowledged self-closing flag on a non-void start tag" do
+      # Arrange
+      html = "<ul><li><div id='foo'/>A</li><li>B<div>C</div></li></ul>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"ul", [],
+                      [
+                        {"li", [], [{"div", [{"id", "foo"}], ["A"]}]},
+                        {"li", [], ["B", {"div", [], ["C"]}]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      # No doctype; <div/> is a non-void start tag whose self-closing flag is never
+      # acknowledged; </li> arrives with div as the current node.
+      assert error_count == 3
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"

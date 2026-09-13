@@ -431,8 +431,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
+  # Per spec, a start tag whose self-closing flag is not acknowledged by the
+  # tree construction stage is a parse error; only void elements (and foreign
+  # elements, handled elsewhere) acknowledge it.
   defp dispatch_start_tag(state, tag, attrs, self_closing) do
-    do_process_html_start_tag(tag, attrs, self_closing, state)
+    tag
+    |> do_process_html_start_tag(attrs, self_closing, state)
+    |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
   end
 
   defp handle_table_at_integration_point(state, tag, attrs) do
@@ -782,12 +787,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  defp do_process_html_start_tag(tag, attrs, self_closing, state) do
+  defp do_process_html_start_tag(tag, attrs, _self_closing, state) do
     state
     |> in_body()
     |> reconstruct_active_formatting()
     |> maybe_close_same(tag)
-    |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
