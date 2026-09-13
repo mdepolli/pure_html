@@ -31,7 +31,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
-               hr li listing main menu nav ol p plaintext pre rb rp rt rtc search section summary table ul xmp)
+               hr li listing main menu nav ol p plaintext pre search section summary table ul xmp)
 
   # Block-level end tags per HTML5 spec (generate implied end tags, then pop until match)
   # These do NOT use the "special element stops traversal" rule
@@ -45,11 +45,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     "button" => [],
     "tr" => [],
     "td" => ["th"],
-    "th" => ["td"],
-    "rb" => ["rt", "rtc", "rp"],
-    "rt" => ["rb", "rp"],
-    "rtc" => ["rb", "rt", "rp"],
-    "rp" => ["rb", "rt"]
+    "th" => ["td"]
   }
 
   # Note: input is handled specially - only non-hidden inputs disable frameset
@@ -58,7 +54,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                                   dd dt li plaintext rb rtc)
 
   @table_structure_elements @table_sections ++ ["caption", "colgroup"]
-  @ruby_elements ~w(rb rt rtc rp)
   @newline_skipping_elements ~w(pre textarea listing)
 
   # Scope boundary guards
@@ -766,6 +761,25 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
+  # rb, rtc: with a ruby element in scope, generate implied end tags; a parse
+  # error unless the current node is then a ruby element.
+  defp do_process_html_start_tag(tag, attrs, _, state) when tag in ~w(rb rtc) do
+    state
+    |> in_body()
+    |> close_ruby_parts(tag)
+    |> push_element(tag, attrs)
+    |> maybe_set_frameset_not_ok_for_element(tag)
+  end
+
+  # rp, rt: the same, keeping an open rtc; the current node must then be an
+  # rtc or a ruby element.
+  defp do_process_html_start_tag(tag, attrs, _, state) when tag in ~w(rp rt) do
+    state
+    |> in_body()
+    |> close_ruby_parts(tag)
+    |> push_element(tag, attrs)
+  end
+
   # Generic - block-level elements close p, inline elements reconstruct AF
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @closes_p do
     state
@@ -773,7 +787,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> close_open_list_item(tag)
     |> maybe_close_p(tag)
     |> maybe_close_same(tag)
-    |> maybe_ruby_parse_error(tag)
     |> maybe_close_current_heading(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
@@ -1704,8 +1717,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp pop_to_ref([_ | rest], elements, target), do: pop_to_ref(rest, elements, target)
 
   @implicit_close_boundaries ~w(table template body html)
-  # Ruby elements should stop at ruby boundaries to handle nested ruby elements correctly
-  @ruby_close_boundaries ~w(ruby table template body html)
 
   defp maybe_close_same(state, tag) do
     tag
@@ -1715,13 +1726,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp close_implicit(nil, _tag, state), do: state
 
-  defp close_implicit(
-         {closes, boundaries, close_all?},
-         tag,
-         %{stack: stack, elements: elements} = state
-       ) do
+  defp close_implicit(closes, tag, %{stack: stack, elements: elements} = state) do
     stack
-    |> pop_implicit_close(elements, closes, boundaries, close_all?)
+    |> pop_to_implicit_close_ref(elements, closes, @implicit_close_boundaries)
     |> apply_implicit_close(tag, closes, state)
   end
 
@@ -1781,15 +1788,31 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     %{state | stack: stack, current_parent_ref: parent_ref}
   end
 
-  defp maybe_ruby_parse_error(state, tag) when tag in @ruby_elements do
+  defp close_ruby_parts(state, tag) when tag in ~w(rb rtc) do
     if in_scope?(state, "ruby", :default) do
-      parse_error_unless_current(state, "ruby")
+      state
+      |> generate_implied_end_tags()
+      |> parse_error_unless_current("ruby")
     else
       state
     end
   end
 
-  defp maybe_ruby_parse_error(state, _tag), do: state
+  defp close_ruby_parts(state, _rp_or_rt) do
+    if in_scope?(state, "ruby", :default) do
+      state
+      |> generate_implied_end_tags_except("rtc")
+      |> parse_error_unless_current_in(["rtc", "ruby"])
+    else
+      state
+    end
+  end
+
+  defp parse_error_unless_current_in(state, tags) do
+    state
+    |> current_tag()
+    |> mismatch_if_not_in(tags, state)
+  end
 
   defp parse_error_unless_current(state, tag) do
     state
@@ -1804,22 +1827,8 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     if tag in closes, do: state, else: parse_error(state)
   end
 
-  defp pop_implicit_close(stack, elements, closes, boundaries, true = _close_all?),
-    do: pop_to_implicit_close_all_ref(stack, elements, closes, boundaries)
-
-  defp pop_implicit_close(stack, elements, closes, boundaries, false = _close_all?),
-    do: pop_to_implicit_close_ref(stack, elements, closes, boundaries)
-
   for {tag, also_closes} <- @implicit_closes do
-    closes = [tag | also_closes]
-    close_all? = tag in @ruby_elements
-
-    boundaries =
-      if tag in @ruby_elements, do: @ruby_close_boundaries, else: @implicit_close_boundaries
-
-    defp get_implicit_close_config(unquote(tag)) do
-      {unquote(closes), unquote(boundaries), unquote(close_all?)}
-    end
+    defp get_implicit_close_config(unquote(tag)), do: unquote([tag | also_closes])
   end
 
   defp get_implicit_close_config(_), do: nil
@@ -1833,25 +1842,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       tag in boundaries -> :not_found
       tag in closes -> {:ok, rest, parent_ref}
       true -> pop_to_implicit_close_ref(rest, elements, closes, boundaries)
-    end
-  end
-
-  defp pop_to_implicit_close_all_ref(stack, elements, closes, boundaries) do
-    do_pop_to_implicit_close_all_ref(stack, elements, closes, boundaries, false)
-  end
-
-  defp do_pop_to_implicit_close_all_ref(stack, elements, closes, boundaries, found_any) do
-    case pop_to_implicit_close_ref(stack, elements, closes, boundaries) do
-      {:ok, new_stack, _parent_ref} ->
-        do_pop_to_implicit_close_all_ref(new_stack, elements, closes, boundaries, true)
-
-      :not_found when found_any ->
-        # Return the top of stack as the new parent
-        parent_ref = List.first(stack)
-        {:ok, stack, parent_ref}
-
-      :not_found ->
-        :not_found
     end
   end
 

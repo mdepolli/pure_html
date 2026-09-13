@@ -1402,6 +1402,26 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "does not count an rt start tag when the current node becomes an rtc" do
+      # Arrange
+      html = "<html><ruby>a<rtc>b<rt>c<rt>d</ruby></html>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [{"ruby", [], ["a", {"rtc", [], ["b", {"rt", [], ["c"]}, {"rt", [], ["d"]}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
