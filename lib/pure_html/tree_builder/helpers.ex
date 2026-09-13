@@ -436,31 +436,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   @doc """
-  Closes the select element by popping elements until select is found,
-  then pops the insertion mode from the template mode stack.
-  """
-  def close_select(%{stack: stack, elements: elements} = state) do
-    {new_stack, parent_ref} = do_close_to_select(stack, elements)
-    pop_mode(%{state | stack: new_stack, current_parent_ref: parent_ref})
-  end
-
-  defp do_close_to_select([ref | rest], elements) do
-    case elements[ref].tag do
-      "select" ->
-        {rest, elements[ref].parent_ref}
-
-      # Fragment case: html root is a scope boundary — stop here
-      "html" ->
-        {[ref], elements[ref].ref}
-
-      _ ->
-        do_close_to_select(rest, elements)
-    end
-  end
-
-  defp do_close_to_select([], _elements), do: {[], nil}
-
-  @doc """
   Switches the current template insertion mode.
   Replaces the top of template_mode_stack with new_mode (or pushes if empty).
   """
@@ -604,10 +579,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
     button: ~w(applet caption html table td th marquee object select template button)
   }
 
-  # Select scope walks through these HTML elements and stops at any other type.
-  # Spec: "all element types except optgroup and option in the HTML namespace."
-  @select_scope_passthrough ~w(optgroup option)
-
   # Foreign scope boundaries per HTML5 spec (MathML tags are lowercase)
   @mathml_scope_boundaries ~w(annotation-xml mi mn mo ms mtext)
 
@@ -616,7 +587,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   @doc """
   Checks if an element with the given tag (or any tag in a list) is in the
-  specified scope. Scope types: :default, :table, :select, :button
+  specified scope. Scope types: :default, :table, :button
   """
   def in_scope?(%{stack: stack} = state, tag, scope_type) do
     do_in_scope?(stack, tag, scope_type, state)

@@ -114,8 +114,6 @@ defmodule PureHTML.TreeBuilder do
             | :in_table_body
             | :in_row
             | :in_cell
-            | :in_select
-            | :in_select_in_table
             | :in_template
             | :after_body
             | :after_after_body
@@ -215,8 +213,6 @@ defmodule PureHTML.TreeBuilder do
     in_table_body: Modes.InTableBody,
     in_row: Modes.InRow,
     in_cell: Modes.InCell,
-    in_select: Modes.InSelect,
-    in_select_in_table: Modes.InSelectInTable,
     in_template: Modes.InTemplate,
     after_body: Modes.AfterBody,
     after_after_body: Modes.AfterAfterBody,
