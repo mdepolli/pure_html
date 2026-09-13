@@ -26,9 +26,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @af_marker_elements ~w(applet marquee object)
 
-  # Use shared special_elements from Helpers
-  @special_elements PureHTML.TreeBuilder.Helpers.special_elements()
-
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
                hr li listing main menu nav ol p plaintext pre search section summary table ul xmp)
@@ -1363,7 +1360,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     cond do
       tag in kind -> tag
       tag in ~w(address div p) -> find_open_list_item(rest, elements, kind)
-      special_element_barrier?(tag) -> nil
+      special_element?(tag) -> nil
       true -> find_open_list_item(rest, elements, kind)
     end
   end
@@ -1594,9 +1591,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp find_dd_dt_in_scope([_ | rest], elements, target),
     do: find_dd_dt_in_scope(rest, elements, target)
 
-  @svg_special ~w(desc foreignobject title)
-  @mathml_special ~w(annotation-xml mi mn mo ms mtext)
-
   defp pop_until_tag_ref([], _elements, _target), do: :not_found
 
   defp pop_until_tag_ref([ref | rest], elements, target) when is_map_key(elements, ref) do
@@ -1604,7 +1598,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
     cond do
       tag_matches?(tag, target) -> {:found, rest, parent_ref}
-      special_element_barrier?(tag) -> :not_found
+      special_element?(tag) -> :not_found
       true -> pop_until_tag_ref(rest, elements, target)
     end
   end
@@ -1644,10 +1638,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp tag_matches?(_, _), do: false
 
   # Check if tag is a special element that acts as a barrier
-  defp special_element_barrier?(tag) when is_binary(tag), do: tag in @special_elements
-  defp special_element_barrier?({:svg, tag}), do: String.downcase(tag) in @svg_special
-  defp special_element_barrier?({:math, tag}), do: tag in @mathml_special
-  defp special_element_barrier?(_), do: false
 
   # --------------------------------------------------------------------------
   # Active formatting elements

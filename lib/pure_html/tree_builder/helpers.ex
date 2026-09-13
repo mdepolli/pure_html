@@ -34,6 +34,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def special_elements, do: @special_elements
 
+  @svg_special ~w(desc foreignobject title)
+  @mathml_special ~w(annotation-xml mi mn mo ms mtext)
+
+  @doc "Whether an element with this tag is in the special category."
+  def special_element?(tag) when is_binary(tag), do: tag in @special_elements
+  def special_element?({:svg, tag}), do: String.downcase(tag) in @svg_special
+  def special_element?({:math, tag}), do: tag in @mathml_special
+  def special_element?(_), do: false
+
+  # Tags that trigger foster parenting context
+  @foster_parent_tags ~w(table tbody thead tfoot tr)
+
   @doc false
   def parse_error(state, count \\ 1)
 
@@ -688,6 +700,14 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def pop_element(%{stack: []} = state), do: state
 
+  @doc "Pops elements from the stack of open elements until `ref` has been popped."
+  def pop_through_ref(%{stack: [ref | rest]} = state, ref), do: %{state | stack: rest}
+
+  def pop_through_ref(%{stack: [_ | rest]} = state, ref),
+    do: pop_through_ref(%{state | stack: rest}, ref)
+
+  def pop_through_ref(%{stack: []} = state, _ref), do: state
+
   @doc """
   Pops elements from the stack until an element with the given tag is found.
   Returns {:ok, state} if found, {:not_found, state} otherwise.
@@ -788,6 +808,63 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def foster_insert(state, content) do
     {new_state, _ref} = foster_parent(state, content)
     new_state
+  end
+
+  @doc """
+  Moves an existing element to the appropriate place for inserting a node
+  with `target_ref` as the override target: the foster parent location when
+  foster parenting is enabled and the target is a table, tbody, tfoot, thead,
+  or tr element, otherwise the end of the target.
+  """
+  def move_node_to_appropriate_place(%{elements: elements} = state, ref, target_ref) do
+    if state.foster_parenting and elements[target_ref].tag in @foster_parent_tags do
+      state
+      |> detach_node(ref)
+      |> foster_move_node(ref)
+    else
+      state
+      |> detach_node(ref)
+      |> append_node(ref, target_ref)
+    end
+  end
+
+  defp detach_node(%{elements: elements} = state, ref) do
+    case elements[ref].parent_ref do
+      nil ->
+        state
+
+      parent_ref ->
+        elements =
+          elements
+          |> Map.update!(parent_ref, &%{&1 | children: List.delete(&1.children, ref)})
+          |> Map.update!(ref, &%{&1 | parent_ref: nil})
+
+        %{state | elements: elements}
+    end
+  end
+
+  defp append_node(%{elements: elements} = state, ref, parent_ref) do
+    elements =
+      elements
+      |> Map.update!(ref, &%{&1 | parent_ref: parent_ref})
+      |> add_ref_to_parent_children(ref, parent_ref)
+
+    %{state | elements: elements}
+  end
+
+  defp foster_move_node(%{elements: elements} = state, ref) do
+    case find_foster_parent(state) do
+      {:document, _} ->
+        state
+
+      {parent_ref, insert_before_ref} ->
+        elements =
+          elements
+          |> Map.update!(ref, &%{&1 | parent_ref: parent_ref})
+          |> insert_ref_before_in_parent(ref, parent_ref, insert_before_ref)
+
+        %{state | elements: elements}
+    end
   end
 
   @doc """
@@ -958,9 +1035,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
       if List.keymember?(acc, k, 0), do: acc, else: [{k, v} | acc]
     end)
   end
-
-  # Tags that trigger foster parenting context
-  @foster_parent_tags ~w(table tbody thead tfoot tr)
 
   @doc """
   Checks if the current element requires foster parenting.
