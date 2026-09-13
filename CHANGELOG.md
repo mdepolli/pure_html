@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `PureHTML.parse_with_errors/2`: parses like `parse/2` and returns `{nodes, error_count}`, where the count follows the WHATWG parse errors emitted by the tokenizer and tree builder
 - `scripting:` option for `PureHTML.parse/2` (default: `true`)
   - When `false`, `<noscript>` content is parsed as HTML instead of raw text
   - Per WHATWG spec, affects `in_head`, `in_body`, and `in_template` insertion modes
@@ -22,6 +23,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fragment parsing: form element pointer now set when context element is `<form>` (WHATWG spec step 13)
 - `in_select` foreign namespace check now uses adjusted current node instead of scanning entire stack
+- Parse error counts now follow the WHATWG rules
+  - Tokenizer: end tags with attributes, trailing solidus on non-void start tags, C1 control and unknown named character references, EOF inside script comment-like text
+  - Foreign content: HTML and `<body>` start tags inside foreign content, mismatched foreign end tags; no error at HTML integration points
+  - Tables: ignored `<tr>` and table-structure start tags, mismatched cell end tags, foster-parented characters and end tags (including `</p>`, which now foster-parents through the in-body rules), an implied cell when the current node is not a cell, `<frameset>` and `<frame>` inside a table, and end tags in a nested table, which no longer bypass the in-table rules
+  - Column groups and templates: `<col>` outside a colgroup, `<colgroup>` in body or inside a template, SVG and HTML breakout inside a colgroup, `<tr>` after non-table template content, foster-parented tags in a template row, `<html>` and `<a>` inside template table content, mismatched `</template>`, and characters and EOF in frameset, column group, select, and template contexts
+  - Elsewhere: `<rp>`/`<rt>` outside `ruby`, `<frame>` outside a frameset, `</html>` and `</frameset>` on a fragment root, `</frameset>` in body, caption-closing tokens and mismatched caption end tags, and `</form>` whose form element is out of scope (the form now stays open, as specified)
+- EOF is dispatched through the insertion modes per the spec instead of being handled once at the end
+- A select closes when the current node is an `option` and a closing token arrives
+- Closing a caption now generates implied end tags first and clears the active formatting list to its marker, so formatting elements opened before the table are reconstructed after it
+- `xmp`, `iframe`, and `noembed` in body now switch to the text insertion mode, so EOF inside them is counted once for the raw text element and once for other open elements
+- Duplicate `<a>` start tags follow the spec: the adoption agency runs, then the old element is removed from the active formatting list and the stack even when a table put it out of scope; `<nobr>` uses its own scope-based rule
+- Reconstructed formatting elements are foster-parented when foster parenting applies
+- Closing a nested table now returns to the insertion mode it was opened from (off-by-one in the saved mode)
+- `<frameset>` in caption, cell, and table contexts is a parse error and is ignored; it is no longer silently accepted, nor inserted in fragments with no body
+- Query: redundant clauses for namespaced elements removed
+
+### Changed
+
+- Tree builder internals: insertion modes are unary state pipelines; foster parenting is enabled for one token and settled by the tree builder; the in-table "anything else" rules delegate to the in-body rules instead of a second implementation; scope walks take the scope type and state; implied end tags and the in-body delegation helpers live in `Helpers`
+- html5lib tree-construction fixtures: upstream deleted them on 2026-06-26 (moved to web-platform-tests). The submodule stays pinned before that commit
+- html5lib tree-construction tests count `#errors` lines only; `#new-errors` are renamed tokenizer codes, not extra errors
+- Tool versions: Erlang 28.4.2 and Elixir 1.20.4; dev dependencies grouped and upgraded
 
 ## [0.3.0] - 2026-02-15
 
