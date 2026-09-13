@@ -38,7 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Closing a nested table now returns to the insertion mode it was opened from (off-by-one in the saved mode)
 - `<frameset>` in caption, cell, and table contexts is a parse error and is ignored; it is no longer silently accepted, nor inserted in fragments with no body
 - Query: redundant clauses for namespaced elements removed
+- `select` is a scope boundary, as in the current standard, so an end tag for an element opened outside a select is ignored inside it
+- `<select>` inside a table is foster-parented like any other in-body element; `<input>` in a select-context fragment is ignored; a nested `<select>` closes the open select; `option`, `optgroup`, and `hr` inside a select generate implied end tags per spec
+- `td` and `th` start tags in body are a parse error and ignored; `<col>` in a table switches to "in column group"; `<svg>` and `<math>` in a table go through the in-body rules with foster parenting; the adoption agency uses the shared scope walk
 - Serializer: `<` and `>` are escaped in attribute values, per the spec's "escaping a string" algorithm; the `:escape_lt_in_attrs` option is removed since the escaping is no longer optional
+
+### Removed
+
+- The "in select" and "in select in table" insertion modes, and "select scope". The standard removed them; select content is parsed with the in-body rules (`select`, `option`, `optgroup`, `hr`, and `input` entries, and `</select>` as a generic block end tag)
 
 ### Changed
 
