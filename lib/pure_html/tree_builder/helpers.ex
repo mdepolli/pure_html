@@ -601,11 +601,9 @@ defmodule PureHTML.TreeBuilder.Helpers do
     do_in_scope?(stack, ref, :default, state)
   end
 
-  defp do_in_scope?([], _target, _scope_type, %{context_element: nil}), do: false
-
-  defp do_in_scope?([], target, _scope_type, %{context_element: {_ns, ctx_tag}}) do
-    scope_node_match?(nil, ctx_tag, target)
-  end
+  # Per spec the walk covers the stack of open elements only; the fragment
+  # context element is not on the stack and is never in scope.
+  defp do_in_scope?([], _target, _scope_type, _state), do: false
 
   defp do_in_scope?([ref | rest], target, scope_type, %{elements: elements} = state) do
     elem_tag = elements[ref].tag
