@@ -17,17 +17,18 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   @doc """
   Run the adoption agency algorithm for the given subject tag.
 
-  Returns the modified state. If no formatting element is found in the active
-  formatting list, calls the provided `on_no_formatting_element` function
-  (typically to close the tag normally).
+  Returns the modified state. When the list of active formatting elements has
+  no entry for the subject, the token is handled by `any_other_end_tag`
+  instead: "act as described in the 'any other end tag' entry above and
+  return".
 
   ## Parameters
     - state: Parser state with stack, elements, af (active formatting), current_parent_ref
     - subject: The tag name being processed (e.g., "b", "i", "a")
-    - on_no_formatting_element: Function called when subject not in AF (fn state, tag -> state)
+    - any_other_end_tag: the in-body "any other end tag" step (fn state, tag -> state)
   """
-  def run(state, subject, on_no_formatting_element \\ fn state, _tag -> state end) do
-    outer_loop(state, subject, on_no_formatting_element, 0)
+  def run(state, subject, any_other_end_tag) do
+    outer_loop(state, subject, any_other_end_tag, 0)
   end
 
   # Outer loop - runs up to 8 iterations
@@ -36,11 +37,7 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
   defp outer_loop(state, subject, fallback, iteration) do
     case locate_formatting_element(state, subject) do
       :not_in_af ->
-        # Per spec: "If there is no such element, then this is a parse error"
-        # On first iteration, run "any other end tag" steps via the fallback
-        state
-        |> parse_error()
-        |> run_fallback_on_first_iteration(fallback, subject, iteration)
+        fallback.(state, subject)
 
       {:not_in_stack, af_idx} ->
         # Per spec: "parse error; remove the element from the list; return"
@@ -68,9 +65,6 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
         |> outer_loop(subject, fallback, iteration + 1)
     end
   end
-
-  defp run_fallback_on_first_iteration(state, fallback, subject, 0), do: fallback.(state, subject)
-  defp run_fallback_on_first_iteration(state, _fallback, _subject, _iteration), do: state
 
   defp remove_af_entry_at(%{af: af} = state, af_idx) do
     %{state | af: List.delete_at(af, af_idx)}

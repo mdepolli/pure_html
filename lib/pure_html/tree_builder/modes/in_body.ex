@@ -135,7 +135,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   def process({:end_tag, tag}, state) when tag in @formatting_elements do
     state
-    |> AdoptionAgency.run(tag, &close_tag_ref/2)
+    |> AdoptionAgency.run(tag, &close_any_other_end_tag/2)
     |> ok()
   end
 
@@ -2151,7 +2151,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp close_anchor(ref, state) do
     state
     |> parse_error()
-    |> AdoptionAgency.run("a", &close_tag_ref/2)
+    |> AdoptionAgency.run("a", &close_any_other_end_tag/2)
     |> remove_af_entry(ref)
     |> remove_from_stack_if_present(ref)
   end
@@ -2193,7 +2193,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     if in_scope?(state, "nobr", :default) do
       state
       |> parse_error()
-      |> AdoptionAgency.run("nobr", &close_tag_ref/2)
+      |> AdoptionAgency.run("nobr", &close_any_other_end_tag/2)
       |> reconstruct_active_formatting()
     else
       state

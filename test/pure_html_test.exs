@@ -1422,6 +1422,25 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "does not count a formatting end tag whose element the adoption agency has already removed" do
+      # Arrange
+      html = "<b><b><b><b>x</b></b></b></b>y"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"b", [], [{"b", [], [{"b", [], [{"b", [], ["x"]}]}]}]}, "y"]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
