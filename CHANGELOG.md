@@ -51,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rb`, `rtc`, `rp`, and `rt` have their own in-body entries: implied end tags (except `rtc` for `rp`/`rt`) with a ruby element in scope, then a parse error unless the current node is what the text names; they no longer close a `p`
 - A formatting end tag with no entry in the active formatting list is handled by the any-other-end-tag step without an error of its own, on any iteration of the adoption agency's outer loop
 - `textarea` follows the generic RCDATA algorithm (text insertion mode, a leading line feed dropped there); `plaintext` switches the tokenizer without leaving the current mode, so a `<plaintext>` ignored in frameset leaves the tokenizer alone
+- "Close a p element" runs the text's three steps (implied end tags except `p`, then the current-node check, then the pop), so a `p` closed over an open `option` is not an error
+- Frameset-ok is set to "not ok" only by the start tags the text lists; `form`, `noembed`, `noframes`, `plaintext`, `rb`, and `rtc` no longer block a later `<frameset>`
+- In head's "anything else" pops the current node unconditionally, and EOF in head noscript takes that path too, so a `<head>` fragment or an open `<noscript>` at EOF no longer ends up holding the body
+- The active formatting elements are reconstructed from the last marker or still-open entry forward, as specified; popping an element no longer strips its entry from the list
+- Non-whitespace table text is reprocessed through in table's "anything else" entry (parse error, foster parenting, in body rules) instead of a private reconstruction
+- The body start tag follows the text: parse error, ignored with a template on the stack or when the second element of the stack is not a body, otherwise frameset-ok "not ok" and merged attributes
+- Closing a table (or a nested table start tag) pops through the table and resets the insertion mode appropriately, where a template node yields the current template insertion mode
+- The adoption agency follows the text step by step: the early exit for a current node not in the list, the formatting element search bounded by the last marker, lastNode inserted at the appropriate place for the common ancestor (foster parented when foster parenting is on), and the any-other-end-tag step for a missing entry on any iteration
 
 ### Removed
 
@@ -60,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tree builder internals: insertion modes are unary state pipelines; foster parenting is enabled for one token and settled by the tree builder; the in-table "anything else" rules delegate to the in-body rules instead of a second implementation; scope walks take the scope type and state; implied end tags and the in-body delegation helpers live in `Helpers`
 - The tree builder switches the tokenizer state (RCDATA, RAWTEXT, script data, PLAINTEXT) as the text describes; the tokenizer no longer switches on its own when it emits a start tag, and no longer takes a `scripting` option
+- Every "process the token using the rules for X" is a plain delegation: the template end tag lives in in head, EOF and `<html>` in the table-family, column group, frameset, and after head modes go to in body or in head without switching modes, and the in-table delegation no longer saves and restores the caller's mode
+- The insertion parent is the top of the stack of open elements; the separately stored parent pointer is gone
+- The stack of template insertion modes holds only template insertion modes; the table return-mode push/pop is gone
+- In body no longer creates html, head, or body elements on the fly for other modes, and finalize no longer patches a missing head or body in; the insertion modes' EOF rules produce them
+- In body's start tag entries take the token, and the adoption agency works on element refs with one function per step of the text; elements no longer carry a foster-parent marker
 - html5lib-tests submodule pinned at `9329e64` (2026-06-20), the last upstream commit with the tree-construction fixtures before they moved to web-platform-tests; it adds the `void-in-phrasing` fixtures, an adoption case, and corrects `<input><option>` in a select-context fragment
 - html5lib tree-construction tests count `#errors` lines only; `#new-errors` are renamed tokenizer codes, not extra errors
 - html5lib tokenizer and tree-construction suites run one test per fixture file, looping over the cases at run time; the full suite drops from about 68 seconds to under one, since compiling 10,000 generated test functions was the cost. `HTML5LIB_CASE=file:index` runs a single case
