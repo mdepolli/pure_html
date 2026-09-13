@@ -63,15 +63,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @impl true
   # Character tokens
-  def process({:character, text}, %{stack: []} = state) do
-    state
-    |> ensure_html()
-    |> in_body()
-    |> reconstruct_active_formatting()
-    |> add_text_to_stack(text)
-    |> ok()
-  end
-
   def process({:character, text}, state) do
     state
     |> current_tag()
@@ -266,10 +257,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Start tags
   # --------------------------------------------------------------------------
 
-  def process({:start_tag, "html", attrs, _}, %{stack: []} = state) do
-    ok(%{state | stack: [new_element("html", attrs)], mode: :before_head})
-  end
-
   # Per spec: "Parse error. If there is a template element on the stack of open elements,
   # then ignore the token."
   def process({:start_tag, "html", _attrs, _}, %{template_mode_stack: [_ | _]} = state) do
@@ -293,22 +280,24 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
+  # Per spec: parse error; ignore the token with a template on the stack, or
+  # when the stack has only one element or its second element is not a body;
+  # otherwise set frameset-ok to "not ok" and merge the attributes into the body.
   def process({:start_tag, "body", attrs, _}, state) do
     state
-    |> process_html_body_start_tag(attrs)
+    |> parse_error()
+    |> merge_body_start_tag(attrs)
     |> ok()
   end
 
   def process({:start_tag, "svg", attrs, self_closing}, state) do
     state
-    |> in_body()
     |> do_push_foreign_element(:svg, "svg", attrs, self_closing)
     |> ok()
   end
 
   def process({:start_tag, "math", attrs, self_closing}, state) do
     state
-    |> in_body()
     |> do_push_foreign_element(:math, "math", attrs, self_closing)
     |> ok()
   end
@@ -331,40 +320,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> parse_error()
     |> dispatch_start_tag(corrected_tag, attrs, self_closing)
     |> ok()
-  end
-
-  # Per spec: "Parse error." then "If there is a template element on the stack, ignore"
-  defp process_html_body_start_tag(%{template_mode_stack: [_ | _]} = state, _attrs) do
-    parse_error(state)
-  end
-
-  # Per spec: "Parse error." then "If the stack of open elements has only one element
-  # on it, ignore the token. (fragment case)"
-  defp process_html_body_start_tag(%{stack: [_]} = state, _attrs) do
-    parse_error(state)
-  end
-
-  # Per spec: "Parse error." Then merge attributes and set frameset-not-ok.
-  defp process_html_body_start_tag(state, attrs) do
-    state
-    |> parse_error()
-    |> ensure_html()
-    |> ensure_head()
-    |> close_head()
-    |> insert_or_merge_body(attrs)
-  end
-
-  defp insert_or_merge_body(%{mode: :after_head} = state, attrs) do
-    state
-    |> push_element("body", attrs)
-    |> set_mode(:in_body)
-    |> set_frameset_not_ok()
-  end
-
-  defp insert_or_merge_body(state, attrs) do
-    state
-    |> merge_body_attrs(attrs)
-    |> set_frameset_not_ok()
   end
 
   # Dispatch an HTML start tag with the in-body rules. The one namespace-aware
@@ -416,7 +371,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp do_process_end_tag({:end_tag, "br"}, state) do
     state
     |> parse_error()
-    |> in_body()
     |> reconstruct_active_formatting()
     |> add_child_to_stack({"br", [], []})
     |> ok()
@@ -434,7 +388,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # <noscript> with scripting disabled: reconstruct AF, push element (parsed as HTML)
   defp do_process_html_start_tag("noscript", attrs, _, state) do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> push_element("noscript", attrs)
   end
@@ -478,7 +431,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # popped; then reconstruct, insert and pop; non-hidden inputs set frameset-ok to "not ok".
   defp do_process_html_start_tag("input", attrs, _, state) do
     state
-    |> in_body()
     |> close_select_for_input()
     |> reconstruct_active_formatting()
     |> add_child_to_stack({"input", attrs, []})
@@ -490,7 +442,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # and pop; set frameset-ok to "not ok". (No formatting reconstruction.)
   defp do_process_html_start_tag("hr", attrs, _, state) do
     state
-    |> in_body()
     |> maybe_close_p("hr")
     |> close_for_hr()
     |> add_child_to_stack({"hr", attrs, []})
@@ -500,7 +451,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Void elements
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @void_elements do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> maybe_close_p(tag)
     |> add_child_to_stack({tag, attrs, []})
@@ -526,7 +476,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> current_tag()
     |> mismatch_if_not_in(@table_cells, state)
-    |> in_body()
     |> clear_to_table_row_context()
     |> ensure_table_context()
     |> push_element(tag, attrs)
@@ -557,7 +506,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # element from the list and the stack if the algorithm didn't already.
   defp do_process_html_start_tag("a", attrs, _, state) do
     state
-    |> in_body()
     |> close_existing_anchor()
     |> reconstruct_active_formatting()
     |> push_element("a", attrs)
@@ -568,7 +516,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # adoption agency algorithm, and reconstruct again.
   defp do_process_html_start_tag("nobr", attrs, _, state) do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> close_nobr_in_scope()
     |> push_element("nobr", attrs)
@@ -578,7 +525,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Formatting elements
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @formatting_elements do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
     |> add_formatting_entry(tag, attrs)
@@ -588,7 +534,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # sets frameset-ok to "not ok", then follows the generic raw text algorithm.
   defp do_process_html_start_tag("xmp", attrs, _, state) do
     state
-    |> in_body()
     |> maybe_close_p("xmp")
     |> reconstruct_active_formatting()
     |> set_frameset_not_ok()
@@ -598,7 +543,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Per spec: iframe sets frameset-ok to "not ok", then generic raw text.
   defp do_process_html_start_tag("iframe", attrs, _, state) do
     state
-    |> in_body()
     |> set_frameset_not_ok()
     |> enter_raw_text("iframe", attrs)
   end
@@ -606,7 +550,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Per spec: noembed follows the generic raw text algorithm.
   defp do_process_html_start_tag("noembed", attrs, _, state) do
     state
-    |> in_body()
     |> enter_raw_text("noembed", attrs)
   end
 
@@ -615,7 +558,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # line feed that immediately follows the start tag.
   defp do_process_html_start_tag("textarea", attrs, _, state) do
     state
-    |> in_body()
     |> push_element("textarea", attrs)
     |> set_frameset_not_ok()
     |> enter_text_mode(:rcdata)
@@ -625,7 +567,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # tokenizer to PLAINTEXT; the insertion mode stays.
   defp do_process_html_start_tag("plaintext", attrs, _, state) do
     state
-    |> in_body()
     |> maybe_close_p("plaintext")
     |> push_element("plaintext", attrs)
     |> switch_tokenizer(:plaintext)
@@ -636,7 +577,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # parse-error if an option is still in scope; otherwise pop a current option.
   defp do_process_html_start_tag("option", attrs, _, state) do
     state
-    |> in_body()
     |> close_for_option()
     |> reconstruct_active_formatting()
     |> push_element("option", attrs)
@@ -646,7 +586,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # an option or optgroup is still in scope; otherwise pop a current option.
   defp do_process_html_start_tag("optgroup", attrs, _, state) do
     state
-    |> in_body()
     |> close_for_optgroup()
     |> reconstruct_active_formatting()
     |> push_element("optgroup", attrs)
@@ -655,7 +594,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Table
   defp do_process_html_start_tag("table", attrs, _, state) do
     state
-    |> in_body()
     |> close_p_unless_quirks("table")
     |> push_element("table", attrs)
     |> set_mode(:in_table)
@@ -694,7 +632,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       |> close_tag_ref_forced("select")
     else
       state
-      |> in_body()
       |> reconstruct_active_formatting()
       |> push_element("select", attrs)
       |> set_frameset_not_ok()
@@ -704,7 +641,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # applet/marquee/object - push AF marker (scope boundary for formatting elements)
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @af_marker_elements do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
     |> push_af_marker()
@@ -715,7 +651,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # error unless the current node is then a ruby element.
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in ~w(rb rtc) do
     state
-    |> in_body()
     |> close_ruby_parts(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
@@ -725,7 +660,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # rtc or a ruby element.
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in ~w(rp rt) do
     state
-    |> in_body()
     |> close_ruby_parts(tag)
     |> push_element(tag, attrs)
   end
@@ -733,7 +667,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Generic - block-level elements close p, inline elements reconstruct AF
   defp do_process_html_start_tag(tag, attrs, _, state) when tag in @closes_p do
     state
-    |> in_body()
     |> close_open_list_item(tag)
     |> maybe_close_p(tag)
     |> maybe_close_same(tag)
@@ -744,7 +677,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp do_process_html_start_tag(tag, attrs, _self_closing, state) do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> maybe_close_same(tag)
     |> push_element(tag, attrs)
@@ -768,7 +700,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Helper function for form handling (separate to allow grouping of do_process_html_start_tag clauses)
   defp do_process_html_start_tag_form(attrs, state) do
     state
-    |> in_body()
     |> maybe_close_p("form")
     |> push_element("form", attrs)
     |> point_form_element_unless_template()
@@ -896,27 +827,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp push_tr(attrs, state) do
     state
-    |> in_body()
     |> clear_to_table_body_context()
     |> ensure_tbody()
     |> push_element("tr", attrs)
   end
-
-  defp push_head_if_missing(nil, state) do
-    state
-    |> push_element("head", [])
-    |> set_mode(:in_head)
-  end
-
-  defp push_head_if_missing(_ref, state), do: state
-
-  defp push_body_if_no_frameset(nil, state) do
-    state
-    |> push_element("body", [])
-    |> set_mode(:in_body)
-  end
-
-  defp push_body_if_no_frameset(_ref, state), do: state
 
   defp insert_col_in_table(nil, attrs, state) do
     add_child_to_stack(state, {"col", attrs, []})
@@ -1109,136 +1023,19 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp adjust_svg_tag(_ns, tag), do: tag
 
   # --------------------------------------------------------------------------
-  # Document structure
+  # Body element
   # --------------------------------------------------------------------------
 
-  defp ensure_html(%{stack: []} = state) do
-    # Create html element and add to elements map
-    elem = new_element("html", [], nil)
-    elements = Map.put(state.elements, elem.ref, elem)
+  defp merge_body_start_tag(%{stack: [_]} = state, _attrs), do: state
 
-    %{state | stack: [elem.ref], elements: elements, mode: :before_head}
-  end
-
-  defp ensure_html(state), do: state
-
-  defp ensure_head(state) do
-    state
-    |> current_tag()
-    |> ensure_head_for(state)
-  end
-
-  defp ensure_head_for(tag, state) when tag in ["head", "body"], do: state
-
-  defp ensure_head_for("html", state) do
-    html_elem = current_element(state)
-
-    html_elem.children
-    |> find_ref_in_children(state.elements, "head")
-    |> push_head_if_missing(state)
-  end
-
-  defp ensure_head_for(_tag, state), do: state
-
-  defp find_ref_in_children(children, elements, tag) do
-    Enum.find(children, fn
-      ref when is_reference(ref) -> elements[ref].tag == tag
-      _ -> false
-    end)
-  end
-
-  defp close_head(state) do
-    state
-    |> current_tag()
-    |> close_head_if_current(state)
-  end
-
-  defp close_head_if_current("head", state) do
-    state
-    |> pop_element()
-    |> set_mode(:after_head)
-  end
-
-  defp close_head_if_current(_tag, state), do: state
-
-  defp ensure_body(state) do
-    state
-    |> current_tag()
-    |> ensure_body_for(state)
-  end
-
-  defp ensure_body_for(tag, state) when tag in ["body", "frameset", nil], do: state
-
-  defp ensure_body_for("html", state) do
-    html_elem = current_element(state)
-
-    html_elem.children
-    |> find_ref_in_children(state.elements, "frameset")
-    |> push_body_if_no_frameset(state)
-  end
-
-  defp ensure_body_for(_tag, state), do: state
-
-  # Modes that can delegate to InBody without mode being changed
-  @body_modes [
-    :in_body,
-    :in_table,
-    :in_template,
-    :in_cell,
-    :in_row,
-    :in_caption,
-    :in_table_body
-  ]
-
-  defp in_body(%{mode: mode, stack: []} = state) when mode in @body_modes do
-    transition_to(%{state | mode: :initial}, :in_body)
-  end
-
-  defp in_body(%{mode: mode} = state) when mode in @body_modes, do: state
-
-  defp in_body(state) do
-    if in_template?(state) do
+  defp merge_body_start_tag(%{stack: stack, elements: elements} = state, attrs) do
+    if has_template_on_stack?(state) or not second_element_is_body?(stack, elements) do
       state
     else
-      transition_to(state, :in_body)
+      state
+      |> set_frameset_not_ok()
+      |> merge_body_attrs(attrs)
     end
-  end
-
-  defp in_template?(%{stack: stack, elements: elements}), do: do_in_template?(stack, elements)
-
-  defp do_in_template?([], _elements), do: false
-
-  defp do_in_template?([ref | rest], elements) do
-    case elements[ref].tag do
-      "template" -> true
-      tag when tag in ~w(html body head) -> false
-      _ -> do_in_template?(rest, elements)
-    end
-  end
-
-  defp transition_to(%{mode: mode} = state, :in_body) do
-    case mode do
-      m when m in @body_modes ->
-        state
-
-      m when m in [:in_frameset, :after_frameset] ->
-        state
-        |> ensure_body()
-        |> set_mode(:in_body)
-
-      _ ->
-        state
-        |> ensure_body_context()
-        |> set_mode(:in_body)
-    end
-  end
-
-  defp ensure_body_context(state) do
-    state
-    |> ensure_html()
-    |> ensure_head()
-    |> close_head()
-    |> ensure_body()
   end
 
   # Merge attributes from second <body> onto existing body element
@@ -1340,7 +1137,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp insert_body_text(text, state) do
     state
-    |> in_body()
     |> reconstruct_active_formatting()
     |> add_text_to_stack(text)
     |> maybe_set_frameset_not_ok(text)
