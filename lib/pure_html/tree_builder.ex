@@ -508,23 +508,11 @@ defmodule PureHTML.TreeBuilder do
     Map.fetch!(@mode_modules, mode).process(:eof, state)
   end
 
-  defp dispatch_to_insertion_mode(token, mode, %{stack: [_ | _]} = state) do
-    module = Map.fetch!(@mode_modules, mode)
-
-    if module != InBody and adjusted_current_node_is_foreign?(state) do
-      InBody.process(token, state)
-    else
-      module.process(token, state)
-    end
-  end
-
+  # Per spec, a token that is not routed to the foreign content rules (an
+  # integration point exception, or an HTML current node) is processed with
+  # the rules for the current insertion mode.
   defp dispatch_to_insertion_mode(token, mode, state) do
-    module = Map.fetch!(@mode_modules, mode)
-    module.process(token, state)
-  end
-
-  defp adjusted_current_node_is_foreign?(state) do
-    match?({ns, _} when ns in [:svg, :math], adjusted_current_node_tag(state))
+    Map.fetch!(@mode_modules, mode).process(token, state)
   end
 
   # Per WHATWG spec, process using the current insertion mode (NOT foreign content)

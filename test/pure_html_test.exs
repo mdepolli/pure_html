@@ -395,6 +395,32 @@ defmodule PureHTMLTest do
       assert error_count == 1
     end
 
+    test "processes characters at a MathML text integration point with the current insertion mode" do
+      # Arrange
+      html = "<!DOCTYPE html><body><table><math><mi>foo</mi></math></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {{:math, "math"}, [], [{{:math, "mi"}, [], ["foo"]}]},
+                     {"table", [], []}
+                   ]}
+                ]}
+             ] = nodes
+
+      # <math> in table, then one in-table character error per character of "foo",
+      # because mi is a MathML text integration point and the current mode is in table.
+      assert error_count == 4
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
