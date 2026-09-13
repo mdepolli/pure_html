@@ -33,6 +33,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InBody
+  alias PureHTML.TreeBuilder.Modes.InHead
 
   @table_sections ~w(tbody thead tfoot)
   @table_context ~w(table tbody template tfoot thead tr)
@@ -129,19 +130,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   end
 
   # Start tags: style, script - process using in_head rules
-  # Set original_mode first so we return to table context after text mode
-  defp process_in_table({:start_tag, tag, _, _}, state) when tag in ~w(style script) do
-    state
-    |> Map.put(:original_mode, state.mode)
-    |> set_mode(:in_head)
-    |> reprocess()
+  defp process_in_table({:start_tag, tag, _, _} = token, state) when tag in ~w(style script) do
+    InHead.process(token, state)
   end
 
-  # Start tag: template - process using in_head rules (no original_mode needed)
-  defp process_in_table({:start_tag, "template", _, _}, state) do
-    state
-    |> set_mode(:in_head)
-    |> reprocess()
+  # Start tag: template - process using in_head rules
+  defp process_in_table({:start_tag, "template", _, _} = token, state) do
+    InHead.process(token, state)
   end
 
   # Start tag: input - check for type=hidden

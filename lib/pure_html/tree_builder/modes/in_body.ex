@@ -192,6 +192,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       |> parse_error_unless_current("template")
       |> close_html_template()
       |> clear_af_to_marker()
+      |> pop_template_mode()
       |> reset_insertion_mode()
       |> ok()
     else
@@ -500,7 +501,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   # <noscript> with scripting enabled: process using "in head" rules (RAWTEXT)
   defp do_process_html_start_tag("noscript", attrs, self_closing, %{scripting: true} = state) do
-    insert_as_head_element("noscript", attrs, self_closing, state)
+    process_in_head(state, {:start_tag, "noscript", attrs, self_closing})
   end
 
   # <noscript> with scripting disabled: reconstruct AF, push element (parsed as HTML)
@@ -518,10 +519,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> insert_template_elsewhere(attrs, state)
   end
 
-  # Other head elements
+  # Other head elements: process using "in head" rules
   defp do_process_html_start_tag(tag, attrs, self_closing, state)
        when tag in @head_elements do
-    insert_as_head_element(tag, attrs, self_closing, state)
+    process_in_head(state, {:start_tag, tag, attrs, self_closing})
   end
 
   # Per HTML5 spec: "Parse error." Then ignore if only one element on stack
@@ -789,13 +790,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  # Generic raw text element parsing: insert the element, remember the current
-  # insertion mode, and switch to "text". The tokenizer switches to RAWTEXT itself.
-  defp enter_raw_text(%{mode: mode} = state, tag, attrs) do
+  # Generic raw text element parsing. The tokenizer switches to RAWTEXT itself.
+  defp enter_raw_text(state, tag, attrs) do
     state
     |> push_element(tag, attrs)
-    |> Map.put(:original_mode, mode)
-    |> set_mode(:text)
+    |> enter_text_mode()
   end
 
   defp maybe_parse_error_unacknowledged_self_closing(state, tag, true)
@@ -942,22 +941,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_element("tr", attrs)
   end
 
-  defp insert_head_element(nil, :in_template, tag, attrs, self_closing, state) do
-    process_start_tag(state, tag, attrs, self_closing)
-  end
-
-  defp insert_head_element(nil, _mode, tag, attrs, self_closing, state) do
-    state
-    |> ensure_html()
-    |> ensure_head()
-    |> maybe_reopen_head()
-    |> process_start_tag(tag, attrs, self_closing)
-  end
-
-  defp insert_head_element(_body_ref, _mode, tag, attrs, self_closing, state) do
-    process_start_tag(state, tag, attrs, self_closing)
-  end
-
   defp push_head_if_missing(nil, state) do
     state
     |> push_element("head", [])
@@ -1020,19 +1003,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_element("template", attrs)
     |> push_mode(:in_template)
     |> push_af_marker()
-  end
-
-  defp insert_as_head_element(tag, attrs, self_closing, %{mode: mode} = state)
-       when mode in [:in_template, :in_body, :in_table] do
-    state
-    |> find_ref("body")
-    |> insert_head_element(mode, tag, attrs, self_closing, state)
-  end
-
-  defp insert_as_head_element(tag, attrs, self_closing, state) do
-    state
-    |> find_ref("body")
-    |> insert_head_element(:in_head, tag, attrs, self_closing, state)
   end
 
   defp process_start_tag(state, tag, attrs, _self_closing) when tag in @void_elements do
@@ -1433,19 +1403,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Mode transitions
   # --------------------------------------------------------------------------
 
-  defp reset_insertion_mode(
-         %{
-           stack: stack,
-           elements: elements,
-           context_element: context_element,
-           scripting: scripting,
-           template_mode_stack: template_mode_stack
-         } = state
-       ) do
-    mode = determine_mode_from_stack(stack, elements, context_element, scripting)
-    %{state | mode: mode, template_mode_stack: Enum.drop(template_mode_stack, 1)}
-  end
-
   # Check if there are any foreign (SVG/MathML) elements on the stack.
   # Used to determine if table structure handling should be skipped when
   # processing HTML tokens at integration points.
@@ -1456,12 +1413,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
         _ -> false
       end
     end)
-  end
-
-  defp handle_in_body_characters(tag, text, state) when tag in @head_elements do
-    state
-    |> add_text_to_stack(text)
-    |> ok()
   end
 
   defp handle_in_body_characters(tag, text, state) when tag in @table_context do
@@ -1560,8 +1511,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp set_frameset_not_ok_for_text("", state), do: state
   defp set_frameset_not_ok_for_text(_text, state), do: set_frameset_not_ok(state)
-
-  defp set_frameset_not_ok(state), do: %{state | frameset_ok: false}
 
   defp maybe_set_frameset_not_ok_for_element(state, tag)
        when tag in @frameset_disabling_elements do

@@ -28,15 +28,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
   import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder.Modes.InBody
+  alias PureHTML.TreeBuilder.Modes.InHead
 
-  # Void head elements that can just be added directly
-  @void_head_elements ~w(base basefont bgsound link meta)
-
-  # Raw text elements that need text mode
-  @raw_text_elements ~w(noframes style)
-
-  # Title should be delegated to in_head
-  @delegate_head_elements ~w(title)
+  @head_elements ~w(base basefont bgsound link meta noframes script style title)
 
   @impl true
   # Character tokens: process using in_body rules
@@ -56,34 +50,14 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     |> ok()
   end
 
-  # Void head elements: add directly to stack
-  def process({:start_tag, tag, attrs, _}, state)
-      when tag in @void_head_elements do
-    state
-    |> add_child_to_stack({tag, attrs, []})
-    |> ok()
+  # Head elements: process using "in head" rules
+  def process({:start_tag, tag, _, _} = token, state) when tag in @head_elements do
+    InHead.process(token, state)
   end
 
-  # Script: push element, switch to text mode with original_mode: :in_template
-  def process({:start_tag, "script", attrs, _}, state) do
-    state
-    |> push_and_enter_text_mode("script", attrs)
-    |> ok()
-  end
-
-  # <noscript> with scripting enabled: treat as RAWTEXT
-  def process({:start_tag, "noscript", attrs, _}, %{scripting: true} = state) do
-    state
-    |> push_and_enter_text_mode("noscript", attrs)
-    |> ok()
-  end
-
-  # Raw text elements: push element, switch to text mode
-  def process({:start_tag, tag, attrs, _}, state)
-      when tag in @raw_text_elements do
-    state
-    |> push_and_enter_text_mode(tag, attrs)
-    |> ok()
+  # <noscript> with scripting enabled: process using "in head" rules
+  def process({:start_tag, "noscript", _, _} = token, %{scripting: true} = state) do
+    InHead.process(token, state)
   end
 
   # Nested template: push element and push mode onto template_mode_stack
@@ -93,13 +67,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     |> push_af_marker()
     |> push_template_mode(:in_template)
     |> ok()
-  end
-
-  # Title: delegate to in_head
-  def process({:start_tag, tag, _, _}, state) when tag in @delegate_head_elements do
-    state
-    |> set_mode(:in_head)
-    |> reprocess()
   end
 
   # html/head/body start tags: parse error, ignore when in template
@@ -208,41 +175,13 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
     |> pop_template_for_eof()
     |> clear_af_to_marker()
     |> pop_template_mode()
-    |> reprocess_after_template_eof()
+    |> reset_insertion_mode()
+    |> reprocess()
   end
 
   defp pop_template_for_eof(state) do
     {_status, state} = pop_until_tag(state, "template")
     state
-  end
-
-  defp push_template_mode(%{template_mode_stack: tms} = state, mode) do
-    %{state | template_mode_stack: [mode | tms]}
-  end
-
-  defp pop_template_mode(%{template_mode_stack: [_ | rest]} = state) do
-    %{state | template_mode_stack: rest}
-  end
-
-  defp reprocess_after_template_eof(state) do
-    mode =
-      determine_mode_from_stack(
-        state.stack,
-        state.elements,
-        state.context_element,
-        state.scripting
-      )
-
-    state
-    |> set_mode(mode)
-    |> reprocess()
-  end
-
-  defp push_and_enter_text_mode(state, tag, attrs) do
-    state
-    |> push_element(tag, attrs)
-    |> Map.put(:original_mode, :in_template)
-    |> set_mode(:text)
   end
 
   # Table-related elements that are valid as early template content

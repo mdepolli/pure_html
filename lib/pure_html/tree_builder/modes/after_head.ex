@@ -26,8 +26,6 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
 
   import PureHTML.TreeBuilder.Helpers
 
-  alias PureHTML.TreeBuilder.Modes.InHead
-
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
   # HTML5 ASCII whitespace characters
   @html5_whitespace ~c[ \t\n\r\f]
@@ -96,6 +94,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
     |> parse_error()
     |> push_head_onto_stack()
     |> process_in_head(token)
+    |> remove_head_from_stack()
+    |> ok()
   end
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
@@ -149,24 +149,6 @@ defmodule PureHTML.TreeBuilder.Modes.AfterHead do
   end
 
   defp insert_implied_body(state), do: set_mode(state, :in_body)
-
-  defp process_in_head(state, token) do
-    {result, new_state} = InHead.process(token, state)
-    {result, finish_in_head(new_state)}
-  end
-
-  defp finish_in_head(state) do
-    state
-    |> remove_head_from_stack()
-    |> return_to_after_head_from_text()
-  end
-
-  # If we switched to text mode (style/script), set original_mode to after_head
-  defp return_to_after_head_from_text(%{mode: :text} = state) do
-    %{state | original_mode: :after_head}
-  end
-
-  defp return_to_after_head_from_text(state), do: state
 
   # Push head element onto stack (for processing head elements in after_head)
   defp push_head_onto_stack(%{head_element: head_ref, stack: stack} = state)

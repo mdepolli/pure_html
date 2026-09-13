@@ -69,11 +69,9 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   end
 
   def process({:start_tag, "title", attrs, _self_closing}, state) do
-    # Insert title element, switch to text mode (RCDATA)
+    # Generic RCDATA element parsing
     state
-    |> push_element("title", attrs)
-    |> Map.put(:original_mode, :in_head)
-    |> set_mode(:text)
+    |> switch_to_text_mode("title", attrs)
     |> ok()
   end
 
@@ -107,12 +105,16 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     |> ok()
   end
 
-  def process({:start_tag, "template", _attrs, _self_closing}, state) do
-    # Template needs special handling with mode stack - delegate to main process/2
-    # Set mode to :in_body (not in @mode_modules) so dispatch falls through
+  # Insert the template, a marker, frameset-ok "not ok", then push "in template"
+  # onto the stack of template insertion modes and switch to it.
+  def process({:start_tag, "template", attrs, _self_closing}, state) do
     state
-    |> set_mode(:in_body)
-    |> reprocess()
+    |> push_element("template", attrs)
+    |> push_af_marker()
+    |> set_frameset_not_ok()
+    |> push_template_mode(:in_template)
+    |> set_mode(:in_template)
+    |> ok()
   end
 
   def process({:start_tag, "head", _attrs, _self_closing}, state) do
@@ -193,16 +195,9 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
   defp pop_if_tag(tag, tag, state), do: pop_element(state)
   defp pop_if_tag(_current, _expected, state), do: state
 
-  # Switch to text mode, preserving original_mode if already set
   defp switch_to_text_mode(state, tag, attrs) do
     state
     |> push_element(tag, attrs)
     |> enter_text_mode()
   end
-
-  defp enter_text_mode(%{original_mode: nil} = state) do
-    %{state | original_mode: :in_head, mode: :text}
-  end
-
-  defp enter_text_mode(state), do: set_mode(state, :text)
 end

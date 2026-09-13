@@ -20,6 +20,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
 
   import PureHTML.TreeBuilder.Helpers
 
+  alias PureHTML.TreeBuilder.Modes.InHead
+
   @impl true
   def process({:character, text}, state) do
     text
@@ -47,12 +49,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterFrameset do
     |> reprocess()
   end
 
-  def process({:start_tag, "noframes", _attrs, _self_closing}, state) do
-    # Process using "in head" rules, preserve original mode to return here after text mode
-    state
-    |> Map.put(:original_mode, :after_frameset)
-    |> set_mode(:in_head)
-    |> reprocess()
+  # Process using "in head" rules
+  def process({:start_tag, "noframes", _, _} = token, state) do
+    InHead.process(token, state)
   end
 
   def process({:end_tag, "html"}, state) do

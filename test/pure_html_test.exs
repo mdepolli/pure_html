@@ -1359,6 +1359,23 @@ defmodule PureHTMLTest do
 
       assert error_count == 7
     end
+
+    test "returns to the table after a title fostered out of it" do
+      # Arrange
+      html = "<!doctype html><table><title>X</title></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", _, _},
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"title", [], ["X"]}, {"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

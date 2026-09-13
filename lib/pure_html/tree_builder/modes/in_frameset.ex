@@ -24,6 +24,8 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   import PureHTML.TreeBuilder.Helpers
 
+  alias PureHTML.TreeBuilder.Modes.InHead
+
   @impl true
   def process({:character, text}, state) do
     text
@@ -67,12 +69,8 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   end
 
   # Start tag: noframes - process using in_head rules
-  # Set original_mode so text mode returns here after noframes closes
-  def process({:start_tag, "noframes", _attrs, _}, state) do
-    state
-    |> Map.put(:original_mode, :in_frameset)
-    |> set_mode(:in_head)
-    |> reprocess()
+  def process({:start_tag, "noframes", _, _} = token, state) do
+    InHead.process(token, state)
   end
 
   # Other start tags: parse error, ignore

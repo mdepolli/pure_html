@@ -325,8 +325,7 @@ defmodule PureHTML.TreeBuilder do
     }
 
     # Step 4: Reset the insertion mode appropriately
-    mode = determine_mode_from_stack(state.stack, state.elements, context, scripting)
-    state = %{state | mode: mode}
+    state = reset_insertion_mode(state)
 
     # Step 5: If the context element is a form element, set the form element pointer
     state =

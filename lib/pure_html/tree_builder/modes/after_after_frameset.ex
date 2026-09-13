@@ -19,6 +19,8 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
 
   import PureHTML.TreeBuilder.Helpers
 
+  alias PureHTML.TreeBuilder.Modes.InHead
+
   @impl true
   def process({:comment, text}, state) do
     # Insert comment as child of the Document (sibling of html, stored in post_html_nodes)
@@ -45,12 +47,9 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
     |> reprocess()
   end
 
-  def process({:start_tag, "noframes", _attrs, _self_closing}, state) do
-    # Process using "in head" rules, preserve original mode to return here after text mode
-    state
-    |> Map.put(:original_mode, :after_after_frameset)
-    |> set_mode(:in_head)
-    |> reprocess()
+  # Process using "in head" rules
+  def process({:start_tag, "noframes", _, _} = token, state) do
+    InHead.process(token, state)
   end
 
   # EOF: stop parsing
