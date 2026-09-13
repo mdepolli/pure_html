@@ -14,7 +14,6 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
   alias PureHTML.TreeBuilder.Modes.InBody
 
   @svg_html_integration_points ~w(foreignObject desc title)
-  @mathml_html_integration_points ~w(mi mo mn ms mtext)
 
   # --------------------------------------------------------------------------
   # Tree construction dispatcher
@@ -104,32 +103,16 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
   # --------------------------------------------------------------------------
 
   @doc """
-  Whether the adjusted current node is a foreign element outside an
-  integration point, for the tokenizer (CDATA sections are allowed there).
-  In fragment mode with one element on the stack, the adjusted current node
-  is the context element.
+  Whether there is an adjusted current node and it is not an element in the
+  HTML namespace: the tokenizer's condition for a CDATA section.
   """
-  def adjusted_current_node_foreign?(%{stack: stack, elements: elements, context_element: ctx}) do
-    adjusted_current_node_is_foreign?(stack, elements, ctx)
+  def adjusted_current_node_foreign?(%{stack: []}), do: false
+
+  def adjusted_current_node_foreign?(state) do
+    state
+    |> adjusted_current_node_tag()
+    |> is_tuple()
   end
-
-  defp adjusted_current_node_is_foreign?([_single], _elements, {ns, tag})
-       when ns in [:svg, :math] do
-    tag_is_foreign?({ns, tag})
-  end
-
-  defp adjusted_current_node_is_foreign?([ref | _], elements, _context) do
-    case elements[ref] do
-      %{tag: {ns, tag}} when ns in [:svg, :math] -> tag_is_foreign?({ns, tag})
-      _ -> false
-    end
-  end
-
-  defp adjusted_current_node_is_foreign?([], _, _), do: false
-
-  defp tag_is_foreign?({:svg, tag}) when tag in @svg_html_integration_points, do: false
-  defp tag_is_foreign?({:math, tag}) when tag in @mathml_html_integration_points, do: false
-  defp tag_is_foreign?({ns, _}) when ns in [:svg, :math], do: true
 
   # --------------------------------------------------------------------------
   # The rules for parsing tokens in foreign content

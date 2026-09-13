@@ -1490,6 +1490,26 @@ defmodule PureHTMLTest do
       # the frameset start tag in body, and EOF inside the frameset
       assert error_count == 2
     end
+
+    test "parses a CDATA section inside an SVG title as text" do
+      # Arrange
+      html = "<!DOCTYPE html><svg><title><![CDATA[x]]></title></svg>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", _, _},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{{:svg, "svg"}, [], [{{:svg, "title"}, [], ["x"]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 0
+    end
   end
 
   describe "query/2" do
