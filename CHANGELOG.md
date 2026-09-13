@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `select` is a scope boundary, as in the current standard, so an end tag for an element opened outside a select is ignored inside it
 - `<select>` inside a table is foster-parented like any other in-body element; `<input>` in a select-context fragment is ignored; a nested `<select>` closes the open select; `option`, `optgroup`, and `hr` inside a select generate implied end tags per spec
 - `td` and `th` start tags in body are a parse error and ignored; `<col>` in a table switches to "in column group"; `<svg>` and `<math>` in a table go through the in-body rules with foster parenting; the adoption agency uses the shared scope walk
+- Foreign content follows the tree construction dispatcher and the foreign content rules as written: a token at an integration point is processed with the current insertion mode; an HTML breakout start tag, and `</br>`/`</p>`, pop out of foreign content and are reprocessed with the current mode; the end-tag walk returns at the topmost node in a fragment; a foreign end tag that reaches in body is any other end tag; the scope walk covers the stack of open elements only
+- A start tag whose self-closing flag is never acknowledged is a parse error for every non-void HTML element, not only those on the generic path; `</td>` and `</th>` in body are any other end tag
 - Serializer: `<` and `>` are escaped in attribute values, per the spec's "escaping a string" algorithm; the `:escape_lt_in_attrs` option is removed since the escaping is no longer optional
 
 ### Removed

@@ -147,13 +147,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
-  def process({:end_tag, tag}, state) when tag in @table_cells do
-    state
-    |> close_tag_ref_forced(tag)
-    |> clear_af_to_marker()
-    |> ok()
-  end
-
   # Per spec: applet/marquee/object end tags:
   # "If not in scope, parse error; ignore."
   # "Generate implied end tags." "If current node is not the element, parse error."

@@ -503,6 +503,23 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "treats a cell end tag in body as any other end tag" do
+      # Arrange
+      html = "<!DOCTYPE html><div></td>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"div", [], ["x"]}]}]}
+             ] = nodes
+
+      # </td> walks to the special div (parse error, ignored); div is open at EOF.
+      assert error_count == 2
+    end
+
     test "returns zero errors for a complete HTML5 document" do
       # Arrange
       html = "<!DOCTYPE html><html><head></head><body><p>hello</p></body></html>"
