@@ -110,8 +110,12 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
   def adjusted_current_node_foreign?(state) do
     state
     |> adjusted_current_node_tag()
-    |> is_tuple()
+    |> foreign_tag?()
   end
+
+  # An HTML fragment context is `{nil, tag}`; only SVG and MathML are foreign.
+  defp foreign_tag?({ns, _tag}) when ns in [:svg, :math], do: true
+  defp foreign_tag?(_tag), do: false
 
   # --------------------------------------------------------------------------
   # The rules for parsing tokens in foreign content

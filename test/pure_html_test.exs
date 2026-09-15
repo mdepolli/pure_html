@@ -34,6 +34,24 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "CDATA in an HTML fragment context is a bogus comment" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<![CDATA[x]]>", context: "div")
+
+      # Assert
+      assert [{:comment, "[CDATA[x]]"}] = nodes
+      assert error_count == 1
+    end
+
+    test "CDATA in an SVG fragment context is text" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<![CDATA[x]]>", context: "svg svg")
+
+      # Assert
+      assert ["x"] = nodes
+      assert error_count == 0
+    end
+
     test "head fragment context resets to in body because last is true" do
       # Arrange
       html = "<title>x</title>y"
