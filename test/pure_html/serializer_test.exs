@@ -180,8 +180,8 @@ defmodule PureHTML.SerializerTest do
       assert Serializer.serialize(nodes) == "<!DOCTYPE HTML>"
     end
 
-    test "doctype with a missing name" do
-      assert Serializer.serialize([{:doctype, nil, nil, nil}]) == "<!DOCTYPE>"
+    test "doctype with a missing name keeps the space before the empty name" do
+      assert Serializer.serialize([{:doctype, nil, nil, nil}]) == "<!DOCTYPE >"
     end
   end
 

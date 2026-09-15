@@ -1727,7 +1727,7 @@ defmodule PureHTMLTest do
       # Assert
       assert [{:doctype, nil, nil, nil} | _] = nodes
       assert error_count >= 1
-      assert PureHTML.to_html(nodes) |> String.starts_with?("<!DOCTYPE")
+      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
     end
   end
 

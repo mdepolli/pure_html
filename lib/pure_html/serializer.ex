@@ -207,12 +207,9 @@ defmodule PureHTML.Serializer do
     |> String.replace(~r/  +/, " ")
   end
 
-  # HTML fragment serialization: "<!DOCTYPE", a space and the name if present, ">".
-  defp serialize_doctype(name, _public_id, _system_id) when name in [nil, ""] do
-    "<!DOCTYPE>"
-  end
-
+  # HTML fragment serialization: "<!DOCTYPE", a space, the name, ">". A missing
+  # name is the empty string, so the space stays.
   defp serialize_doctype(name, _public_id, _system_id) do
-    ["<!DOCTYPE ", name, ">"]
+    ["<!DOCTYPE ", name || "", ">"]
   end
 end
