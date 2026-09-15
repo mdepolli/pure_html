@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `PureHTML.Serializer.void_element?/1`
+- The html5lib runners list fixtures recursively under relative names (`scripted/webkit01`), run the three `unsafe` tree-construction files, and report fixtures they cannot pass as skipped tests with the reason: `scripted/` fixtures need script execution, the four `unicodeCharsProblematic` tokenizer cases hold a lone surrogate that only a script API can put in the input stream, and the html5lib serializer cases test html5lib's token serializer rather than the fragment algorithm
+- The html5lib serializer suite builds a tree from each token stream and serializes it through `PureHTML.Serializer` instead of a copy of the serializer
+
+### Changed
+
+- `PureHTML.to_html/2` serializes a doctype as `<!DOCTYPE name>` per the HTML fragment serialization algorithm; public and system identifiers are no longer written, and a missing name keeps the space (`<!DOCTYPE >`)
+- Query results come in document order: a selector list such as `"p, span"` returns matches in the order they appear in the tree, `query_one/2` returns the first of them, identical sibling elements are distinct matches, and elements inside `<template>` content are found. `query_one/2` stops at the first match
+- The `xmlns` attribute on a foreign element is stored as `{{:xmlns, "xmlns"}, value}`, matching the adjust-foreign-attributes table
+
+### Fixed
+
+- Numeric character references in RCDATA (`<title>&#65;</title>`) no longer raise
+- Invalid UTF-8 in the input is replaced with U+FFFD before tokenizing, so markup with stray bytes no longer raises
+- Foreign attributes with a namespace prefix (`xlink:href`, `xml:lang`, `xmlns:xlink`) serialize with their prefix instead of raising
+- Input stream parse errors for control characters and noncharacters are counted
+- Named character references stay linear before a long run of ASCII
+- U+0000 is ignored in body and in table text with a parse error, and replaced with U+FFFD in foreign content; the first character token in a table is reprocessed through the in-table-text rules
+- The character after `<` in the script data escaped state keeps its case in the emitted text
+- In column group inserts leading whitespace once and reprocesses only the rest of the token
+- ASCII whitespace, not Unicode whitespace, is what the insertion modes test for, so U+00A0 is a character before the first tag, in a table, in noscript, and for frameset-ok
+- The quirks mode decision encodes the WHATWG public-identifier lists, so HTML 4.01 Strict and XHTML 1.0 Strict are no-quirks and a table closes an open `p`
+- An `<html>` start tag in before head, after head, after body, and after after body is processed with the in-body rules in place: attributes merge, no head or body is implied, and the mode stays, so a following comment lands on the html element or the document
+- In template follows its start-tag list as written: html, head, body, and noscript move the template to in body, and a stray `tr` after non-table content is ignored by in body's rules
+- HTML breakout inside foreign content stops at a MathML text integration point
+- A table start tag at an HTML integration point is inserted there rather than foster-parented past the foreign content; in body's unreachable table-structure arms are gone
+- A button start tag closes an open button in default scope with implied end tags, then reconstructs the active formatting elements before inserting
+- In table: a non-hidden `<input>` and `</br>` go through the in-body rules with foster parenting; a form is inserted despite an open form when parsing template contents; `td`, `th`, and `tr` always get a `tbody`
+- `</frameset>` in a frameset fragment does not switch to after frameset; whitespace in after body, after after body, and after after frameset reconstructs the active formatting elements
+- Reset the insertion mode respects the last flag for head, td, and th, so a head- or td-context fragment resets to in body; the noscript step that the algorithm does not have is gone
+- CDATA sections are recognized only when the adjusted current node is in the SVG or MathML namespace; an HTML fragment context yields a bogus comment
+- `param`, `source`, and `track` insert without reconstructing the active formatting elements; `</br>` sets frameset-ok to "not ok"; the any-other-end-tag walk matches HTML elements only; a line feed after `<pre>`, `<listing>`, or `<textarea>` is ignored only when it is the very next token
+- The `selectedcontent` replay follows the forms chapter: the first selectedcontent descendant, no clone with `multiple` or a display size other than 1, options found through optgroup, the last selected option wins, disabled options are skipped, and a text node before the button no longer crashes it
+
 ## [0.4.0] - 2026-09-13
 
 ### Added
