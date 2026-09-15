@@ -700,11 +700,13 @@ defmodule PureHTML.Tokenizer do
     continue(state, state: :script_data_escaped_end_tag_open, buffer: "", input: rest)
   end
 
+  # "Emit a U+003C LESS-THAN SIGN character token and the current input
+  # character as a character token"; only the temporary buffer is lowercased.
   defp step(%{state: :script_data_escaped_less_than_sign, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
 
-    emit_char(state, "<" <> char,
+    emit_char(state, <<?<, c>>,
       state: :script_data_double_escape_start,
       buffer: char,
       input: rest

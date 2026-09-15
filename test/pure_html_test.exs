@@ -98,6 +98,25 @@ defmodule PureHTMLTest do
       assert error_count == 4
     end
 
+    test "keeps the case of the character after < in script data escaped" do
+      # Arrange
+      html = "<script type=\"data\"><!-- foo-<S"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], [{"script", [{"type", "data"}], ["<!-- foo-<S"]}]},
+                  {"body", [], []}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "counts a missing doctype as a parse error" do
       # Arrange
       html = "<p>hello</p>"
