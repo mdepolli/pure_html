@@ -1692,6 +1692,19 @@ defmodule PureHTMLTest do
     end
   end
 
+  describe "to_html/2" do
+    test "serializes xlink:href on an SVG element" do
+      # Arrange
+      html = "<svg><a xlink:href=foo></a></svg>"
+
+      # Act
+      result = html |> PureHTML.parse() |> PureHTML.to_html()
+
+      # Assert
+      assert result =~ "xlink:href=foo"
+    end
+  end
+
   defp valid_node?({tag, attrs, children}) when is_binary(tag) and is_list(attrs) do
     is_list(children) and Enum.all?(children, &valid_node?/1)
   end

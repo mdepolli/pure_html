@@ -192,6 +192,11 @@ defmodule PureHTML.SerializerTest do
       nodes = [{{:math, "mrow"}, [], []}]
       assert Serializer.serialize(nodes) == "<mrow></mrow>"
     end
+
+    test "serializes namespaced attribute tuples" do
+      nodes = [{{:svg, "a"}, [{{:xlink, "href"}, "foo"}], []}]
+      assert Serializer.serialize(nodes) == "<a xlink:href=foo></a>"
+    end
   end
 
   describe "template content" do

@@ -133,6 +133,7 @@ defmodule PureHTML.Serializer do
   end
 
   defp serialize_attr(name, value, opts) do
+    name = attr_name_to_string(name)
     quote_char = Keyword.get(opts, :quote_char)
     minimize = Keyword.get(opts, :minimize_boolean_attributes, true)
 
@@ -144,6 +145,13 @@ defmodule PureHTML.Serializer do
       :unquoted -> [name, "=", escape_angle_brackets(value)]
     end
   end
+
+  defp attr_name_to_string({:xlink, local}), do: "xlink:" <> local
+  defp attr_name_to_string({:xml, local}), do: "xml:" <> local
+  defp attr_name_to_string({:xmlns, ""}), do: "xmlns"
+  defp attr_name_to_string({:xmlns, "xmlns"}), do: "xmlns"
+  defp attr_name_to_string({:xmlns, local}), do: "xmlns:" <> local
+  defp attr_name_to_string(name) when is_binary(name), do: name
 
   defp determine_quote_style(_name, "", _quote_char, false), do: :empty_quoted
   defp determine_quote_style(_name, "", _quote_char, _minimize), do: :minimized
