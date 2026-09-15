@@ -54,11 +54,10 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
     |> ok()
   end
 
-  def process({:start_tag, "html", _attrs, _self_closing}, state) do
-    # Process using "in body" rules - insert implied head first, then reprocess
-    state
-    |> insert_head([])
-    |> reprocess()
+  # "Process the token using the rules for the in body insertion mode": a parse
+  # error and an attribute merge onto the html element, with no mode change.
+  def process({:start_tag, "html", _attrs, _self_closing} = token, state) do
+    process_in_body(state, token)
   end
 
   def process({:start_tag, "head", attrs, _self_closing}, state) do

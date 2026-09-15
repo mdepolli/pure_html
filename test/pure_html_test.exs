@@ -34,6 +34,54 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "html start tag in before head merges attributes and stays before head" do
+      # Arrange
+      html = "<html><html lang=en><head>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [{"lang", "en"}], [{"head", [], []}, {"body", [], []}]}] = nodes
+      assert error_count == 2
+    end
+
+    test "html start tag in after head merges attributes without implying a body" do
+      # Arrange
+      html = "<head></head><html lang=en><body>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [{"lang", "en"}], [{"head", [], []}, {"body", [], []}]}] = nodes
+      assert error_count == 2
+    end
+
+    test "comment after an html start tag in after body is a child of html" do
+      # Arrange
+      html = "<body></body><html><!--c-->"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], []}, {:comment, "c"}]}] = nodes
+      assert error_count == 2
+    end
+
+    test "comment after an html start tag in after after body is a document child" do
+      # Arrange
+      html = "<body></body></html><html><!--c-->"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], []}]}, {:comment, "c"}] = nodes
+      assert error_count == 2
+    end
+
     test "HTML 4.01 Strict is no-quirks, so a table closes the p" do
       # Arrange
       public_id = "-//W3C//DTD HTML 4.01//EN"

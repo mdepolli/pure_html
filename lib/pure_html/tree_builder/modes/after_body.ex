@@ -41,11 +41,10 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
     |> ok()
   end
 
-  def process({:start_tag, "html", _attrs, _self_closing}, state) do
-    # Process using "in body" rules
-    state
-    |> set_mode(:in_body)
-    |> reprocess()
+  # "Process the token using the rules for the in body insertion mode": a parse
+  # error and an attribute merge onto the html element, with no mode change.
+  def process({:start_tag, "html", _attrs, _self_closing} = token, state) do
+    process_in_body(state, token)
   end
 
   def process({:end_tag, "html"}, %{context_element: ctx} = state) when ctx != nil do
