@@ -1004,6 +1004,15 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def has_template_on_stack?(state), do: find_ref(state, "template") != nil
 
   @doc """
+  Points the form element pointer at the current node, the form element just
+  inserted, unless the parser is parsing template contents (a template is on
+  the stack of open elements).
+  """
+  def point_form_element(%{stack: [form_ref | _]} = state) do
+    if has_template_on_stack?(state), do: state, else: %{state | form_element: form_ref}
+  end
+
+  @doc """
   Pops elements from the stack of open elements until an HTML template
   element has been popped.
   """

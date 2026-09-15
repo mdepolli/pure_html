@@ -34,6 +34,83 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "non-hidden input in a table goes through the in-body rules and is fostered" do
+      # Arrange
+      html = "<table><input type=text>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"input", [{"type", "text"}], []}, {"table", [], []}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
+    test "hidden input in a table is inserted in the table" do
+      # Arrange
+      html = "<table><input type=hidden>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"table", [], [{"input", [{"type", "hidden"}], []}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
+    test "br end tag in a table acts as a br start tag under the in-body rules" do
+      # Arrange
+      html = "<table><b></br>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"b", [], [{"br", [], []}]}, {"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 5
+    end
+
+    test "form in a table inside template contents is inserted despite an open form" do
+      # Arrange
+      html = "<form><template><table><form>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"form", [],
+                      [{"template", [], [{:content, [{"table", [], [{"form", [], []}]}]}]}]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 4
+    end
+
     test "button start tag closes an open button in default scope with implied end tags" do
       # Arrange
       html = "<button><b><button>x"

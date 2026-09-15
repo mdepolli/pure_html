@@ -637,20 +637,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> maybe_close_p("form")
     |> push_element("form", attrs)
-    |> point_form_element_unless_template()
-  end
-
-  # Set form_element only if no template on stack
-  defp point_form_element_unless_template(state) do
-    if has_template_on_stack?(state) do
-      state
-    else
-      point_form_element(state)
-    end
-  end
-
-  defp point_form_element(%{stack: [form_ref | _]} = state) do
-    %{state | form_element: form_ref}
+    |> point_form_element()
   end
 
   # Per HTML5 spec: only close p if NOT in quirks mode

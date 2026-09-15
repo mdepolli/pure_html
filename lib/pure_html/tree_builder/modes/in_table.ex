@@ -113,7 +113,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp do_process({:start_tag, tag, _, _}, state) when tag in ~w(td th tr) do
     state
     |> clear_to_table_context()
-    |> ensure_tbody()
+    |> push_element("tbody", [])
     |> set_mode(:in_table_body)
     |> reprocess()
   end
@@ -143,27 +143,26 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     InHead.process(token, state)
   end
 
-  # Start tag: input - check for type=hidden
-  # Per spec: "Parse error." for both hidden and non-hidden cases in table.
-  defp do_process({:start_tag, "input", attrs, _}, state) do
+  # "If the token does not have an attribute with the name 'type', or if it
+  # does, but that attribute's value is not an ASCII case-insensitive match for
+  # 'hidden', then act as described in the 'anything else' entry. Otherwise:
+  # Parse error. Insert an HTML element for the token. Pop that input element."
+  defp do_process({:start_tag, "input", attrs, _} = token, state) do
     attrs
     |> get_attr("type", "")
     |> String.downcase()
-    |> insert_table_input(attrs, state)
+    |> table_input(token, state)
   end
 
-  # Start tag: form - Per spec: "Parse error."
-  defp do_process({:start_tag, "form", attrs, _}, %{form_element: nil} = state) do
+  # "Parse error. If the form element pointer is not null, and the parser is
+  # not parsing template contents, then ignore the token. Otherwise: insert an
+  # HTML element for the token, and, if the parser is not parsing template
+  # contents, set the form element pointer to point to the element created.
+  # Pop that form element off the stack of open elements."
+  defp do_process({:start_tag, "form", attrs, _}, state) do
     state
     |> parse_error()
     |> insert_table_form(attrs)
-  end
-
-  # Per spec: "Parse error." Form element pointer already set, ignore.
-  defp do_process({:start_tag, "form", _, _}, state) do
-    state
-    |> parse_error()
-    |> ok()
   end
 
   # Frameset/frame: per spec "Parse error." then in-body rules, which parse
@@ -177,12 +176,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
 
   # Other start tags: per spec "Parse error. Enable foster parenting, process
   # the token using the rules for the 'in body' insertion mode."
-  defp do_process({:start_tag, _, _, _} = token, state) do
-    state
-    |> parse_error()
-    |> enable_foster_parenting()
-    |> process_in_body(token)
-  end
+  defp do_process({:start_tag, _, _, _} = token, state), do: foster_in_body(state, token)
 
   # End tag: table
   # Per spec: "If the stack of open elements does not have a table element in table scope,
@@ -212,23 +206,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # </br> special case: per spec "Parse error." Foster parent a <br> element.
-  defp do_process({:end_tag, "br"}, state) do
-    state
-    |> parse_error()
-    |> foster_insert({:element, {"br", [], []}})
-    |> ok()
-  end
-
-  # Other end tags: per spec "Parse error. Enable foster parenting, process the
-  # token using the rules for the 'in body' insertion mode, and then disable
-  # foster parenting."
-  defp do_process({:end_tag, _} = token, state) do
-    state
-    |> parse_error()
-    |> enable_foster_parenting()
-    |> process_in_body(token)
-  end
+  # Other end tags, </br> included: per spec "Parse error. Enable foster
+  # parenting, process the token using the rules for the 'in body' insertion
+  # mode, and then disable foster parenting."
+  defp do_process({:end_tag, _} = token, state), do: foster_in_body(state, token)
 
   # EOF: process using in_body rules
   defp do_process(:eof, state), do: process_in_body(state, :eof)
@@ -237,19 +218,20 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # Helpers (in_table specific - general helpers imported from TreeBuilder.Helpers)
   # --------------------------------------------------------------------------
 
-  # Per spec: insert directly, no foster parenting.
-  defp insert_table_input("hidden", attrs, state) do
+  defp table_input("hidden", {:start_tag, _, attrs, _}, state) do
     state
     |> parse_error()
     |> add_child_to_stack({"input", attrs, []})
     |> ok()
   end
 
-  defp insert_table_input(_type, attrs, state) do
+  defp table_input(_type, token, state), do: foster_in_body(state, token)
+
+  defp foster_in_body(state, token) do
     state
     |> parse_error()
-    |> foster_insert({:element, {"input", attrs, []}})
-    |> ok()
+    |> enable_foster_parenting()
+    |> process_in_body(token)
   end
 
   defp do_process_character(%{tag: tag}, _text, state) when tag in @table_context do
@@ -295,47 +277,23 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     end
   end
 
-  defp ensure_tbody(%{stack: [ref | _], elements: elements, context_element: ctx} = state) do
-    case elements[ref].tag do
-      tag when tag in @table_sections ->
-        state
+  defp insert_table_form(%{form_element: nil} = state, attrs),
+    do: insert_and_pop_form(state, attrs)
 
-      # Fragment mode: at html root with table body context, skip tbody creation.
-      # The context element is already a tbody/thead/tfoot so content belongs there.
-      "html" ->
-        case ctx do
-          {_, ctx_tag} when ctx_tag in ["tbody", "thead", "tfoot"] -> state
-          _ -> push_element(state, "tbody", [])
-        end
-
-      tag when tag in ["table", "template"] ->
-        push_element(state, "tbody", [])
-
-      _ ->
-        state
+  defp insert_table_form(state, attrs) do
+    if has_template_on_stack?(state) do
+      insert_and_pop_form(state, attrs)
+    else
+      ok(state)
     end
   end
 
-  defp ensure_tbody(state), do: state
-
-  defp insert_table_form(state, attrs) do
-    state
-    |> find_ref("template")
-    |> insert_table_form(attrs, state)
-  end
-
-  defp insert_table_form(nil, attrs, state) do
+  defp insert_and_pop_form(state, attrs) do
     state
     |> push_element("form", attrs)
     |> point_form_element()
     |> pop_element()
     |> ok()
-  end
-
-  defp insert_table_form(_ref, _attrs, state), do: ok(state)
-
-  defp point_form_element(%{stack: [form_ref | _]} = state) do
-    %{state | form_element: form_ref}
   end
 
   # "Pop elements from this stack until a table element has been popped from
