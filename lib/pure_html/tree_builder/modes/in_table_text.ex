@@ -58,12 +58,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
 
   defp flush_pending_text(%{pending_table_text: text} = state) do
     text
-    |> String.trim()
+    |> ascii_whitespace_only?()
     |> insert_pending_text(text, state)
   end
 
   # Whitespace only: insert normally
-  defp insert_pending_text("", text, state) do
+  defp insert_pending_text(true, text, state) do
     state
     |> add_text_to_stack(text)
     |> clear_pending_text()
@@ -73,7 +73,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   # in the anything else entry in the in table insertion mode": a parse error
   # per character token (we coalesce text), then the in body rules with
   # foster parenting enabled for those tokens.
-  defp insert_pending_text(_non_ws, text, state) do
+  defp insert_pending_text(false, text, state) do
     state
     |> parse_error(String.length(text))
     |> foster_parent_characters(text)

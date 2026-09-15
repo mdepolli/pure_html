@@ -1010,12 +1010,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp maybe_set_frameset_not_ok(state, text) do
     text
-    |> String.trim()
+    |> ascii_whitespace_only?()
     |> set_frameset_not_ok_for_text(state)
   end
 
-  defp set_frameset_not_ok_for_text("", state), do: state
-  defp set_frameset_not_ok_for_text(_text, state), do: set_frameset_not_ok(state)
+  defp set_frameset_not_ok_for_text(true, state), do: state
+  defp set_frameset_not_ok_for_text(false, state), do: set_frameset_not_ok(state)
 
   defp maybe_set_frameset_not_ok_for_element(state, tag)
        when tag in @frameset_disabling_elements do

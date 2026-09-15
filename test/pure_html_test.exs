@@ -34,6 +34,68 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "treats NBSP before the first tag as a character, not whitespace" do
+      # Arrange
+      html = "\u00A0<p>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["\u00A0", {"p", [], ["x"]}]}]}] =
+               nodes
+
+      assert error_count == 1
+    end
+
+    test "fosters NBSP out of a table as a non-whitespace character" do
+      # Arrange
+      html = "<table>\u00A0<tr><td>x</table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   ["\u00A0", {"table", [], [{"tbody", [], [{"tr", [], [{"td", [], ["x"]}]}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "treats NBSP in noscript with scripting off as in-body content" do
+      # Arrange
+      html = "<noscript>\u00A0<p>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, scripting: false)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], [{"noscript", [], []}]}, {"body", [], ["\u00A0", {"p", [], ["x"]}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "NBSP in body sets frameset-ok to not ok" do
+      # Arrange
+      html = "\u00A0<frameset></frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["\u00A0"]}]}] = nodes
+      assert error_count == 3
+    end
+
     test "ignores U+0000 in body and keeps frameset-ok" do
       # Arrange
       html = "<html>\0<frameset></frameset>"

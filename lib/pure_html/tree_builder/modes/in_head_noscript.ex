@@ -36,11 +36,10 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   @ignored_start_tags ~w(head noscript)
 
   @impl true
-  # Whitespace characters: process using "in head" rules
-  def process({:character, text} = token, state) do
+  def process({:character, text}, state) do
     text
-    |> String.trim()
-    |> handle_characters(token, state)
+    |> split_whitespace()
+    |> noscript_characters(state)
   end
 
   # Comments: process using "in head" rules
@@ -114,14 +113,28 @@ defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp handle_characters("", token, state), do: InHead.process(token, state)
+  # ASCII whitespace uses the in head rules, which insert it. Anything else is
+  # a parse error that pops the noscript and is reprocessed in head, so the
+  # whitespace ahead of it goes in first.
+  defp noscript_characters({whitespace, ""}, state) do
+    state
+    |> add_text_to_stack(whitespace)
+    |> ok()
+  end
 
-  # Non-whitespace: parse error, pop noscript, switch to in_head, reprocess
-  defp handle_characters(_non_ws, _token, state) do
+  defp noscript_characters({"", rest}, state) do
     state
     |> parse_error()
     |> pop_noscript()
-    |> reprocess()
+    |> reprocess_with({:character, rest})
+  end
+
+  defp noscript_characters({whitespace, rest}, state) do
+    state
+    |> add_text_to_stack(whitespace)
+    |> parse_error()
+    |> pop_noscript()
+    |> reprocess_with({:character, rest})
   end
 
   # "Pop the current node (which will be a noscript element) off the stack of

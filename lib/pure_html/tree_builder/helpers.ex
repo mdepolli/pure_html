@@ -870,6 +870,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   @doc """
+  True when every character is ASCII whitespace: U+0009, U+000A, U+000C,
+  U+000D, U+0020. `String.trim/1` also strips U+00A0 and other Unicode
+  whitespace, which the parser treats as characters.
+  """
+  def ascii_whitespace_only?(<<c, rest::binary>>) when c in ~c[ \t\n\r\f] do
+    ascii_whitespace_only?(rest)
+  end
+
+  def ascii_whitespace_only?(<<>>), do: true
+  def ascii_whitespace_only?(_text), do: false
+
+  @doc """
   Splits text into leading whitespace and remaining content.
   Returns {whitespace, rest}.
   """

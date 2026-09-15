@@ -206,7 +206,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTemplate do
 
   # Text: non-whitespace counts as non-table content
   defp has_non_table_children?([{:text, text} | rest], elements) do
-    if String.trim(text) != "", do: true, else: has_non_table_children?(rest, elements)
+    if ascii_whitespace_only?(text), do: has_non_table_children?(rest, elements), else: true
   end
 
   # Comments don't count

@@ -19,21 +19,9 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
 
   @impl true
   def process({:character, text}, state) do
-    # Whitespace is ignored in initial mode
-    # Non-whitespace triggers mode switch and reprocess (quirks mode)
-    case String.trim(text) do
-      "" ->
-        # All whitespace - ignore
-        ok(state)
-
-      _ ->
-        # Has non-whitespace - no DOCTYPE seen, set quirks mode
-        state
-        |> parse_error()
-        |> Map.put(:quirks_mode, true)
-        |> set_mode(:before_html)
-        |> reprocess()
-    end
+    text
+    |> split_whitespace()
+    |> initial_characters(state)
   end
 
   def process({:comment, _text}, state) do
@@ -58,5 +46,18 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     |> Map.put(:quirks_mode, true)
     |> set_mode(:before_html)
     |> reprocess()
+  end
+
+  # "A character token that is ASCII whitespace: Ignore the token."
+  defp initial_characters({_whitespace, ""}, state), do: ok(state)
+
+  # Anything else with no DOCTYPE seen: parse error, quirks mode, before html.
+  # The leading whitespace was ignored; the rest is reprocessed.
+  defp initial_characters({_whitespace, rest}, state) do
+    state
+    |> parse_error()
+    |> Map.put(:quirks_mode, true)
+    |> set_mode(:before_html)
+    |> reprocess_with({:character, rest})
   end
 end
