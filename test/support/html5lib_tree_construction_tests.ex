@@ -18,7 +18,6 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     @test_dir
     |> Path.join("**/*.dat")
     |> Path.wildcard()
-    |> Enum.reject(&String.contains?(&1, "unsafe"))
     |> Enum.sort()
   end
 
