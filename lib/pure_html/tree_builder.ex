@@ -29,6 +29,7 @@ defmodule PureHTML.TreeBuilder do
   alias PureHTML.TreeBuilder.ForeignContent
   alias PureHTML.TreeBuilder.Modes
   alias PureHTML.TreeBuilder.Modes.InBody
+  alias PureHTML.TreeBuilder.Quirks
   alias PureHTML.TreeBuilder.SelectedContent
 
   # --------------------------------------------------------------------------
@@ -394,8 +395,7 @@ defmodule PureHTML.TreeBuilder do
         do: parse_error(state),
         else: state
 
-    # Determine quirks mode per HTML5 spec
-    quirks = should_set_quirks_mode?(name, public_id, system_id, force_quirks)
+    quirks = Quirks.mode(name, public_id, system_id, force_quirks) == :quirks
     {{name, public_id, system_id}, %{state | mode: :before_html, quirks_mode: quirks}, comments}
   end
 
@@ -421,55 +421,12 @@ defmodule PureHTML.TreeBuilder do
     |> disable_foster_parenting()
   end
 
-  # Per HTML5 spec: determine if DOCTYPE should trigger quirks mode
-  # Simplified implementation covering common cases
-
-  # Force quirks from tokenizer
-  defp should_set_quirks_mode?(_name, _public_id, _system_id, true = _force_quirks), do: true
-
-  # Missing or invalid name
-  defp should_set_quirks_mode?(name, _public_id, _system_id, _force_quirks)
-       when not is_binary(name) or name == "",
-       do: true
-
-  # Name must be "html" (case-insensitive)
-  defp should_set_quirks_mode?(name, _public_id, _system_id, _force_quirks)
-       when is_binary(name) and name != "html" and name != "HTML",
-       do: String.downcase(name) != "html"
-
-  # Public ID with system ID - check for limited quirks patterns (NOT full quirks)
-  defp should_set_quirks_mode?(_name, public_id, system_id, _force_quirks)
-       when is_binary(public_id) and public_id != "" and is_binary(system_id) and system_id != "" do
-    # These patterns with system ID are "limited quirks" not "full quirks"
-    not limited_quirks_public_id?(public_id)
-  end
-
-  # Public ID without system ID triggers quirks mode
-  defp should_set_quirks_mode?(_name, public_id, _system_id, _force_quirks)
-       when is_binary(public_id) and public_id != "",
-       do: true
-
-  # System ID without public ID (legacy DOCTYPE)
-  defp should_set_quirks_mode?(_name, _public_id, system_id, _force_quirks)
-       when is_binary(system_id) and system_id != "" and system_id != "about:legacy-compat",
-       do: true
-
-  # Standard HTML5 DOCTYPE
-  defp should_set_quirks_mode?(_name, _public_id, _system_id, _force_quirks), do: false
-
   # Per WHATWG spec: DOCTYPE is a parse error if name != "html", public_id is not
   # missing, or system_id is not missing and != "about:legacy-compat".
   defp doctype_is_parse_error?(name, public, system, force_quirks) do
     name != "html" or is_binary(public) or
       (is_binary(system) and system != "about:legacy-compat") or force_quirks
   end
-
-  # Limited quirks public IDs (with system ID present, these are NOT full quirks)
-  defp limited_quirks_public_id?("-//W3C//DTD XHTML 1.0 Frameset//" <> _), do: true
-  defp limited_quirks_public_id?("-//W3C//DTD XHTML 1.0 Transitional//" <> _), do: true
-  defp limited_quirks_public_id?("-//W3C//DTD HTML 4.01 Frameset//" <> _), do: true
-  defp limited_quirks_public_id?("-//W3C//DTD HTML 4.01 Transitional//" <> _), do: true
-  defp limited_quirks_public_id?(_), do: false
 
   # Tree construction dispatcher per WHATWG spec.
   # Before routing to any insertion mode, checks the adjusted current node.

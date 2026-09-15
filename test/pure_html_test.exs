@@ -34,6 +34,94 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "HTML 4.01 Strict is no-quirks, so a table closes the p" do
+      # Arrange
+      public_id = "-//W3C//DTD HTML 4.01//EN"
+      system_id = "http://www.w3.org/TR/html4/strict.dtd"
+      html = "<!DOCTYPE HTML PUBLIC \"#{public_id}\" \"#{system_id}\"><p><table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", ^public_id, ^system_id},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], []}, {"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "XHTML 1.0 Strict is no-quirks, so a table closes the p" do
+      # Arrange
+      public_id = "-//W3C//DTD XHTML 1.0 Strict//EN"
+      system_id = "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"
+      html = "<!DOCTYPE html PUBLIC \"#{public_id}\" \"#{system_id}\"><p><table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", ^public_id, ^system_id},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], []}, {"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "HTML 4.01 Transitional without a system id is quirks, so the table nests in the p" do
+      # Arrange
+      public_id = "-//W3C//DTD HTML 4.01 Transitional//EN"
+      html = "<!DOCTYPE HTML PUBLIC \"#{public_id}\"><p><table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", ^public_id, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], [{"table", [], []}]}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "HTML 4.01 Transitional with a system id is limited-quirks, so a table closes the p" do
+      # Arrange
+      public_id = "-//W3C//DTD HTML 4.01 Transitional//EN"
+      system_id = "http://www.w3.org/TR/html4/loose.dtd"
+      html = "<!DOCTYPE HTML PUBLIC \"#{public_id}\" \"#{system_id}\"><p><table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", ^public_id, ^system_id},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], []}, {"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "quirks public identifiers compare ASCII case-insensitively" do
+      # Arrange
+      public_id = "-//w3c//dtd html 4.01 transitional//en"
+      html = "<!DOCTYPE html PUBLIC \"#{public_id}\"><p><table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {:doctype, "html", ^public_id, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], [{"table", [], []}]}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
     test "drops NUL in body with a tokenizer and a tree builder error" do
       # Arrange
       html = "<p>a\0b</p>"
