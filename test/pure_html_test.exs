@@ -2570,6 +2570,19 @@ defmodule PureHTMLTest do
     end
   end
 
+  describe "query!/2 and query_one!/2" do
+    test "raise on an invalid selector where query/2 and query_one/2 return nothing" do
+      # Arrange
+      html = PureHTML.parse("<p>x</p>")
+
+      # Act + Assert
+      assert PureHTML.query(html, "div >") == []
+      assert PureHTML.query_one(html, "div >") == nil
+      assert_raise ArgumentError, fn -> PureHTML.query!(html, "div >") end
+      assert_raise ArgumentError, fn -> PureHTML.query_one!(html, "div >") end
+    end
+  end
+
   describe "to_html/2" do
     test "serializes xlink:href on an SVG element" do
       # Arrange

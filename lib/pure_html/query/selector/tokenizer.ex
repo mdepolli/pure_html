@@ -2,6 +2,10 @@ defmodule PureHTML.Query.Selector.Tokenizer do
   @moduledoc """
   Tokenizes CSS selector strings into a stream of tokens.
 
+  Identifiers follow CSS Syntax Level 3: an ident-start code point is a
+  letter, an underscore, or any non-ASCII code point; an ident code point is
+  also a digit or a hyphen.
+
   ## Token Types
 
   - `{:ident, value}` - Identifier (tag name, attribute name/value)
@@ -40,215 +44,162 @@ defmodule PureHTML.Query.Selector.Tokenizer do
           | :general_sibling
           | :whitespace
 
+  @type error :: {:invalid_selector, String.t()}
+
+  defguardp is_ident_start(c) when c in ?a..?z or c in ?A..?Z or c == ?_ or c >= 0x80
+  defguardp is_ident_char(c) when is_ident_start(c) or c in ?0..?9 or c == ?-
+  defguardp is_attr_value_char(c) when is_ident_char(c) or c in ~c[./:]
+  defguardp is_whitespace(c) when c in ~c[ \t\n\r\f]
+
   @doc """
-  Tokenizes a CSS selector string into a list of tokens.
+  Tokenizes a CSS selector string.
+
+  Returns `{:ok, tokens}` with leading and trailing whitespace removed, or
+  `{:error, {:invalid_selector, reason}}`.
 
   ## Examples
 
       iex> PureHTML.Query.Selector.Tokenizer.tokenize("div")
-      [{:ident, "div"}]
-
-      iex> PureHTML.Query.Selector.Tokenizer.tokenize(".class")
-      [{:class, "class"}]
-
-      iex> PureHTML.Query.Selector.Tokenizer.tokenize("#id")
-      [{:id, "id"}]
+      {:ok, [{:ident, "div"}]}
 
       iex> PureHTML.Query.Selector.Tokenizer.tokenize("div.foo#bar")
-      [{:ident, "div"}, {:class, "foo"}, {:id, "bar"}]
+      {:ok, [{:ident, "div"}, {:class, "foo"}, {:id, "bar"}]}
+
+      iex> PureHTML.Query.Selector.Tokenizer.tokenize(".")
+      {:error, {:invalid_selector, "expected an identifier after '.'"}}
 
   """
-  @spec tokenize(String.t()) :: [token()]
+  @spec tokenize(String.t()) :: {:ok, [token()]} | {:error, error()}
   def tokenize(input) when is_binary(input) do
     input
-    |> String.trim()
+    |> trim_whitespace()
     |> do_tokenize([], false)
-    |> Enum.reverse()
-    |> strip_edge_whitespace()
+    |> in_order()
   end
 
-  defp strip_edge_whitespace([:whitespace | rest]), do: strip_edge_whitespace(rest)
-  defp strip_edge_whitespace(tokens), do: strip_trailing_whitespace(tokens)
-
-  defp strip_trailing_whitespace(tokens) do
-    tokens
-    |> Enum.reverse()
-    |> then(fn
-      [:whitespace | rest] -> Enum.reverse(rest)
-      tokens -> Enum.reverse(tokens)
-    end)
+  # Whitespace at either end of a selector is not a combinator.
+  defp trim_whitespace(input) do
+    input
+    |> trim_leading_whitespace()
+    |> String.reverse()
+    |> trim_leading_whitespace()
+    |> String.reverse()
   end
 
-  # End of input
-  defp do_tokenize("", acc, _in_bracket), do: acc
+  defp in_order({:ok, tokens}), do: {:ok, Enum.reverse(tokens)}
+  defp in_order({:error, _reason} = error), do: error
 
-  # Whitespace outside brackets - emit :whitespace token (potential descendant combinator)
-  defp do_tokenize(<<c, rest::binary>>, acc, false = _in_bracket) when c in ~c[ \t\n\r\f] do
-    do_tokenize(skip_whitespace(rest), [:whitespace | acc], false)
+  defp do_tokenize("", acc, _in_bracket), do: {:ok, acc}
+
+  # Whitespace outside brackets is a potential descendant combinator; inside
+  # brackets it separates nothing.
+  defp do_tokenize(<<c, rest::binary>>, acc, false) when is_whitespace(c) do
+    do_tokenize(trim_leading_whitespace(rest), [:whitespace | acc], false)
   end
 
-  # Skip whitespace inside brackets
-  defp do_tokenize(<<c, rest::binary>>, acc, true = in_bracket) when c in ~c[ \t\n\r\f] do
-    do_tokenize(skip_whitespace(rest), acc, in_bracket)
+  defp do_tokenize(<<c, rest::binary>>, acc, true) when is_whitespace(c) do
+    do_tokenize(trim_leading_whitespace(rest), acc, true)
   end
 
-  # Child combinator (>)
-  defp do_tokenize(<<">", rest::binary>>, acc, false = in_bracket) do
-    do_tokenize(rest, [:child | acc], in_bracket)
-  end
+  defp do_tokenize(<<">", rest::binary>>, acc, false),
+    do: do_tokenize(rest, [:child | acc], false)
 
-  # Adjacent sibling combinator (+)
-  defp do_tokenize(<<"+", rest::binary>>, acc, false = in_bracket) do
-    do_tokenize(rest, [:adjacent_sibling | acc], in_bracket)
-  end
+  defp do_tokenize(<<"+", rest::binary>>, acc, false),
+    do: do_tokenize(rest, [:adjacent_sibling | acc], false)
 
-  # General sibling combinator (~)
-  defp do_tokenize(<<"~", rest::binary>>, acc, false = in_bracket) do
-    do_tokenize(rest, [:general_sibling | acc], in_bracket)
-  end
+  defp do_tokenize(<<"~", rest::binary>>, acc, false),
+    do: do_tokenize(rest, [:general_sibling | acc], false)
 
-  # Substring match (*=) - must come before universal selector
-  defp do_tokenize(<<"*=", rest::binary>>, acc, in_bracket) do
-    do_tokenize(rest, [:substring_match | acc], in_bracket)
-  end
+  defp do_tokenize(<<"*=", rest::binary>>, acc, in_bracket),
+    do: do_tokenize(rest, [:substring_match | acc], in_bracket)
 
-  # Universal selector (only outside brackets)
-  defp do_tokenize(<<"*", rest::binary>>, acc, false = in_bracket) do
-    do_tokenize(rest, [:star | acc], in_bracket)
-  end
+  defp do_tokenize(<<"*", rest::binary>>, acc, false), do: do_tokenize(rest, [:star | acc], false)
 
-  # Class selector (only outside brackets)
-  defp do_tokenize(<<".", rest::binary>>, acc, false = in_bracket) do
-    {ident, rest} = consume_ident(rest)
-
-    if ident == "" do
-      raise ArgumentError, "Expected identifier after '.'"
+  defp do_tokenize(<<".", rest::binary>>, acc, false) do
+    case consume_ident(rest) do
+      {"", _rest} -> {:error, {:invalid_selector, "expected an identifier after '.'"}}
+      {ident, rest} -> do_tokenize(rest, [{:class, ident} | acc], false)
     end
-
-    do_tokenize(rest, [{:class, ident} | acc], in_bracket)
   end
 
-  # ID selector (only outside brackets)
-  defp do_tokenize(<<"#", rest::binary>>, acc, false = in_bracket) do
-    {ident, rest} = consume_ident(rest)
-
-    if ident == "" do
-      raise ArgumentError, "Expected identifier after '#'"
+  defp do_tokenize(<<"#", rest::binary>>, acc, false) do
+    case consume_ident(rest) do
+      {"", _rest} -> {:error, {:invalid_selector, "expected an identifier after '#'"}}
+      {ident, rest} -> do_tokenize(rest, [{:id, ident} | acc], false)
     end
-
-    do_tokenize(rest, [{:id, ident} | acc], in_bracket)
   end
 
-  # Attribute selector opening
-  defp do_tokenize(<<"[", rest::binary>>, acc, _in_bracket) do
-    do_tokenize(rest, [:open_bracket | acc], true)
+  defp do_tokenize(<<"[", rest::binary>>, acc, _in_bracket),
+    do: do_tokenize(rest, [:open_bracket | acc], true)
+
+  defp do_tokenize(<<"]", rest::binary>>, acc, _in_bracket),
+    do: do_tokenize(rest, [:close_bracket | acc], false)
+
+  defp do_tokenize(<<"^=", rest::binary>>, acc, in_bracket),
+    do: do_tokenize(rest, [:prefix_match | acc], in_bracket)
+
+  defp do_tokenize(<<"$=", rest::binary>>, acc, in_bracket),
+    do: do_tokenize(rest, [:suffix_match | acc], in_bracket)
+
+  defp do_tokenize(<<"=", rest::binary>>, acc, in_bracket),
+    do: do_tokenize(rest, [:equal | acc], in_bracket)
+
+  defp do_tokenize(<<",", rest::binary>>, acc, in_bracket),
+    do: do_tokenize(rest, [:comma | acc], in_bracket)
+
+  defp do_tokenize(<<q, rest::binary>>, acc, in_bracket) when q in [?", ?'] do
+    case consume_string(rest, q, []) do
+      {:ok, string, rest} -> do_tokenize(rest, [{:string, string} | acc], in_bracket)
+      :unterminated -> {:error, {:invalid_selector, "unterminated string"}}
+    end
   end
 
-  # Attribute selector closing
-  defp do_tokenize(<<"]", rest::binary>>, acc, _in_bracket) do
-    do_tokenize(rest, [:close_bracket | acc], false)
-  end
-
-  # Prefix match (^=)
-  defp do_tokenize(<<"^=", rest::binary>>, acc, in_bracket) do
-    do_tokenize(rest, [:prefix_match | acc], in_bracket)
-  end
-
-  # Suffix match ($=)
-  defp do_tokenize(<<"$=", rest::binary>>, acc, in_bracket) do
-    do_tokenize(rest, [:suffix_match | acc], in_bracket)
-  end
-
-  # Exact match (=)
-  defp do_tokenize(<<"=", rest::binary>>, acc, in_bracket) do
-    do_tokenize(rest, [:equal | acc], in_bracket)
-  end
-
-  # Comma (selector list)
-  defp do_tokenize(<<",", rest::binary>>, acc, in_bracket) do
-    do_tokenize(rest, [:comma | acc], in_bracket)
-  end
-
-  # Double-quoted string
-  defp do_tokenize(<<"\"", rest::binary>>, acc, in_bracket) do
-    {string, rest} = consume_string(rest, ?")
-    do_tokenize(rest, [{:string, string} | acc], in_bracket)
-  end
-
-  # Single-quoted string
-  defp do_tokenize(<<"'", rest::binary>>, acc, in_bracket) do
-    {string, rest} = consume_string(rest, ?')
-    do_tokenize(rest, [{:string, string} | acc], in_bracket)
-  end
-
-  # Unquoted attribute value (inside brackets, more permissive)
-  defp do_tokenize(<<c, _::binary>> = input, acc, true = in_bracket)
-       when c in ?a..?z or c in ?A..?Z or c == ?_ or c == ?- or c in ?0..?9 or c == ?. do
+  # An unquoted attribute value may also hold dots, slashes, and colons.
+  defp do_tokenize(<<c::utf8, _::binary>> = input, acc, true) when is_attr_value_char(c) do
     {value, rest} = consume_attr_value(input)
-    do_tokenize(rest, [{:ident, value} | acc], in_bracket)
+    do_tokenize(rest, [{:ident, value} | acc], true)
   end
 
-  # Identifier (tag name, attribute name) - outside brackets
-  defp do_tokenize(<<c, _::binary>> = input, acc, false = in_bracket)
-       when c in ?a..?z or c in ?A..?Z or c == ?_ or c == ?- or c in ?0..?9 do
+  defp do_tokenize(<<c::utf8, _::binary>> = input, acc, false) when is_ident_char(c) do
     {ident, rest} = consume_ident(input)
-    do_tokenize(rest, [{:ident, ident} | acc], in_bracket)
+    do_tokenize(rest, [{:ident, ident} | acc], false)
   end
 
-  # Unknown character
-  defp do_tokenize(<<c, _::binary>>, _acc, _in_bracket) do
-    raise ArgumentError, "Unexpected character: #{<<c>>}"
+  defp do_tokenize(<<c::utf8, _::binary>>, _acc, _in_bracket) do
+    {:error, {:invalid_selector, "unexpected character #{inspect(<<c::utf8>>)}"}}
   end
 
-  # Consume an identifier (letters, digits, hyphens, underscores)
+  defp do_tokenize(<<_byte, _::binary>>, _acc, _in_bracket) do
+    {:error, {:invalid_selector, "invalid UTF-8"}}
+  end
+
   defp consume_ident(input), do: consume_ident(input, [])
 
-  defp consume_ident(<<c, rest::binary>>, acc)
-       when c in ?a..?z or c in ?A..?Z or c in ?0..?9 or c == ?_ or c == ?- do
-    consume_ident(rest, [c | acc])
-  end
+  defp consume_ident(<<c::utf8, rest::binary>>, acc) when is_ident_char(c),
+    do: consume_ident(rest, [<<c::utf8>> | acc])
 
-  defp consume_ident(rest, acc) do
-    {acc |> Enum.reverse() |> List.to_string(), rest}
-  end
+  defp consume_ident(rest, acc), do: {IO.iodata_to_binary(Enum.reverse(acc)), rest}
 
-  # Consume an unquoted attribute value (more permissive, includes dots, etc.)
   defp consume_attr_value(input), do: consume_attr_value(input, [])
 
-  defp consume_attr_value(<<c, rest::binary>>, acc)
-       when c in ?a..?z or c in ?A..?Z or c in ?0..?9 or c == ?_ or c == ?- or c == ?. or c == ?/ or
-              c == ?: do
-    consume_attr_value(rest, [c | acc])
-  end
+  defp consume_attr_value(<<c::utf8, rest::binary>>, acc) when is_attr_value_char(c),
+    do: consume_attr_value(rest, [<<c::utf8>> | acc])
 
-  defp consume_attr_value(rest, acc) do
-    {acc |> Enum.reverse() |> List.to_string(), rest}
-  end
+  defp consume_attr_value(rest, acc), do: {IO.iodata_to_binary(Enum.reverse(acc)), rest}
 
-  # Consume a quoted string
-  defp consume_string(input, quote_char), do: consume_string(input, quote_char, [])
+  defp consume_string(<<q, rest::binary>>, q, acc),
+    do: {:ok, IO.iodata_to_binary(Enum.reverse(acc)), rest}
 
-  defp consume_string(<<c, rest::binary>>, quote_char, acc) when c == quote_char do
-    {acc |> Enum.reverse() |> List.to_string(), rest}
-  end
+  defp consume_string(<<"\\", c::utf8, rest::binary>>, q, acc),
+    do: consume_string(rest, q, [<<c::utf8>> | acc])
 
-  defp consume_string(<<"\\", c, rest::binary>>, quote_char, acc) do
-    # Handle escape sequences
-    consume_string(rest, quote_char, [c | acc])
-  end
+  defp consume_string(<<c::utf8, rest::binary>>, q, acc),
+    do: consume_string(rest, q, [<<c::utf8>> | acc])
 
-  defp consume_string(<<c, rest::binary>>, quote_char, acc) do
-    consume_string(rest, quote_char, [c | acc])
-  end
+  defp consume_string(_input, _q, _acc), do: :unterminated
 
-  defp consume_string("", _quote_char, _acc) do
-    raise ArgumentError, "Unterminated string"
-  end
+  defp trim_leading_whitespace(<<c, rest::binary>>) when is_whitespace(c),
+    do: trim_leading_whitespace(rest)
 
-  # Skip whitespace
-  defp skip_whitespace(<<c, rest::binary>>) when c in ~c[ \t\n\r\f] do
-    skip_whitespace(rest)
-  end
-
-  defp skip_whitespace(rest), do: rest
+  defp trim_leading_whitespace(rest), do: rest
 end

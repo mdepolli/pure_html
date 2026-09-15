@@ -5,9 +5,9 @@ defmodule PureHTML.Query.Selector.ParserTest do
   alias PureHTML.Query.Selector.AttributeSelector
   alias PureHTML.Query.Selector.Parser
 
-  # Helper to wrap a selector in the chain format
-  defp chain(selector), do: [[{nil, selector}]]
-  defp chains(selectors), do: Enum.map(selectors, fn sel -> [{nil, sel}] end)
+  # Helpers wrapping selectors in the parser's {:ok, chains} shape
+  defp chain(selector), do: {:ok, [[{nil, selector}]]}
+  defp chains(selectors), do: {:ok, Enum.map(selectors, fn sel -> [{nil, sel}] end)}
 
   describe "parse/1" do
     test "tag selector" do
@@ -110,68 +110,98 @@ defmodule PureHTML.Query.Selector.ParserTest do
     # Combinator tests
 
     test "child combinator" do
-      assert Parser.parse("div > p") == [
-               [
-                 {nil, %Selector{type: "div"}},
-                 {:child, %Selector{type: "p"}}
-               ]
-             ]
+      assert Parser.parse("div > p") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "div"}},
+                    {:child, %Selector{type: "p"}}
+                  ]
+                ]}
     end
 
     test "descendant combinator" do
-      assert Parser.parse("div p") == [
-               [
-                 {nil, %Selector{type: "div"}},
-                 {:descendant, %Selector{type: "p"}}
-               ]
-             ]
+      assert Parser.parse("div p") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "div"}},
+                    {:descendant, %Selector{type: "p"}}
+                  ]
+                ]}
     end
 
     test "adjacent sibling combinator" do
-      assert Parser.parse("h1 + p") == [
-               [
-                 {nil, %Selector{type: "h1"}},
-                 {:adjacent_sibling, %Selector{type: "p"}}
-               ]
-             ]
+      assert Parser.parse("h1 + p") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "h1"}},
+                    {:adjacent_sibling, %Selector{type: "p"}}
+                  ]
+                ]}
     end
 
     test "general sibling combinator" do
-      assert Parser.parse("h1 ~ p") == [
-               [
-                 {nil, %Selector{type: "h1"}},
-                 {:general_sibling, %Selector{type: "p"}}
-               ]
-             ]
+      assert Parser.parse("h1 ~ p") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "h1"}},
+                    {:general_sibling, %Selector{type: "p"}}
+                  ]
+                ]}
     end
 
     test "chained combinators" do
-      assert Parser.parse("article > section > p") == [
-               [
-                 {nil, %Selector{type: "article"}},
-                 {:child, %Selector{type: "section"}},
-                 {:child, %Selector{type: "p"}}
-               ]
-             ]
+      assert Parser.parse("article > section > p") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "article"}},
+                    {:child, %Selector{type: "section"}},
+                    {:child, %Selector{type: "p"}}
+                  ]
+                ]}
     end
 
     test "mixed combinators" do
-      assert Parser.parse("div p > span") == [
-               [
-                 {nil, %Selector{type: "div"}},
-                 {:descendant, %Selector{type: "p"}},
-                 {:child, %Selector{type: "span"}}
-               ]
-             ]
+      assert Parser.parse("div p > span") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "div"}},
+                    {:descendant, %Selector{type: "p"}},
+                    {:child, %Selector{type: "span"}}
+                  ]
+                ]}
+    end
+
+    test "a trailing combinator is invalid" do
+      assert {:error, {:invalid_selector, "expected a compound selector"}} = Parser.parse("div >")
+    end
+
+    test "an empty selector or an empty list member is invalid" do
+      assert {:error, {:invalid_selector, _}} = Parser.parse("")
+      assert {:error, {:invalid_selector, _}} = Parser.parse("p,,p")
+      assert {:error, {:invalid_selector, _}} = Parser.parse("p,")
+    end
+
+    test "a malformed attribute selector is invalid" do
+      assert {:error, {:invalid_selector, _}} = Parser.parse("[")
+      assert {:error, {:invalid_selector, _}} = Parser.parse("[href")
+      assert {:error, {:invalid_selector, _}} = Parser.parse("[href=]")
     end
 
     test "combinator with compound selectors" do
-      assert Parser.parse("div.container > p.intro") == [
-               [
-                 {nil, %Selector{type: "div", classes: ["container"]}},
-                 {:child, %Selector{type: "p", classes: ["intro"]}}
-               ]
-             ]
+      assert Parser.parse("div.container > p.intro") ==
+               {:ok,
+                [
+                  [
+                    {nil, %Selector{type: "div", classes: ["container"]}},
+                    {:child, %Selector{type: "p", classes: ["intro"]}}
+                  ]
+                ]}
     end
 
     test "whitespace around combinators is normalized" do

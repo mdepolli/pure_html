@@ -27,25 +27,26 @@ defmodule PureHTML.Query.Selector.Parser do
   ## Examples
 
       iex> PureHTML.Query.Selector.Parser.parse("div")
-      [[{nil, %PureHTML.Query.Selector{type: "div"}}]]
+      {:ok, [[{nil, %PureHTML.Query.Selector{type: "div"}}]]}
 
       iex> PureHTML.Query.Selector.Parser.parse("div > p")
-      [[{nil, %PureHTML.Query.Selector{type: "div"}}, {:child, %PureHTML.Query.Selector{type: "p"}}]]
-
-      iex> PureHTML.Query.Selector.Parser.parse("div p")
-      [[{nil, %PureHTML.Query.Selector{type: "div"}}, {:descendant, %PureHTML.Query.Selector{type: "p"}}]]
+      {:ok, [[{nil, %PureHTML.Query.Selector{type: "div"}}, {:child, %PureHTML.Query.Selector{type: "p"}}]]}
 
       iex> PureHTML.Query.Selector.Parser.parse(".a, .b")
-      [[{nil, %PureHTML.Query.Selector{classes: ["a"]}}], [{nil, %PureHTML.Query.Selector{classes: ["b"]}}]]
+      {:ok, [[{nil, %PureHTML.Query.Selector{classes: ["a"]}}], [{nil, %PureHTML.Query.Selector{classes: ["b"]}}]]}
+
+      iex> PureHTML.Query.Selector.Parser.parse("div >")
+      {:error, {:invalid_selector, "expected a compound selector"}}
 
   """
-  @spec parse(String.t()) :: [selector_chain()]
+  @type error :: {:invalid_selector, String.t()}
+
+  @spec parse(String.t()) :: {:ok, [selector_chain()]} | {:error, error()}
   def parse(selector_string) when is_binary(selector_string) do
-    selector_string
-    |> Tokenizer.tokenize()
-    |> normalize_combinators()
-    |> do_parse([])
-    |> Enum.reverse()
+    with {:ok, tokens} <- Tokenizer.tokenize(selector_string),
+         {:ok, chains} <- parse_list(normalize_combinators(tokens), []) do
+      {:ok, Enum.reverse(chains)}
+    end
   end
 
   # Normalize combinator tokens:
@@ -59,6 +60,14 @@ defmodule PureHTML.Query.Selector.Parser do
   end
 
   @explicit_combinators [:child, :adjacent_sibling, :general_sibling]
+  @combinators [:descendant | @explicit_combinators]
+
+  @attribute_operators %{
+    equal: :equal,
+    prefix_match: :prefix,
+    suffix_match: :suffix,
+    substring_match: :substring
+  }
 
   # Process tokens, collapsing whitespace around explicit combinators
   defp collapse_whitespace_around_combinators([], acc), do: acc
@@ -95,135 +104,85 @@ defmodule PureHTML.Query.Selector.Parser do
     collapse_whitespace_around_combinators(rest, [token | acc])
   end
 
-  # Parse selector chains separated by commas
-  defp do_parse([], acc), do: acc
-
-  defp do_parse(tokens, acc) do
-    {chain, rest} = parse_selector_chain(tokens, [])
-
-    case rest do
-      [] ->
-        [Enum.reverse(chain) | acc]
-
-      [:comma | rest] ->
-        do_parse(rest, [Enum.reverse(chain) | acc])
-
-      [unexpected | _] ->
-        raise ArgumentError, "Unexpected token: #{inspect(unexpected)}"
+  # A selector list: complex selectors separated by commas. "An empty
+  # selector, i.e. one that contains no compound selector, is invalid", and "a
+  # selector list containing an invalid selector is invalid".
+  defp parse_list(tokens, acc) do
+    with {:ok, chain, rest} <- parse_complex_selector(tokens) do
+      case rest do
+        [] -> {:ok, [chain | acc]}
+        [:comma | rest] -> parse_list(rest, [chain | acc])
+      end
     end
   end
 
-  # Parse a selector chain (compound selectors connected by combinators)
-  defp parse_selector_chain([], chain), do: {chain, []}
-
-  defp parse_selector_chain([:comma | _] = tokens, chain), do: {chain, tokens}
-
-  defp parse_selector_chain(tokens, []) do
-    # First selector in chain - no combinator
-    {selector, rest} = parse_compound_selector(tokens, %Selector{})
-    parse_selector_chain(rest, [{nil, selector}])
+  # A complex selector: compound selectors joined by combinators, every
+  # combinator followed by a compound selector.
+  defp parse_complex_selector(tokens) do
+    with {:ok, selector, rest} <- parse_compound_selector(tokens) do
+      parse_combinators(rest, [{nil, selector}])
+    end
   end
 
-  defp parse_selector_chain([combinator | rest], chain)
-       when combinator in [:descendant, :child, :adjacent_sibling, :general_sibling] do
-    {selector, rest} = parse_compound_selector(rest, %Selector{})
-    parse_selector_chain(rest, [{combinator, selector} | chain])
+  defp parse_combinators([combinator | rest], chain) when combinator in @combinators do
+    with {:ok, selector, rest} <- parse_compound_selector(rest) do
+      parse_combinators(rest, [{combinator, selector} | chain])
+    end
   end
 
-  defp parse_selector_chain(tokens, chain), do: {chain, tokens}
+  defp parse_combinators(rest, chain), do: {:ok, Enum.reverse(chain), rest}
 
-  # Parse a compound selector (e.g., div.class#id[attr])
-  defp parse_compound_selector([], selector), do: {selector, []}
-
-  defp parse_compound_selector([:comma | _] = tokens, selector), do: {selector, tokens}
-
-  defp parse_compound_selector([combinator | _] = tokens, selector)
-       when combinator in [:descendant, :child, :adjacent_sibling, :general_sibling] do
-    {selector, tokens}
+  # A compound selector: at least one simple selector, with a type or
+  # universal selector first if present.
+  defp parse_compound_selector(tokens) do
+    case parse_simple_selectors(tokens, %Selector{}, 0) do
+      {:ok, _selector, 0, _rest} -> invalid("expected a compound selector")
+      {:ok, selector, _count, rest} -> {:ok, selector, rest}
+      {:error, _reason} = error -> error
+    end
   end
 
-  defp parse_compound_selector([{:ident, tag} | rest], selector) do
-    parse_compound_selector(rest, %{selector | type: tag})
+  defp parse_simple_selectors([{:ident, tag} | rest], %Selector{type: nil} = selector, 0),
+    do: parse_simple_selectors(rest, %{selector | type: tag}, 1)
+
+  defp parse_simple_selectors([:star | rest], %Selector{type: nil} = selector, 0),
+    do: parse_simple_selectors(rest, %{selector | type: "*"}, 1)
+
+  defp parse_simple_selectors([{:class, class} | rest], selector, n),
+    do: parse_simple_selectors(rest, %{selector | classes: selector.classes ++ [class]}, n + 1)
+
+  defp parse_simple_selectors([{:id, id} | rest], selector, n),
+    do: parse_simple_selectors(rest, %{selector | id: id}, n + 1)
+
+  defp parse_simple_selectors([:open_bracket | rest], selector, n) do
+    with {:ok, attribute, rest} <- parse_attribute_selector(rest) do
+      attributes = selector.attributes ++ [attribute]
+      parse_simple_selectors(rest, %{selector | attributes: attributes}, n + 1)
+    end
   end
 
-  defp parse_compound_selector([:star | rest], selector) do
-    parse_compound_selector(rest, %{selector | type: "*"})
+  defp parse_simple_selectors([token | _] = tokens, selector, n)
+       when token == :comma or token in @combinators,
+       do: {:ok, selector, n, tokens}
+
+  defp parse_simple_selectors([], selector, n), do: {:ok, selector, n, []}
+
+  defp parse_simple_selectors([token | _], _selector, _n),
+    do: invalid("unexpected #{inspect(token)}")
+
+  # An attribute selector after its opening bracket: a name, then either the
+  # closing bracket or an operator, a value, and the closing bracket.
+  defp parse_attribute_selector([{:ident, name}, :close_bracket | rest]),
+    do: {:ok, %AttributeSelector{name: name, match_type: :exists}, rest}
+
+  defp parse_attribute_selector([{:ident, name}, operator, value, :close_bracket | rest])
+       when is_map_key(@attribute_operators, operator) and
+              (elem(value, 0) == :string or elem(value, 0) == :ident) do
+    match_type = Map.fetch!(@attribute_operators, operator)
+    {:ok, %AttributeSelector{name: name, value: elem(value, 1), match_type: match_type}, rest}
   end
 
-  defp parse_compound_selector([{:class, class} | rest], selector) do
-    parse_compound_selector(rest, %{selector | classes: selector.classes ++ [class]})
-  end
+  defp parse_attribute_selector(_tokens), do: invalid("malformed attribute selector")
 
-  defp parse_compound_selector([{:id, id} | rest], selector) do
-    parse_compound_selector(rest, %{selector | id: id})
-  end
-
-  defp parse_compound_selector([:open_bracket | rest], selector) do
-    {attr_selector, rest} = parse_attribute_selector(rest)
-
-    parse_compound_selector(rest, %{selector | attributes: selector.attributes ++ [attr_selector]})
-  end
-
-  defp parse_compound_selector(tokens, selector), do: {selector, tokens}
-
-  # Parse attribute selector content (after opening bracket)
-  defp parse_attribute_selector([{:ident, name} | rest]) do
-    parse_attribute_operator(rest, name)
-  end
-
-  defp parse_attribute_selector(tokens) do
-    raise ArgumentError, "Expected attribute name, got: #{inspect(tokens)}"
-  end
-
-  # Parse the operator and value (if any)
-  defp parse_attribute_operator([:close_bracket | rest], name) do
-    # Existence check: [attr]
-    {%AttributeSelector{name: name, match_type: :exists}, rest}
-  end
-
-  defp parse_attribute_operator([:equal | rest], name) do
-    {value, rest} = parse_attribute_value(rest)
-    expect_close_bracket(rest, %AttributeSelector{name: name, value: value, match_type: :equal})
-  end
-
-  defp parse_attribute_operator([:prefix_match | rest], name) do
-    {value, rest} = parse_attribute_value(rest)
-    expect_close_bracket(rest, %AttributeSelector{name: name, value: value, match_type: :prefix})
-  end
-
-  defp parse_attribute_operator([:suffix_match | rest], name) do
-    {value, rest} = parse_attribute_value(rest)
-    expect_close_bracket(rest, %AttributeSelector{name: name, value: value, match_type: :suffix})
-  end
-
-  defp parse_attribute_operator([:substring_match | rest], name) do
-    {value, rest} = parse_attribute_value(rest)
-
-    expect_close_bracket(rest, %AttributeSelector{
-      name: name,
-      value: value,
-      match_type: :substring
-    })
-  end
-
-  defp parse_attribute_operator(tokens, _name) do
-    raise ArgumentError, "Expected attribute operator or ']', got: #{inspect(tokens)}"
-  end
-
-  # Parse the attribute value (quoted string or identifier)
-  defp parse_attribute_value([{:string, value} | rest]), do: {value, rest}
-  defp parse_attribute_value([{:ident, value} | rest]), do: {value, rest}
-
-  defp parse_attribute_value(tokens) do
-    raise ArgumentError, "Expected attribute value, got: #{inspect(tokens)}"
-  end
-
-  # Expect closing bracket
-  defp expect_close_bracket([:close_bracket | rest], attr_selector) do
-    {attr_selector, rest}
-  end
-
-  defp expect_close_bracket(tokens, _attr_selector) do
-    raise ArgumentError, "Expected ']', got: #{inspect(tokens)}"
-  end
+  defp invalid(reason), do: {:error, {:invalid_selector, reason}}
 end

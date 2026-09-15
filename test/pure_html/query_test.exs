@@ -132,6 +132,49 @@ defmodule PureHTML.QueryTest do
     end
   end
 
+  describe "find/2 invalid selectors" do
+    test "a non-ASCII class selector matches" do
+      html = PureHTML.parse("<p class='café'>x</p>")
+
+      assert Query.find(html, ".café") == [{"p", [{"class", "café"}], ["x"]}]
+    end
+
+    test "a trailing combinator is an invalid selector and matches nothing" do
+      html = PureHTML.parse("<div><p>x</p></div>")
+
+      assert Query.find(html, "div >") == []
+      assert Query.find_one(html, "div >") == nil
+    end
+
+    test "an unterminated attribute selector matches nothing without raising" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert Query.find(html, "[unterminated") == []
+    end
+
+    test "a selector list with an invalid member matches nothing" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert Query.find(html, "p, [") == []
+    end
+
+    test "an empty selector matches nothing" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert Query.find(html, "") == []
+      assert Query.find(html, "p,,p") == []
+    end
+
+    test "find!/2 and find_one!/2 raise on an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~r/invalid selector/, fn -> Query.find!(html, "div >") end
+      assert_raise ArgumentError, ~r/invalid selector/, fn -> Query.find_one!(html, "[") end
+      assert Query.find!(html, "p") == [{"p", [], ["x"]}]
+      assert Query.find_one!(html, "p") == {"p", [], ["x"]}
+    end
+  end
+
   describe "find/2 identity" do
     test "identical sibling elements are distinct matches" do
       html = PureHTML.parse("<ul><li>A</li><li>A</li></ul>")

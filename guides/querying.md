@@ -360,7 +360,7 @@ The following CSS selectors are planned for future versions:
 @spec query(html_tree | html_node, String.t()) :: [html_node]
 ```
 
-Finds all nodes matching the CSS selector. Returns an empty list if no matches.
+Finds all nodes matching the CSS selector, in document order. Returns an empty list if no matches. An invalid selector represents, and therefore matches, nothing, so it also returns an empty list; `PureHTML.query!/2` raises `ArgumentError` instead.
 
 ### `PureHTML.query_one/2`
 
@@ -368,7 +368,7 @@ Finds all nodes matching the CSS selector. Returns an empty list if no matches.
 @spec query_one(html_tree | html_node, String.t()) :: html_node | nil
 ```
 
-Finds the first node matching the CSS selector. Returns `nil` if no match.
+Finds the first node matching the CSS selector, in document order, and stops there. Returns `nil` if no match, and `nil` for an invalid selector; `PureHTML.query_one!/2` raises `ArgumentError` instead.
 
 ### `PureHTML.text/2`
 

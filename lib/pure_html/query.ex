@@ -28,6 +28,9 @@ defmodule PureHTML.Query do
   - Combinators: `div p` (descendant), `div > p` (child), `h1 + p` (adjacent sibling), `h1 ~ p` (general sibling)
   - Selector list: `.a, .b`
 
+  An invalid selector represents, and therefore matches, nothing: the result
+  is `[]`. `find!/2` raises instead.
+
   ## Examples
 
       iex> html = PureHTML.parse("<div><p class='intro'>Hello</p><p>World</p></div>")
@@ -38,11 +41,16 @@ defmodule PureHTML.Query do
       iex> PureHTML.Query.find(html, "li")
       [{"li", [], ["A"]}, {"li", [], ["B"]}]
 
+      iex> PureHTML.Query.find(PureHTML.parse("<p>x</p>"), "div >")
+      []
+
   """
-  @spec find(html_tree() | html_node(), String.t() | Parser.selector_chain()) :: html_tree()
+  @spec find(html_tree() | html_node(), String.t() | [Parser.selector_chain()]) :: html_tree()
   def find(html, selector) when is_binary(selector) do
-    chains = Parser.parse(selector)
-    find(html, chains)
+    case Parser.parse(selector) do
+      {:ok, chains} -> find(html, chains)
+      {:error, _reason} -> []
+    end
   end
 
   def find(html, chains) when is_list(chains) do
@@ -53,11 +61,26 @@ defmodule PureHTML.Query do
   end
 
   @doc """
+  Like `find/2`, but raises `ArgumentError` on an invalid selector.
+
+  ## Examples
+
+      iex> PureHTML.Query.find!(PureHTML.parse("<p>x</p>"), "p")
+      [{"p", [], ["x"]}]
+
+  """
+  @spec find!(html_tree() | html_node(), String.t()) :: html_tree()
+  def find!(html, selector) when is_binary(selector) do
+    find(html, parse!(selector))
+  end
+
+  @doc """
   Finds the first node matching the CSS selector.
 
   Returns the first matching node in document order, or `nil` if no match is
   found. Stops walking the tree at the first match, so it is cheaper than
-  `find/2` when you only need one result.
+  `find/2` when you only need one result. An invalid selector matches
+  nothing: the result is `nil`. `find_one!/2` raises instead.
 
   ## Examples
 
@@ -72,11 +95,13 @@ defmodule PureHTML.Query do
       nil
 
   """
-  @spec find_one(html_tree() | html_node(), String.t() | Parser.selector_chain()) ::
+  @spec find_one(html_tree() | html_node(), String.t() | [Parser.selector_chain()]) ::
           html_node() | nil
   def find_one(html, selector) when is_binary(selector) do
-    chains = Parser.parse(selector)
-    find_one(html, chains)
+    case Parser.parse(selector) do
+      {:ok, chains} -> find_one(html, chains)
+      {:error, _reason} -> nil
+    end
   end
 
   def find_one(html, chains) when is_list(chains) do
@@ -84,6 +109,21 @@ defmodule PureHTML.Query do
     |> elements()
     |> Enum.find(&matches_any?(&1, right_to_left(chains)))
     |> cursor_node()
+  end
+
+  @doc """
+  Like `find_one/2`, but raises `ArgumentError` on an invalid selector.
+  """
+  @spec find_one!(html_tree() | html_node(), String.t()) :: html_node() | nil
+  def find_one!(html, selector) when is_binary(selector) do
+    find_one(html, parse!(selector))
+  end
+
+  defp parse!(selector) do
+    case Parser.parse(selector) do
+      {:ok, chains} -> chains
+      {:error, {:invalid_selector, reason}} -> raise ArgumentError, "invalid selector: #{reason}"
+    end
   end
 
   defp cursor_node(nil), do: nil

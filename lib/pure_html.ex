@@ -157,6 +157,9 @@ defmodule PureHTML do
   - Attribute: `[attr]`, `[attr=value]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`
   - Selector list: `.a, .b`
 
+  An invalid selector represents, and therefore matches, nothing: the result
+  is `[]`. `query!/2` raises instead.
+
   ## Examples
 
       iex> html = PureHTML.parse("<div><p class='intro'>Hello</p><p>World</p></div>")
@@ -171,10 +174,16 @@ defmodule PureHTML do
   defdelegate query(html, selector), to: Query, as: :find
 
   @doc """
+  Like `query/2`, but raises `ArgumentError` on an invalid selector.
+  """
+  defdelegate query!(html, selector), to: Query, as: :find!
+
+  @doc """
   Finds the first node matching the CSS selector.
 
-  Returns the first matching node, or `nil` if no match is found.
-  More efficient than `query/2` when you only need the first result.
+  Returns the first matching node in document order, or `nil` if no match is
+  found. Stops at the first match, so it is cheaper than `query/2` when you
+  only need one result. An invalid selector matches nothing.
 
   ## Examples
 
@@ -190,6 +199,11 @@ defmodule PureHTML do
 
   """
   defdelegate query_one(html, selector), to: Query, as: :find_one
+
+  @doc """
+  Like `query_one/2`, but raises `ArgumentError` on an invalid selector.
+  """
+  defdelegate query_one!(html, selector), to: Query, as: :find_one!
 
   @doc """
   Returns the immediate children of a node.
