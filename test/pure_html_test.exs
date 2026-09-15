@@ -34,6 +34,132 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "selectedcontent takes the last selected option when multiple is absent" do
+      # Arrange
+      html = "<select><button><selectedcontent></button><option selected>X<option selected>Y"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"selectedcontent", [], ["Y"]}]},
+                {"option", [{"selected", ""}], ["X"]},
+                {"option", [{"selected", ""}], ["Y"]}
+              ]} = select
+
+      assert error_count == 3
+    end
+
+    test "selectedcontent takes an option inside an optgroup" do
+      # Arrange
+      html = "<select><button><selectedcontent></button><optgroup><option>X"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"selectedcontent", [], ["X"]}]},
+                {"optgroup", [], [{"option", [], ["X"]}]}
+              ]} = select
+
+      assert error_count == 3
+    end
+
+    test "selectedcontent stays empty when the select has multiple" do
+      # Arrange
+      html = "<select multiple><button><selectedcontent></button><option>X"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [{"multiple", ""}],
+              [{"button", [], [{"selectedcontent", [], []}]}, {"option", [], ["X"]}]} = select
+
+      assert error_count == 3
+    end
+
+    test "selectedcontent skips a disabled option when picking the first" do
+      # Arrange
+      html = "<select><button><selectedcontent></button><option disabled>X<option>Y"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"selectedcontent", [], ["Y"]}]},
+                {"option", [{"disabled", ""}], ["X"]},
+                {"option", [], ["Y"]}
+              ]} = select
+
+      assert error_count == 3
+    end
+
+    test "selectedcontent stays empty when the display size is not 1" do
+      # Arrange
+      html = "<select size=2><button><selectedcontent></button><option>X"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [{"size", "2"}],
+              [{"button", [], [{"selectedcontent", [], []}]}, {"option", [], ["X"]}]} = select
+
+      assert error_count == 3
+    end
+
+    test "selectedcontent is found deeper than the select's child" do
+      # Arrange
+      html = "<select><div><button><selectedcontent></button></div><option>X"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"div", [], [{"button", [], [{"selectedcontent", [], ["X"]}]}]},
+                {"option", [], ["X"]}
+              ]} = select
+
+      assert error_count == 3
+    end
+
+    test "selectedcontent inserted after the selected option is filled on insertion" do
+      # Arrange
+      html = "<select><option>X</option><button><selectedcontent>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [{"option", [], ["X"]}, {"button", [], [{"selectedcontent", [], ["X"]}]}]} = select
+
+      assert error_count == 2
+    end
+
     test "param does not reconstruct the active formatting elements" do
       # Arrange
       html = "<p><b></p><param>"
