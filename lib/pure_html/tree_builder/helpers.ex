@@ -945,61 +945,61 @@ defmodule PureHTML.TreeBuilder.Helpers do
   # Insertion Mode Reset
   # --------------------------------------------------------------------------
 
-  # Map for determining insertion mode from stack element tags.
-  # Per WHATWG spec "reset the insertion mode appropriately" algorithm.
+  # "Reset the insertion mode appropriately": the modes the walk returns for a
+  # node regardless of the last flag.
   @tag_to_mode %{
-    "template" => :in_template,
+    "tr" => :in_row,
     "tbody" => :in_table_body,
     "thead" => :in_table_body,
     "tfoot" => :in_table_body,
-    "tr" => :in_row,
-    "td" => :in_cell,
-    "th" => :in_cell,
     "caption" => :in_caption,
     "colgroup" => :in_column_group,
     "table" => :in_table,
     "body" => :in_body,
-    "frameset" => :in_frameset,
-    "head" => :in_head,
-    "html" => :before_head
+    "frameset" => :in_frameset
   }
 
   @doc """
   "Reset the insertion mode appropriately": walk the stack of open elements
-  from the current node; in the fragment case the last node is the context
-  element.
+  from the current node. The first node in the stack is the last step of the
+  walk, and in the fragment case that step uses the context element instead.
   """
   def reset_insertion_mode(%{stack: stack} = state) do
     set_mode(state, mode_from_stack(stack, state))
   end
 
-  defp mode_from_stack([], %{context_element: nil}), do: :in_body
-
-  defp mode_from_stack([], %{context_element: {_ns, tag}} = state) do
-    mode_for_node(tag, state) || :in_body
+  defp mode_from_stack([ref], %{context_element: nil, elements: elements} = state) do
+    mode_for_node(elements[ref].tag, true, state) || :in_body
   end
 
-  defp mode_from_stack([_last], %{context_element: {_ns, _tag}} = state) do
-    mode_from_stack([], state)
+  defp mode_from_stack([_ref], %{context_element: {_ns, tag}} = state) do
+    mode_for_node(tag, true, state) || :in_body
   end
 
   defp mode_from_stack([ref | rest], %{elements: elements} = state) do
     elements[ref].tag
-    |> mode_for_node(state)
+    |> mode_for_node(false, state)
     |> mode_or_previous_node(rest, state)
   end
 
   defp mode_or_previous_node(nil, rest, state), do: mode_from_stack(rest, state)
   defp mode_or_previous_node(mode, _rest, _state), do: mode
 
-  # template: the current template insertion mode
-  defp mode_for_node("template", %{template_mode_stack: [mode | _]}), do: mode
-  # noscript with scripting enabled maps to :in_head per WHATWG spec
-  defp mode_for_node("noscript", %{scripting: true}), do: :in_head
+  # "If node is a td or th element and last is false, then switch the
+  # insertion mode to in cell and return."
+  defp mode_for_node(tag, false, _state) when tag in ~w(td th), do: :in_cell
+  defp mode_for_node(tag, true, _state) when tag in ~w(td th), do: nil
+  # "If node is a template element, then switch the insertion mode to the
+  # current template insertion mode and return."
+  defp mode_for_node("template", _last?, %{template_mode_stack: [mode | _]}), do: mode
+  # "If node is a head element and last is false, then switch the insertion
+  # mode to in head and return." With last true the walk ends in body.
+  defp mode_for_node("head", false, _state), do: :in_head
+  defp mode_for_node("head", true, _state), do: :in_body
   # html: "before head" until the head element pointer is set, "after head" from then on
-  defp mode_for_node("html", %{head_element: nil}), do: :before_head
-  defp mode_for_node("html", _state), do: :after_head
-  defp mode_for_node(tag, _state), do: Map.get(@tag_to_mode, tag)
+  defp mode_for_node("html", _last?, %{head_element: nil}), do: :before_head
+  defp mode_for_node("html", _last?, _state), do: :after_head
+  defp mode_for_node(tag, _last?, _state), do: Map.get(@tag_to_mode, tag)
 
   def has_template_on_stack?(state), do: find_ref(state, "template") != nil
 

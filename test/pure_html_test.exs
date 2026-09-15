@@ -34,6 +34,40 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "head fragment context resets to in body because last is true" do
+      # Arrange
+      html = "<title>x</title>y"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "head")
+
+      # Assert
+      assert [{"title", [], ["x"]}, "y"] = nodes
+      assert error_count == 0
+    end
+
+    test "td fragment context resets to in body because last is true" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("x", context: "td")
+
+      # Assert
+      assert ["x"] = nodes
+      assert error_count == 0
+    end
+
+    test "noscript fragment context with scripting on resets to in body" do
+      # Arrange
+      html = "<b>x"
+
+      # Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors(html, context: "noscript", scripting: true)
+
+      # Assert
+      assert ["<b>x"] = nodes
+      assert error_count == 0
+    end
+
     test "frameset end tag in a frameset fragment stays in frameset" do
       # Arrange
       html = "<frameset></frameset><frame>"
