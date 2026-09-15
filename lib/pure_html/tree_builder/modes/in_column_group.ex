@@ -118,11 +118,11 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
     |> reprocess()
   end
 
-  defp handle_characters("colgroup", ws, _rest, state) do
+  defp handle_characters("colgroup", ws, rest, state) do
     state
     |> add_text_to_stack(ws)
     |> pop_colgroup()
-    |> reprocess()
+    |> reprocess_with({:character, rest})
   end
 
   defp handle_characters(_tag, "", rest, state) do

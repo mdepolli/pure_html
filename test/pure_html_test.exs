@@ -117,6 +117,25 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "inserts leading whitespace in a colgroup once and reprocesses the rest" do
+      # Arrange
+      html = "<table><colgroup> foo</colgroup></table>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], ["foo", {"table", [], [{"colgroup", [], [" "]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 5
+    end
+
     test "counts a missing doctype as a parse error" do
       # Arrange
       html = "<p>hello</p>"
