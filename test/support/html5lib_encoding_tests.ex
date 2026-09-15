@@ -13,10 +13,25 @@ defmodule PureHTML.Test.Html5libEncodingTests do
 
   def list_test_files do
     @test_dir
-    |> File.ls!()
-    |> Enum.filter(&String.ends_with?(&1, ".dat"))
+    |> Path.join("**/*.dat")
+    |> Path.wildcard()
     |> Enum.sort()
-    |> Enum.map(&Path.join(@test_dir, &1))
+  end
+
+  @doc "Fixture name relative to the encoding directory: `tests1`, `scripted/tests1`."
+  def fixture_name(path) do
+    path
+    |> Path.relative_to(@test_dir)
+    |> Path.rootname(".dat")
+  end
+
+  @doc """
+  True for fixtures whose expected encoding comes from a `<meta>` that a
+  script wrote with `document.write`. The sniffer has no script engine, so the
+  test file reports them as skipped instead of running them.
+  """
+  def needs_script_execution?(path) do
+    String.starts_with?(fixture_name(path), "scripted/")
   end
 
   def parse_file(path) do

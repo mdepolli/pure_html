@@ -16,11 +16,29 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
 
   def list_test_files do
     @test_dir
-    |> File.ls!()
-    |> Enum.filter(&String.ends_with?(&1, ".dat"))
+    |> Path.join("**/*.dat")
+    |> Path.wildcard()
     |> Enum.reject(&String.contains?(&1, "unsafe"))
     |> Enum.sort()
-    |> Enum.map(&Path.join(@test_dir, &1))
+  end
+
+  @doc "Fixture name relative to the tree-construction directory: `webkit01`, `scripted/webkit01`."
+  def fixture_name(path) do
+    path
+    |> Path.relative_to(@test_dir)
+    |> Path.rootname(".dat")
+  end
+
+  @doc """
+  True for fixtures whose expected tree is the DOM after their scripts ran.
+
+  The cases under `scripted/` call `document.write`, `setAttribute`, and
+  `getElementById` from `<script>` elements and expect the tree those calls
+  produce. A parser without a script engine has no correct answer for them,
+  so the test file reports them as skipped instead of running them.
+  """
+  def needs_script_execution?(path) do
+    String.starts_with?(fixture_name(path), "scripted/")
   end
 
   def parse_file(path) do
@@ -94,24 +112,24 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
 
   @doc """
   Runs every case of a fixture file in the given scripting mode and returns one
-  report per failing case. Set `HTML5LIB_CASE=file:index` (for example
-  `webkit02:12`) to run a single case.
+  report per failing case. Set `HTML5LIB_CASE=name:index` with the fixture
+  name (for example `webkit02:12`) to run a single case.
   """
   def failures(path, scripting) do
-    filename = Path.basename(path, ".dat")
+    name = fixture_name(path)
 
     path
     |> parse_file()
     |> Enum.with_index()
-    |> Enum.filter(&(selected?(filename, &1) and runs_with_scripting?(elem(&1, 0), scripting)))
+    |> Enum.filter(&(selected?(name, &1) and runs_with_scripting?(elem(&1, 0), scripting)))
     |> Enum.reject(&passes?(&1, scripting))
-    |> Enum.map(&failure_report(filename, &1, scripting))
+    |> Enum.map(&failure_report(name, &1, scripting))
   end
 
-  defp selected?(filename, {_test, index}) do
+  defp selected?(name, {_test, index}) do
     case System.get_env("HTML5LIB_CASE") do
       nil -> true
-      only -> only == "#{filename}:#{index}"
+      only -> only == "#{name}:#{index}"
     end
   end
 
@@ -139,9 +157,9 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     [scripting: scripting, context: context]
   end
 
-  defp failure_report(filename, {test, index}, scripting) do
+  defp failure_report(name, {test, index}, scripting) do
     """
-    #{filename}:#{index} [script-#{if scripting, do: "on", else: "off"}]
+    #{name}:#{index} [script-#{if scripting, do: "on", else: "off"}]
     #data
     #{test.data}
     #expected
