@@ -11,8 +11,25 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   """
 
   @test_dir Path.expand("../html5lib-tests/tree-construction", __DIR__)
+  @override_dir Path.expand("../html5lib-overrides/tree-construction", __DIR__)
 
   def test_dir, do: @test_dir
+
+  @doc """
+  Path to read for a fixture: `test/html5lib-overrides/tree-construction/`
+  when that file exists, otherwise the submodule file.
+  """
+  # Whole-file copy: an unrelated submodule edit of the same file would be shadowed, but the pin is 9329e64 forever.
+  def source_path(path) do
+    rel = Path.relative_to(path, @test_dir)
+    override = Path.join(@override_dir, rel)
+
+    if File.exists?(override) do
+      override
+    else
+      path
+    end
+  end
 
   def list_test_files do
     @test_dir
@@ -42,6 +59,7 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
 
   def parse_file(path) do
     path
+    |> source_path()
     |> File.read!()
     # Split on blank lines followed by #data to properly separate tests
     # (handles empty data sections that have blank lines within the test)
@@ -137,12 +155,17 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   defp runs_with_scripting?(_test, _scripting), do: true
 
   defp passes?({test, _index}, scripting) do
-    actual_document(test, scripting) == expected_document(test)
+    {document, error_count} = parse_case(test, scripting)
+
+    serialize_tree(document) == expected_document(test) and
+      error_count == length(test.errors)
   end
 
-  defp actual_document(test, scripting) do
-    {document, _error_count} = PureHTML.parse_with_errors(test.data, parse_opts(test, scripting))
+  defp parse_case(test, scripting) do
+    PureHTML.parse_with_errors(test.data, parse_opts(test, scripting))
+  end
 
+  defp serialize_tree(document) do
     document
     |> serialize_document()
     |> String.trim_trailing("\n")
@@ -157,6 +180,8 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   end
 
   defp failure_report(name, {test, index}, scripting) do
+    {document, error_count} = parse_case(test, scripting)
+
     """
     #{name}:#{index} [script-#{if scripting, do: "on", else: "off"}]
     #data
@@ -164,7 +189,8 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     #expected
     #{expected_document(test)}
     #actual
-    #{actual_document(test, scripting)}
+    #{serialize_tree(document)}
+    #errors expected #{length(test.errors)} got #{error_count}
     """
   end
 

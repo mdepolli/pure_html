@@ -1232,7 +1232,6 @@ defmodule PureHTMLTest do
              ] = nodes
 
       # No doctype; </button> with selectedcontent as the current node; select open at EOF.
-      # html5lib webkit02:44 lists no errors at all, not even the doctype one; the text wins.
       assert error_count == 3
     end
 
