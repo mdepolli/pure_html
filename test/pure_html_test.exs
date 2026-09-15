@@ -34,6 +34,78 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "html start tag in a template is ignored by the in-body rules" do
+      # Arrange
+      html = "<template><html lang=en></template>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], [{"template", [], [{:content, []}]}]}, {"body", [], []}]}
+             ] =
+               nodes
+
+      assert error_count == 2
+    end
+
+    test "tr after a div in a template is ignored by the in-body rules" do
+      # Arrange
+      html = "<template><div></div><tr><td>x</template>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], [{"template", [], [{:content, [{"div", [], []}, "x"]}]}]},
+                  {"body", [], []}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
+    test "body start tag in a template moves the template to in body" do
+      # Arrange
+      html = "<template><body><tr>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], [{"template", [], [{:content, []}]}]}, {"body", [], []}]}
+             ] =
+               nodes
+
+      assert error_count == 4
+    end
+
+    test "noscript in a template with scripting on moves the template to in body" do
+      # Arrange
+      html = "<template><noscript></noscript><tr>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], [{"template", [], [{:content, [{"noscript", [], []}]}]}]},
+                  {"body", [], []}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "html start tag in before head merges attributes and stays before head" do
       # Arrange
       html = "<html><html lang=en><head>"
