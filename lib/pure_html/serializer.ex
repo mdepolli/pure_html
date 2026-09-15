@@ -53,6 +53,10 @@ defmodule PureHTML.Serializer do
     |> IO.iodata_to_binary()
   end
 
+  @doc "True for the HTML void elements, which serialize as a start tag only."
+  @spec void_element?(String.t()) :: boolean()
+  def void_element?(tag), do: tag in @void_elements
+
   # DOCTYPE
   defp serialize_node({:doctype, name, public_id, system_id}, _context, _opts) do
     serialize_doctype(name, public_id, system_id)
@@ -100,7 +104,7 @@ defmodule PureHTML.Serializer do
   defp serialize_element(tag, attrs, children, opts) do
     opening = serialize_opening_tag(tag, attrs, opts)
 
-    if tag in @void_elements do
+    if void_element?(tag) do
       opening
     else
       content = Enum.map(children, &serialize_node(&1, tag, opts))
@@ -109,7 +113,7 @@ defmodule PureHTML.Serializer do
   end
 
   defp serialize_opening_tag(tag, attrs, opts) when attrs == [] do
-    if tag in @void_elements and Keyword.get(opts, :use_trailing_solidus, false) do
+    if void_element?(tag) and Keyword.get(opts, :use_trailing_solidus, false) do
       ["<", tag, " />"]
     else
       ["<", tag, ">"]
@@ -119,7 +123,7 @@ defmodule PureHTML.Serializer do
   defp serialize_opening_tag(tag, attrs, opts) do
     attr_string = serialize_attrs(attrs, opts)
 
-    if tag in @void_elements and Keyword.get(opts, :use_trailing_solidus, false) do
+    if void_element?(tag) and Keyword.get(opts, :use_trailing_solidus, false) do
       ["<", tag, " ", attr_string, " />"]
     else
       ["<", tag, " ", attr_string, ">"]
