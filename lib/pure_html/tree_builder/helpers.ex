@@ -852,6 +852,16 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def correct_tag(tag), do: tag
 
   @doc """
+  Splits U+0000 out of a character token's text: the text without them and
+  how many there were. In body and in table text each one is a parse error
+  and is ignored; foreign content replaces each with U+FFFD.
+  """
+  def split_null_characters(text) do
+    parts = String.split(text, <<0>>)
+    {Enum.join(parts), length(parts) - 1}
+  end
+
+  @doc """
   Extracts only whitespace characters from text.
   Returns the whitespace portion of the string.
   """

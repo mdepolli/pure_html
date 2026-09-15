@@ -11,7 +11,6 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
   import PureHTML.TreeBuilder.Helpers
 
   alias PureHTML.TreeBuilder
-  alias PureHTML.TreeBuilder.Modes.InBody
 
   @svg_html_integration_points ~w(foreignObject desc title)
 
@@ -155,9 +154,18 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
     |> walk_end_tag(tag)
   end
 
-  # Characters: delegate to InBody (inserts text, sets frameset_not_ok)
-  def process({:character, _} = token, state) do
-    InBody.process(token, state)
+  # U+0000: "Parse error. Insert a U+FFFD REPLACEMENT CHARACTER character."
+  # Whitespace is inserted; any other character is inserted and sets
+  # frameset-ok to "not ok". Unlike in body, nothing is reconstructed.
+  def process({:character, text}, state) do
+    {kept, null_count} = split_null_characters(text)
+    {_whitespace, rest} = split_whitespace(kept)
+
+    state
+    |> parse_error(null_count)
+    |> add_text_to_stack(String.replace(text, <<0>>, "\uFFFD"))
+    |> frameset_not_ok_for_text(rest)
+    |> ok()
   end
 
   # Comments: insert a comment
@@ -173,6 +181,9 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
     |> parse_error()
     |> ok()
   end
+
+  defp frameset_not_ok_for_text(state, ""), do: state
+  defp frameset_not_ok_for_text(state, _text), do: set_frameset_not_ok(state)
 
   defp process_with_current_mode(state, token) do
     TreeBuilder.process_with_current_mode(token, state)

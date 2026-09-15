@@ -34,6 +34,70 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "ignores U+0000 in body and keeps frameset-ok" do
+      # Arrange
+      html = "<html>\0<frameset></frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"frameset", [], []}]}] = nodes
+      assert error_count == 4
+    end
+
+    test "drops U+0000 from body text with one error per character" do
+      # Arrange
+      html = "<html>a\0a<frameset></frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["aa"]}]}] = nodes
+      assert error_count == 5
+    end
+
+    test "drops U+0000 from pending table text before foster parenting" do
+      # Arrange
+      html = "<body><table>\0filler\0text\0"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["fillertext", {"table", [], []}]}]}] =
+               nodes
+
+      assert error_count == 18
+    end
+
+    test "replaces U+0000 in foreign content without touching frameset-ok" do
+      # Arrange
+      html = "<svg>\0 </svg><frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"frameset", [], []}]}] = nodes
+      assert error_count == 5
+    end
+
+    test "replaces U+0000 in foreign content with U+FFFD" do
+      # Arrange
+      html = "<svg>\0a</svg><frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{{:svg, "svg"}, [], ["\uFFFDa"]}]}]}] =
+               nodes
+
+      assert error_count == 4
+    end
+
     test "counts a missing doctype as a parse error" do
       # Arrange
       html = "<p>hello</p>"

@@ -252,11 +252,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
-  # Switch to in_table_text mode to collect character tokens
-  defp do_process_character(%{tag: tag}, text, state) when tag in @table_context do
+  defp do_process_character(%{tag: tag}, _text, state) when tag in @table_context do
     state
-    |> start_table_text(text)
-    |> ok()
+    |> start_table_text()
+    |> reprocess()
   end
 
   # Anything else: parse error (one per character token), enable foster
@@ -268,10 +267,11 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> process_in_body({:character, text})
   end
 
-  # "Let the original insertion mode be the current insertion mode. Switch the
-  # insertion mode to in table text."
-  defp start_table_text(%{mode: mode} = state, text) do
-    %{state | mode: :in_table_text, original_mode: mode, pending_table_text: text}
+  # "Let the pending table character tokens be an empty list of tokens. Let the
+  # original insertion mode be the current insertion mode. Switch the insertion
+  # mode to in table text and reprocess the token."
+  defp start_table_text(%{mode: mode} = state) do
+    %{state | mode: :in_table_text, original_mode: mode, pending_table_text: ""}
   end
 
   # Clear stack to table context (table, template, html)

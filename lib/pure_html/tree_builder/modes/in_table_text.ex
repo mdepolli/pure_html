@@ -23,9 +23,15 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   import PureHTML.TreeBuilder.Helpers
 
   @impl true
-  # Character tokens: collect into pending list
-  def process({:character, text}, %{pending_table_text: pending} = state) do
-    ok(%{state | pending_table_text: pending <> text})
+  # U+0000: "Parse error. Ignore the token." Any other character token joins
+  # the pending table character tokens.
+  def process({:character, text}, state) do
+    {text, null_count} = split_null_characters(text)
+
+    state
+    |> parse_error(null_count)
+    |> append_pending_text(text)
+    |> ok()
   end
 
   # Any other token: flush pending text, restore mode, reprocess
@@ -39,6 +45,10 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   # --------------------------------------------------------------------------
   # Helpers
   # --------------------------------------------------------------------------
+
+  defp append_pending_text(%{pending_table_text: pending} = state, text) do
+    %{state | pending_table_text: pending <> text}
+  end
 
   defp restore_original_mode(%{original_mode: mode} = state) do
     %{state | mode: mode, original_mode: nil}

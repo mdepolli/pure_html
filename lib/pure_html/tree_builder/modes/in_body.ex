@@ -61,10 +61,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @impl true
   # Character tokens
+  # U+0000: "Parse error. Ignore the token." One error per NUL; the rest of
+  # the text is inserted as usual.
   def process({:character, text}, state) do
-    text
-    |> maybe_skip_leading_newline(state)
-    |> insert_body_text(state)
+    {text, null_count} =
+      text
+      |> maybe_skip_leading_newline(state)
+      |> split_null_characters()
+
+    state
+    |> parse_error(null_count)
+    |> insert_body_text(text)
   end
 
   # Comment tokens
@@ -938,9 +945,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end)
   end
 
-  defp insert_body_text("", state), do: ok(state)
+  defp insert_body_text(state, ""), do: ok(state)
 
-  defp insert_body_text(text, state) do
+  defp insert_body_text(state, text) do
     state
     |> reconstruct_active_formatting()
     |> add_text_to_stack(text)
