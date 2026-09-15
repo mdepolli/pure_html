@@ -1035,15 +1035,4 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def pop_template_mode(%{template_mode_stack: [_ | rest]} = state) do
     %{state | template_mode_stack: rest}
   end
-
-  @doc false
-  def has_table_ancestor?([], _elements), do: false
-
-  def has_table_ancestor?([ref | rest], elements) do
-    case elements[ref].tag do
-      "table" -> true
-      "template" -> false
-      _ -> has_table_ancestor?(rest, elements)
-    end
-  end
 end

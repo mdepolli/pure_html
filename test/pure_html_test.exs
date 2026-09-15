@@ -34,6 +34,41 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "table at an HTML integration point is inserted there, not fostered past it" do
+      # Arrange
+      html = "<table><tr><td><svg><foreignObject><table>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {"table", [],
+                      [
+                        {"tbody", [],
+                         [
+                           {"tr", [],
+                            [
+                              {"td", [],
+                               [
+                                 {{:svg, "svg"}, [],
+                                  [{{:svg, "foreignObject"}, [], ["x", {"table", [], []}]}]}
+                               ]}
+                            ]}
+                         ]}
+                      ]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "HTML breakout stops at a MathML text integration point" do
       # Arrange
       html = "<math><mi><svg><b>x"

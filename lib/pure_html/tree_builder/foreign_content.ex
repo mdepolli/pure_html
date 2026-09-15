@@ -428,49 +428,6 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
 
   defp foreign_namespace(%{stack: []}), do: nil
 
-  @doc """
-  Returns true if the current element is an HTML integration point.
-
-  HTML integration points are foreign elements where content is parsed as HTML:
-  - SVG: foreignObject, desc, title
-  - MathML: mi, mo, mn, ms, mtext
-  - MathML: annotation-xml with encoding="text/html" or "application/xhtml+xml"
-  """
-  @html_integration_encodings ["text/html", "application/xhtml+xml"]
-
-  def html_integration_point?(%{stack: [], elements: _}), do: false
-
-  # Adjusted current node: in fragment mode with 1 element on stack,
-  # check the context element instead.
-  def html_integration_point?(%{stack: [_single], context_element: {:svg, tag}})
-      when tag in ~w(foreignObject desc title),
-      do: true
-
-  def html_integration_point?(%{stack: [_single], context_element: {:math, tag}})
-      when tag in ~w(mi mo mn ms mtext),
-      do: true
-
-  def html_integration_point?(%{stack: [ref | _], elements: elements}) do
-    elem = elements[ref]
-
-    case elem.tag do
-      {:svg, tag} when tag in ~w(foreignObject desc title) ->
-        true
-
-      {:math, "annotation-xml"} ->
-        case get_attr(elem.attrs, "encoding") do
-          nil -> false
-          enc -> String.downcase(enc) in @html_integration_encodings
-        end
-
-      {:math, tag} when tag in ~w(mi mo mn ms mtext) ->
-        true
-
-      _ ->
-        false
-    end
-  end
-
   @html_breakout_tags ~w(b big blockquote body br center code dd div dl dt em embed
                          h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol
                          p pre ruby s small span strong strike sub sup table tt u ul var)

@@ -21,11 +21,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
-  @table_sections ~w(tbody thead tfoot)
-  @table_cells ~w(td th)
-  @table_row_context ~w(tr tbody thead tfoot)
   @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @af_marker_elements ~w(applet marquee object)
+  @ignored_start_tags ~w(caption col colgroup frame tbody td tfoot th thead tr)
 
   @closes_p ~w(address article aside blockquote center details dialog dir div dl dd dt
                fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup
@@ -52,7 +50,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @frameset_disabling_elements ~w(pre listing textarea xmp iframe select embed keygen applet
                                   marquee object table button img hr br wbr area dd dt li)
 
-  @table_structure_elements @table_sections ++ ["caption", "colgroup"]
   @newline_skipping_elements ~w(pre listing)
 
   # --------------------------------------------------------------------------
@@ -331,33 +328,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
-  # Dispatch an HTML start tag with the in-body rules. The one namespace-aware
-  # case: a table start tag at an HTML integration point with a table ancestor
-  # is foster-parented past the foreign content.
-  defp dispatch_start_tag(state, {:start_tag, "table", attrs, _} = token) do
-    if ForeignContent.html_integration_point?(state) and
-         has_table_ancestor?(state.stack, state.elements) do
-      handle_table_at_integration_point(state, "table", attrs)
-    else
-      start_tag(token, state)
-    end
-  end
-
-  # Per spec, a start tag whose self-closing flag is not acknowledged by the
-  # tree construction stage is a parse error; only void elements (and foreign
-  # elements, handled elsewhere) acknowledge it.
+  # Dispatch an HTML start tag with the in-body rules. Per spec, a start tag
+  # whose self-closing flag is not acknowledged by the tree construction stage
+  # is a parse error; only void elements (and foreign elements, handled
+  # elsewhere) acknowledge it.
   defp dispatch_start_tag(state, {:start_tag, tag, _, self_closing} = token) do
     token
     |> start_tag(state)
     |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
-  end
-
-  defp handle_table_at_integration_point(state, tag, attrs) do
-    state
-    |> ForeignContent.close()
-    |> foster_insert({:push, tag, attrs})
-    |> set_mode(:in_table)
-    |> set_frameset_not_ok()
   end
 
   # Per spec: with no p element in button scope, parse error and insert a p
@@ -418,20 +396,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp start_tag({:start_tag, "frameset", _, _}, state), do: parse_error(state)
 
-  # Frame in frameset. Otherwise: parse error, ignore.
-  defp start_tag({:start_tag, "frame", attrs, _}, state) do
-    state
-    |> current_tag()
-    |> insert_frame(attrs, state)
-  end
-
-  # Col in table mode
-  defp start_tag({:start_tag, "col", attrs, _}, %{mode: :in_table} = state) do
-    state
-    |> find_ref("table")
-    |> insert_col_in_table(attrs, state)
-  end
-
   # Per spec: in a select fragment, "Parse error. Ignore the token."
   defp start_tag({:start_tag, "input", _attrs, _}, %{context_element: {_ns, "select"}} = state) do
     parse_error(state)
@@ -467,48 +431,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
-  # Col in other contexts - parse error, ignore
-  defp start_tag({:start_tag, "col", _, _}, state), do: parse_error(state)
-
-  # Table structure in body mode (ignored per spec: parse error)
-  defp start_tag({:start_tag, tag, _, _}, %{mode: :in_body} = state)
-       when tag in @table_structure_elements do
+  # "A start tag whose tag name is one of: caption, col, colgroup, frame, head,
+  # tbody, td, tfoot, th, thead, tr: Parse error. Ignore the token." (head has
+  # its own clause above.)
+  defp start_tag({:start_tag, tag, _, _}, state) when tag in @ignored_start_tags do
     parse_error(state)
-  end
-
-  # Per spec: td and th in body are a parse error and ignored
-  defp start_tag({:start_tag, tag, _, _}, %{mode: :in_body} = state) when tag in @table_cells do
-    parse_error(state)
-  end
-
-  # Table cells
-  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @table_cells do
-    state
-    |> current_tag()
-    |> mismatch_if_not_in(@table_cells, state)
-    |> clear_to_table_row_context()
-    |> ensure_table_context()
-    |> push_element(tag, attrs)
-    |> push_af_marker()
-  end
-
-  # Table structure in table-related modes: create if table context exists
-  @table_related_modes [:in_table, :in_table_body, :in_row, :in_cell, :in_caption]
-
-  defp start_tag({:start_tag, tag, attrs, _}, %{mode: mode} = state)
-       when tag in @table_structure_elements and mode in @table_related_modes do
-    state
-    |> find_ref("table")
-    |> insert_table_structure(tag, attrs, state)
-  end
-
-  # Tr - requires table context
-  # In :in_body mode without table, this is a parse error - ignore
-  # In table-related modes (:in_table, etc.) or with table on stack, create tr
-  defp start_tag({:start_tag, "tr", attrs, _}, %{mode: mode} = state) do
-    state
-    |> find_ref("table")
-    |> insert_tr(mode, attrs, state)
   end
 
   # Per spec: an a element in the active formatting list after the last marker
@@ -817,47 +744,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp close_current_heading(_tag, state), do: state
 
-  defp insert_frame("frameset", attrs, state) do
-    add_child_to_stack(state, {"frame", attrs, []})
-  end
-
-  defp insert_frame(_tag, _attrs, state), do: parse_error(state)
-
-  defp insert_tr(nil, mode, attrs, state) do
-    if mode in @table_related_modes and not has_foreign_on_stack?(state) do
-      push_tr(attrs, state)
-    else
-      parse_error(state)
-    end
-  end
-
-  defp insert_tr(_table_ref, _mode, attrs, state), do: push_tr(attrs, state)
-
-  defp push_tr(attrs, state) do
-    state
-    |> clear_to_table_body_context()
-    |> ensure_tbody()
-    |> push_element("tr", attrs)
-  end
-
-  defp insert_col_in_table(nil, attrs, state) do
-    add_child_to_stack(state, {"col", attrs, []})
-  end
-
-  defp insert_col_in_table(_table_ref, attrs, state) do
-    state
-    |> ensure_colgroup()
-    |> add_child_to_stack({"col", attrs, []})
-  end
-
-  defp insert_table_structure(nil, _tag, _attrs, state), do: parse_error(state)
-
-  defp insert_table_structure(_table_ref, tag, attrs, state) do
-    state
-    |> clear_to_table_context()
-    |> push_element(tag, attrs)
-  end
-
   # --------------------------------------------------------------------------
   # Body element
   # --------------------------------------------------------------------------
@@ -932,18 +818,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
   # Mode transitions
   # --------------------------------------------------------------------------
-
-  # Check if there are any foreign (SVG/MathML) elements on the stack.
-  # Used to determine if table structure handling should be skipped when
-  # processing HTML tokens at integration points.
-  defp has_foreign_on_stack?(%{stack: stack, elements: elements}) do
-    Enum.any?(stack, fn ref ->
-      case elements[ref].tag do
-        {ns, _} when ns in [:svg, :math] -> true
-        _ -> false
-      end
-    end)
-  end
 
   defp insert_body_text(state, ""), do: ok(state)
 
@@ -1047,84 +921,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
   # Table context
   # --------------------------------------------------------------------------
-
-  @table_body_boundaries @table_sections ++ ["table", "template", "html"]
-  @table_row_boundaries @table_row_context ++ ["table", "template", "html"]
-  @table_boundaries ["table", "template", "html"]
-
-  defp clear_to_table_body_context(state) do
-    pop_until_one_of(state, @table_body_boundaries)
-  end
-
-  defp clear_to_table_row_context(state) do
-    pop_until_one_of(state, @table_row_boundaries)
-  end
-
-  defp clear_to_table_context(state) do
-    pop_until_one_of(state, @table_boundaries)
-  end
-
-  defp ensure_table_context(state) do
-    state
-    |> ensure_tbody()
-    |> ensure_tr()
-  end
-
-  defp ensure_tbody(state) do
-    state
-    |> current_tag()
-    |> ensure_tbody_for(state)
-  end
-
-  defp ensure_tbody_for("table", state), do: push_element(state, "tbody", [])
-  defp ensure_tbody_for(_tag, state), do: state
-
-  defp ensure_tr(state) do
-    state
-    |> current_tag()
-    |> ensure_tr_for(state)
-  end
-
-  defp ensure_tr_for(tag, state) when tag in @table_sections, do: push_element(state, "tr", [])
-  defp ensure_tr_for("tr", state), do: state
-
-  defp ensure_tr_for("template", state) do
-    elem = current_element(state)
-
-    if has_table_row_structure?(state, elem.children) do
-      push_element(state, "tr", [])
-    else
-      state
-    end
-  end
-
-  defp ensure_tr_for(_tag, state), do: state
-
-  defp has_table_row_structure?(%{elements: elements}, children) do
-    Enum.any?(children, fn
-      ref when is_reference(ref) -> elements[ref].tag in ~w(tr tbody thead tfoot)
-      _ -> false
-    end)
-  end
-
-  @colgroup_close_tags ["td", "th", "tr"] ++ @table_sections
-
-  defp ensure_colgroup(state) do
-    state
-    |> current_tag()
-    |> ensure_colgroup_for(state)
-  end
-
-  defp ensure_colgroup_for("colgroup", state), do: state
-  defp ensure_colgroup_for("table", state), do: push_element(state, "colgroup", [])
-
-  defp ensure_colgroup_for(tag, state) when tag in @colgroup_close_tags do
-    state
-    |> pop_element()
-    |> ensure_colgroup()
-  end
-
-  defp ensure_colgroup_for(_tag, state), do: state
 
   # --------------------------------------------------------------------------
   # Implicit closing
