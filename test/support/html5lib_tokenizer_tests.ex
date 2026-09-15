@@ -63,24 +63,9 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     tests
     |> Enum.with_index()
     |> Enum.filter(&selected?(filename, &1))
-    |> Enum.reject(&parked?(filename, &1))
     |> Enum.flat_map(&case_runs(&1, xml_violation_mode))
     |> Enum.reject(&passes?/1)
     |> Enum.map(&failure_report(filename, &1))
-  end
-
-  # html5lib injects unpaired UTF-16 surrogates as raw code units. Elixir
-  # binaries are UTF-8; Tokenizer.new/2 replaces invalid sequences with
-  # U+FFFD per the input stream. Keep the parser on the text.
-  @parked_cases [
-    {"unicodeCharsProblematic", 0},
-    {"unicodeCharsProblematic", 1},
-    {"unicodeCharsProblematic", 2},
-    {"unicodeCharsProblematic", 3}
-  ]
-
-  defp parked?(filename, {_test, index}) do
-    System.get_env("HTML5LIB_CASE") == nil and {filename, index} in @parked_cases
   end
 
   defp selected?(filename, {_test, index}) do
@@ -147,7 +132,7 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
     %{
       description: test["description"],
-      input: maybe_unescape(test["input"], double_escaped?),
+      input: maybe_unescape_input(test["input"], double_escaped?),
       expected_tokens: normalize_tokens(test["output"], double_escaped?),
       initial_states: test["initialStates"] || ["Data state"],
       last_start_tag: test["lastStartTag"],
@@ -196,6 +181,26 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
   defp maybe_unescape(string, false), do: string
   defp maybe_unescape(string, true), do: unescape_unicode(string)
+
+  # Tokenizer input is a code-point stream. Double-escaped tests may include
+  # unpaired surrogates, which cannot live in a UTF-8 binary.
+  defp maybe_unescape_input(string, false), do: string
+  defp maybe_unescape_input(string, true), do: unescape_unicode_codepoints(string)
+
+  defp unescape_unicode_codepoints(string) when is_binary(string) do
+    ~r/\\u([0-9A-Fa-f]{4})/
+    |> Regex.split(string, include_captures: true)
+    |> parse_unicode_parts()
+    |> combine_surrogate_pairs()
+    |> parts_to_codepoints()
+  end
+
+  defp parts_to_codepoints(parts) do
+    Enum.flat_map(parts, fn
+      {:text, str} -> String.to_charlist(str)
+      {:codepoint, cp} -> [cp]
+    end)
+  end
 
   defp unescape_unicode(string) when is_binary(string) do
     # Split on \uXXXX patterns, keeping the captures

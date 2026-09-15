@@ -42,6 +42,19 @@ defmodule PureHTML.TokenizerTest do
 
       assert [{:character, "abc"}] = tokens
     end
+
+    test "keeps an unpaired surrogate from a code-point stream" do
+      # Arrange
+      input = [0xDFFF]
+
+      # Act
+      tokens = Tokenizer.tokenize(input) |> Enum.to_list()
+      %{error_count: error_count} = Tokenizer.new(input)
+
+      # Assert
+      assert [{:character, <<0xDFFF::16>>}] = tokens
+      assert error_count >= 1
+    end
   end
 
   describe "tag names" do
