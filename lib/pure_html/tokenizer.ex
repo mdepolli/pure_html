@@ -122,11 +122,13 @@ defmodule PureHTML.Tokenizer do
     last_start_tag = Keyword.get(opts, :last_start_tag, nil)
     xml_violation_mode = Keyword.get(opts, :xml_violation_mode, false)
 
-    # Normalize newlines per HTML5 spec: CRLF → LF, CR → LF
-    normalized_input = normalize_newlines(input)
+    decoded_input =
+      input
+      |> normalize_newlines()
+      |> utf8_with_replacement()
 
     %__MODULE__{
-      input: normalized_input,
+      input: decoded_input,
       state: initial_state,
       return_state: nil,
       token: nil,
@@ -2991,5 +2993,26 @@ defmodule PureHTML.Tokenizer do
   # End of input
   defp normalize_newlines(<<>>, acc) do
     acc |> :lists.reverse() |> IO.iodata_to_binary()
+  end
+
+  # Decode as UTF-8 with U+FFFD replacement, matching the spec input stream.
+  defp utf8_with_replacement(input) do
+    case :unicode.characters_to_binary(input, :utf8, :utf8) do
+      out when is_binary(out) -> out
+      {:error, good, rest} -> replace_invalid_utf8(good, rest)
+      {:incomplete, good, rest} -> good <> incomplete_utf8_replacements(rest)
+    end
+  end
+
+  defp replace_invalid_utf8(good, <<>>) do
+    good
+  end
+
+  defp replace_invalid_utf8(good, <<_bad, rest::binary>>) do
+    good <> <<0xFFFD::utf8>> <> utf8_with_replacement(rest)
+  end
+
+  defp incomplete_utf8_replacements(rest) do
+    String.duplicate(<<0xFFFD::utf8>>, byte_size(rest))
   end
 end

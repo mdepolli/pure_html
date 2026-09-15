@@ -16,7 +16,6 @@ defmodule PureHTMLTest do
       end
     end
 
-    # The parser currently crashes on invalid UTF-8. HTML5 assumes valid encoding.
     property "handles unicode strings" do
       check all(text <- string(:printable, max_length: 500)) do
         html = "<div>#{text}</div>"
@@ -1555,6 +1554,28 @@ defmodule PureHTMLTest do
       # Assert
       assert [{"html", [], [{"head", [], []}, {"body", [], [{"textarea", [], ["&#;"]}]}]}] = nodes
       assert error_count == 2
+    end
+
+    test "replaces invalid UTF-8 in a tag name with U+FFFD" do
+      # Arrange
+      html = "<div" <> <<0x80>> <> ">"
+
+      # Act
+      {nodes, _error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{"div\uFFFD", [], []}]}]}] = nodes
+    end
+
+    test "replaces invalid UTF-8 in body text with U+FFFD" do
+      # Arrange
+      html = "a" <> <<0xFF>> <> "b"
+
+      # Act
+      {nodes, _error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], ["a\uFFFDb"]}]}] = nodes
     end
   end
 
