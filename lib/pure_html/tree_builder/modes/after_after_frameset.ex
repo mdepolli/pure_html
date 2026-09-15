@@ -65,18 +65,16 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
     |> ok()
   end
 
-  defp handle_characters(ws, ws, state) do
-    state
-    |> add_text_to_stack(ws)
-    |> ok()
-  end
+  # Whitespace: "Process the token using the rules for the in body insertion
+  # mode", which reconstructs the active formatting elements before inserting.
+  # Anything else is a parse error per character and is ignored.
+  defp handle_characters(ws, ws, state), do: process_in_body(state, {:character, ws})
 
   defp handle_characters(whitespace, text, state) do
     n = String.length(text) - String.length(whitespace)
 
     state
     |> parse_error(n)
-    |> add_text_to_stack(whitespace)
-    |> ok()
+    |> process_in_body({:character, whitespace})
   end
 end

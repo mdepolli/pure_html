@@ -147,15 +147,16 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
     |> frameset_mode_after_pop(state)
   end
 
-  defp frameset_mode_after_pop("frameset", state) do
-    state
-    |> set_mode(:in_frameset)
-    |> ok()
-  end
+  # "If the parser's fragment context element is null and the current node is
+  # no longer a frameset element, then switch the insertion mode to after
+  # frameset."
+  defp frameset_mode_after_pop("frameset", state), do: ok(state)
 
-  defp frameset_mode_after_pop(_tag, state) do
+  defp frameset_mode_after_pop(_tag, %{context_element: nil} = state) do
     state
     |> set_mode(:after_frameset)
     |> ok()
   end
+
+  defp frameset_mode_after_pop(_tag, state), do: ok(state)
 end

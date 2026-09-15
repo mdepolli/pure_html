@@ -34,6 +34,62 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "frameset end tag in a frameset fragment stays in frameset" do
+      # Arrange
+      html = "<frameset></frameset><frame>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "frameset")
+
+      # Assert
+      assert [{"frameset", [], []}, {"frame", [], []}] = nodes
+      assert error_count == 0
+    end
+
+    test "whitespace after body reconstructs the active formatting elements" do
+      # Arrange
+      html = "<body><p><b></p></body> "
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"p", [], [{"b", [], []}]}, {"b", [], [" "]}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "whitespace after after body reconstructs the active formatting elements" do
+      # Arrange
+      html = "<body><p><b></p></body></html> "
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"p", [], [{"b", [], []}]}, {"b", [], [" "]}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "whitespace after after frameset reconstructs the active formatting elements" do
+      # Arrange
+      html = "<b><frameset></frameset></html> "
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"frameset", [], []}, {"b", [], [" "]}]}] = nodes
+      assert error_count == 2
+    end
+
     test "non-hidden input in a table goes through the in-body rules and is fostered" do
       # Arrange
       html = "<table><input type=text>"
