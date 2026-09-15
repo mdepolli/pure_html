@@ -1532,6 +1532,30 @@ defmodule PureHTMLTest do
       # reconstructed b open at EOF
       assert error_count == 3
     end
+
+    test "decodes a numeric character reference in title RCDATA" do
+      # Arrange
+      html = "<title>&#65;</title>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], [{"title", [], ["A"]}]}, {"body", [], []}]}] = nodes
+      assert error_count == 1
+    end
+
+    test "failed numeric reference in textarea RCDATA stays as text" do
+      # Arrange
+      html = "<textarea>&#;</textarea>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{"textarea", [], ["&#;"]}]}]}] = nodes
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

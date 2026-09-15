@@ -2361,8 +2361,8 @@ defmodule PureHTML.Tokenizer do
           return_state: nil
         )
 
-      :data ->
-        emit_char(state, prefix, state: :data, return_state: nil)
+      return_state ->
+        emit_char(state, prefix, state: return_state, return_state: nil)
     end
   end
 
@@ -2412,8 +2412,8 @@ defmodule PureHTML.Tokenizer do
           buffer: ""
         )
 
-      :data ->
-        emit_char(state, char, input: rest, state: :data, return_state: nil, buffer: "")
+      return_state ->
+        emit_char(state, char, input: rest, state: return_state, return_state: nil, buffer: "")
     end
   end
 
