@@ -115,6 +115,44 @@ defmodule PureHTML.QueryTest do
                {"span", [], ["Span"]}
              ]
     end
+
+    test "returns matches in document order, not selector order" do
+      html = PureHTML.parse("<div><p>Para</p><span>Span</span></div>")
+
+      assert Query.find(html, "span, p") == [
+               {"p", [], ["Para"]},
+               {"span", [], ["Span"]}
+             ]
+    end
+
+    test "an element matching two selectors is returned once" do
+      html = PureHTML.parse("<div><p class='a'>x</p></div>")
+
+      assert Query.find(html, "p, .a") == [{"p", [{"class", "a"}], ["x"]}]
+    end
+  end
+
+  describe "find/2 identity" do
+    test "identical sibling elements are distinct matches" do
+      html = PureHTML.parse("<ul><li>A</li><li>A</li></ul>")
+
+      assert Query.find(html, "li") == [{"li", [], ["A"]}, {"li", [], ["A"]}]
+    end
+
+    test "descendant star does not drop duplicate subtrees" do
+      html = PureHTML.parse(File.read!("test/fixtures/wikipedia_homepage.html"))
+
+      stars = Query.find(html, "*")
+      descendants = Query.find(html, "* *")
+
+      assert length(descendants) == length(stars) - 1
+    end
+
+    test "sees elements inside template content" do
+      html = PureHTML.parse("<template><div class=x>y</div></template>")
+
+      assert Query.find(html, "div.x") == [{"div", [{"class", "x"}], ["y"]}]
+    end
   end
 
   describe "find/2 combinators" do
@@ -176,6 +214,13 @@ defmodule PureHTML.QueryTest do
                {"p", [{"class", "intro"}], ["Intro"]},
                {"p", [], ["Body"]}
              ]
+    end
+
+    test "sibling combinators work between top-level nodes" do
+      nodes = PureHTML.parse("<p>A</p><span>B</span><em>C</em>", context: "div")
+
+      assert Query.find(nodes, "p + span") == [{"span", [], ["B"]}]
+      assert Query.find(nodes, "p ~ em") == [{"em", [], ["C"]}]
     end
 
     test "adjacent sibling with no match returns empty" do
@@ -298,9 +343,9 @@ defmodule PureHTML.QueryTest do
       assert Query.find_one(html, "[type=email]") == {"input", [{"type", "email"}], []}
     end
 
-    test "works with selector list (returns first match of first selector)" do
+    test "works with selector list (returns the first match in document order)" do
       html = PureHTML.parse("<div><span>Span</span><p>Para</p></div>")
-      assert Query.find_one(html, "p, span") == {"p", [], ["Para"]}
+      assert Query.find_one(html, "p, span") == {"span", [], ["Span"]}
       assert Query.find_one(html, "span, p") == {"span", [], ["Span"]}
     end
 

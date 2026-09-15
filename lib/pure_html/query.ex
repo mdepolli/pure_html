@@ -46,18 +46,18 @@ defmodule PureHTML.Query do
   end
 
   def find(html, chains) when is_list(chains) do
-    tree = List.wrap(html)
-
-    chains
-    |> Enum.flat_map(&evaluate_chain(tree, &1))
-    |> Enum.uniq()
+    html
+    |> elements()
+    |> Stream.filter(&matches_any?(&1, right_to_left(chains)))
+    |> Enum.map(& &1.node)
   end
 
   @doc """
   Finds the first node matching the CSS selector.
 
-  Returns the first matching node, or `nil` if no match is found.
-  More efficient than `find/2` when you only need the first result.
+  Returns the first matching node in document order, or `nil` if no match is
+  found. Stops walking the tree at the first match, so it is cheaper than
+  `find/2` when you only need one result.
 
   ## Examples
 
@@ -80,146 +80,76 @@ defmodule PureHTML.Query do
   end
 
   def find_one(html, chains) when is_list(chains) do
-    case find(html, chains) do
-      [first | _] -> first
-      [] -> nil
-    end
+    html
+    |> elements()
+    |> Enum.find(&matches_any?(&1, right_to_left(chains)))
+    |> cursor_node()
   end
 
-  # Evaluate a single selector chain against the tree
-  defp evaluate_chain(tree, [{nil, selector} | rest]) do
-    # First selector - find all matches in tree
-    matches = find_all_matching(tree, selector)
-    apply_combinators(tree, matches, rest)
+  defp cursor_node(nil), do: nil
+  defp cursor_node(%{node: node}), do: node
+
+  # A chain is parsed left to right: [{nil, s0}, {c1, s1}, ..., {cn, sn}].
+  # Matching starts at the element and walks left, so each selector is paired
+  # with the combinator that leads to the one before it.
+  defp right_to_left(chains), do: Enum.map(chains, &Enum.reverse/1)
+
+  # Every element of the tree in document order, each as a cursor that knows
+  # its parent element and its previous element sibling. Each element is
+  # visited exactly once, so identical subtrees stay distinct matches and an
+  # element matching several selectors of a list is returned once.
+  defp elements(html) do
+    Stream.resource(fn -> [{List.wrap(html), nil, nil}] end, &next_element/1, fn _ -> :ok end)
   end
 
-  # Apply remaining combinators in the chain
-  defp apply_combinators(_tree, matches, []), do: matches
+  # The traversal stack holds {remaining siblings, parent cursor, previous
+  # element sibling cursor} frames.
+  defp next_element([]), do: {:halt, []}
+  defp next_element([{[], _parent, _prev} | frames]), do: next_element(frames)
 
-  defp apply_combinators(tree, matches, [{:descendant, selector} | rest]) do
-    # For each match, find all descendants matching selector
-    new_matches =
-      Enum.flat_map(matches, fn node ->
-        node
-        |> get_element_children()
-        |> find_all_matching(selector)
-      end)
-
-    apply_combinators(tree, new_matches, rest)
-  end
-
-  defp apply_combinators(tree, matches, [{:child, selector} | rest]) do
-    # For each match, find direct children matching selector
-    new_matches =
-      Enum.flat_map(matches, fn node ->
-        node
-        |> get_element_children()
-        |> Enum.filter(&Selector.match?(&1, selector))
-      end)
-
-    apply_combinators(tree, new_matches, rest)
-  end
-
-  defp apply_combinators(tree, matches, [{:adjacent_sibling, selector} | rest]) do
-    # For each match, get the next sibling if it matches
-    new_matches =
-      matches
-      |> Enum.flat_map(&adjacent_sibling_matches(tree, &1, selector))
-
-    apply_combinators(tree, new_matches, rest)
-  end
-
-  defp apply_combinators(tree, matches, [{:general_sibling, selector} | rest]) do
-    # For each match, get all following siblings that match
-    new_matches =
-      matches
-      |> Enum.flat_map(fn node ->
-        tree
-        |> find_following_siblings(node)
-        |> Enum.filter(&Selector.match?(&1, selector))
-      end)
-
-    apply_combinators(tree, new_matches, rest)
-  end
-
-  defp adjacent_sibling_matches(tree, node, selector) do
-    with sibling when not is_nil(sibling) <- find_next_sibling(tree, node),
-         true <- Selector.match?(sibling, selector) do
-      [sibling]
+  defp next_element([{[node | siblings], parent, prev} | frames]) do
+    if element?(node) do
+      cursor = %{node: node, parent: parent, prev: prev}
+      {[cursor], [{element_children(node), cursor, nil}, {siblings, parent, cursor} | frames]}
     else
-      _ -> []
+      next_element([{siblings, parent, prev} | frames])
     end
   end
 
-  # Find all nodes matching a selector (recursive descent)
-  defp find_all_matching(nodes, selector) do
-    do_find_all_matching(nodes, selector, [])
-    |> Enum.reverse()
+  # Template contents are a {:content, children} wrapper in the tree; the
+  # query walks into them.
+  defp element_children({_tag, _attrs, children}) do
+    Enum.flat_map(children, fn
+      {:content, content} -> content
+      child -> [child]
+    end)
   end
 
-  defp do_find_all_matching([], _selector, acc), do: acc
+  defp matches_any?(cursor, chains), do: Enum.any?(chains, &matches?(cursor, &1))
 
-  defp do_find_all_matching([node | rest], selector, acc) do
-    acc =
-      if Selector.match?(node, selector) do
-        [node | acc]
-      else
-        acc
-      end
-
-    children = get_element_children(node)
-    acc = do_find_all_matching(children, selector, acc)
-    do_find_all_matching(rest, selector, acc)
+  defp matches?(cursor, [{combinator, selector} | rest]) do
+    Selector.match?(cursor.node, selector) and context_matches?(combinator, cursor, rest)
   end
 
-  # Find the next sibling of a node within the tree
-  defp find_next_sibling(tree, target) do
-    case find_siblings_of(tree, target) do
-      nil -> nil
-      siblings -> get_sibling_after(siblings, target)
-    end
+  defp context_matches?(nil, _cursor, []), do: true
+
+  defp context_matches?(:child, %{parent: nil}, _rest), do: false
+  defp context_matches?(:child, %{parent: parent}, rest), do: matches?(parent, rest)
+
+  defp context_matches?(:descendant, %{parent: nil}, _rest), do: false
+
+  defp context_matches?(:descendant, %{parent: parent}, rest) do
+    matches?(parent, rest) or context_matches?(:descendant, parent, rest)
   end
 
-  # Find all following siblings of a node within the tree
-  defp find_following_siblings(tree, target) do
-    case find_siblings_of(tree, target) do
-      nil -> []
-      siblings -> get_siblings_after(siblings, target)
-    end
-  end
+  defp context_matches?(:adjacent_sibling, %{prev: nil}, _rest), do: false
+  defp context_matches?(:adjacent_sibling, %{prev: prev}, rest), do: matches?(prev, rest)
 
-  # Find the siblings list containing the target node
-  defp find_siblings_of(nodes, target) when is_list(nodes) do
-    if Enum.any?(nodes, &(&1 == target)) do
-      nodes
-    else
-      nodes
-      |> Enum.find_value(fn node ->
-        children = get_element_children(node)
-        find_siblings_of(children, target)
-      end)
-    end
-  end
+  defp context_matches?(:general_sibling, %{prev: nil}, _rest), do: false
 
-  # Get the sibling immediately after target
-  defp get_sibling_after(siblings, target) do
-    siblings
-    |> Enum.drop_while(&(&1 != target))
-    |> Enum.drop(1)
-    |> Enum.find(&element?/1)
+  defp context_matches?(:general_sibling, %{prev: prev}, rest) do
+    matches?(prev, rest) or context_matches?(:general_sibling, prev, rest)
   end
-
-  # Get all siblings after target
-  defp get_siblings_after(siblings, target) do
-    siblings
-    |> Enum.drop_while(&(&1 != target))
-    |> Enum.drop(1)
-    |> Enum.filter(&element?/1)
-  end
-
-  defp get_element_children({{_ns, _tag}, _attrs, children}), do: children
-  defp get_element_children({_tag, _attrs, children}) when is_list(children), do: children
-  defp get_element_children(_), do: []
 
   @doc """
   Returns the immediate children of a node.
