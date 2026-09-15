@@ -1698,7 +1698,10 @@ defmodule PureHTMLTest do
       html = "<svg><a xlink:href=foo></a></svg>"
 
       # Act
-      result = html |> PureHTML.parse() |> PureHTML.to_html()
+      result =
+        html
+        |> PureHTML.parse()
+        |> PureHTML.to_html()
 
       # Assert
       assert result =~ "xlink:href=foo"
@@ -1729,7 +1732,7 @@ defmodule PureHTMLTest do
       # Assert
       assert [{:doctype, "html", nil, "about:legacy-compat"} | _] = nodes
       assert error_count == 0
-      assert PureHTML.to_html(nodes) |> String.starts_with?("<!DOCTYPE html>")
+      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE html>")
     end
 
     test "serializes a doctype with a missing name" do
@@ -1741,7 +1744,7 @@ defmodule PureHTMLTest do
 
       # Assert
       assert [{:doctype, nil, nil, nil} | _] = nodes
-      assert error_count >= 1
+      assert error_count == 2
       assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
     end
   end
