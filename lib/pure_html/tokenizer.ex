@@ -38,7 +38,7 @@ defmodule PureHTML.Tokenizer do
 
   # The tokenizer state struct
   defstruct [
-    # remaining input as a list of Unicode code points
+    # remaining input binary
     :input,
     # current state atom
     :state,
@@ -82,21 +82,27 @@ defmodule PureHTML.Tokenizer do
   defguardp is_surrogate(cp) when cp in 0xD800..0xDFFF
   defguardp is_outside_unicode_range(cp) when cp > 0x10FFFF
 
-  defguardp is_doctype_name(a, b, c, d, e, f, g)
-            when :erlang.bor(a, 0x20) == ?d and :erlang.bor(b, 0x20) == ?o and
-                   :erlang.bor(c, 0x20) == ?c and :erlang.bor(d, 0x20) == ?t and
-                   :erlang.bor(e, 0x20) == ?y and :erlang.bor(f, 0x20) == ?p and
-                   :erlang.bor(g, 0x20) == ?e
+  # Preprocessing the input stream: controls other than ASCII whitespace and
+  # U+0000, and noncharacters, are parse errors. Surrogates would be too, but
+  # decoded UTF-8 cannot carry one: the Encoding Standard's decoders replace a
+  # lone surrogate, and only a script API such as document.write() could push
+  # one past them.
+  defguardp is_input_stream_error(cp)
+            when cp in 0x01..0x08 or cp == 0x0B or cp in 0x0E..0x1F or cp in 0x7F..0x9F or
+                   cp in 0xFDD0..0xFDEF or rem(cp, 0x10000) in [0xFFFE, 0xFFFF]
 
-  defguardp is_public_name(a, b, c, d, e, f)
-            when :erlang.bor(a, 0x20) == ?p and :erlang.bor(b, 0x20) == ?u and
-                   :erlang.bor(c, 0x20) == ?b and :erlang.bor(d, 0x20) == ?l and
-                   :erlang.bor(e, 0x20) == ?i and :erlang.bor(f, 0x20) == ?c
+  # Match "doctype" case-insensitively using bitwise OR with 0x20 to force lowercase
+  # "doctype" as 56-bit integer: 0x646F6374797065
+  defguardp is_doctype(prefix)
+            when :erlang.bor(prefix, 0x20202020202020) == 0x646F6374797065
 
-  defguardp is_system_name(a, b, c, d, e, f)
-            when :erlang.bor(a, 0x20) == ?s and :erlang.bor(b, 0x20) == ?y and
-                   :erlang.bor(c, 0x20) == ?s and :erlang.bor(d, 0x20) == ?t and
-                   :erlang.bor(e, 0x20) == ?e and :erlang.bor(f, 0x20) == ?m
+  # "public" as 48-bit integer: 0x7075626C6963
+  defguardp is_public(prefix)
+            when :erlang.bor(prefix, 0x202020202020) == 0x7075626C6963
+
+  # "system" as 48-bit integer: 0x73797374656D
+  defguardp is_system(prefix)
+            when :erlang.bor(prefix, 0x202020202020) == 0x73797374656D
 
   defguardp is_attribute_value_state(state)
             when state in [
@@ -114,20 +120,28 @@ defmodule PureHTML.Tokenizer do
   @doc """
   Creates a new tokenizer state from input.
 
+  The input is decoded as UTF-8 with U+FFFD replacement, newlines are
+  normalized, and the input stream parse errors (controls, noncharacters)
+  are counted into `error_count`.
+
   ## Options
 
   - `:initial_state` - Starting tokenizer state (default: `:data`)
   - `:last_start_tag` - Last start tag name for appropriate end tag checks
   """
-  @spec new(String.t() | [integer()], keyword()) :: t()
-  def new(input, opts \\ []) when is_binary(input) or is_list(input) do
+  @spec new(String.t(), keyword()) :: t()
+  def new(input, opts \\ []) when is_binary(input) do
     initial_state = Keyword.get(opts, :initial_state, :data)
     last_start_tag = Keyword.get(opts, :last_start_tag, nil)
     xml_violation_mode = Keyword.get(opts, :xml_violation_mode, false)
-    {codepoints, preprocess_errors} = decode_input(input)
+
+    decoded_input =
+      input
+      |> normalize_newlines()
+      |> utf8_with_replacement()
 
     %__MODULE__{
-      input: codepoints,
+      input: decoded_input,
       state: initial_state,
       return_state: nil,
       token: nil,
@@ -138,7 +152,7 @@ defmodule PureHTML.Tokenizer do
       pending_chars: [],
       deferred_token: nil,
       xml_violation_mode: xml_violation_mode,
-      error_count: preprocess_errors
+      error_count: preprocess_error_count(decoded_input)
     }
   end
 
@@ -147,8 +161,8 @@ defmodule PureHTML.Tokenizer do
 
   The stream is lazy - tokens are produced on demand as the stream is consumed.
   """
-  @spec tokenize(String.t() | [integer()], keyword()) :: Enumerable.t()
-  def tokenize(input, opts \\ []) when is_binary(input) or is_list(input) do
+  @spec tokenize(String.t(), keyword()) :: Enumerable.t()
+  def tokenize(input, opts \\ []) when is_binary(input) do
     input
     |> new(opts)
     |> Stream.unfold(&next_token/1)
@@ -204,7 +218,7 @@ defmodule PureHTML.Tokenizer do
     :script_data_escape_start_dash
   ]
 
-  def next_token(%__MODULE__{input: [], state: s} = state)
+  def next_token(%__MODULE__{input: "", state: s} = state)
       when s in @eof_flush_states do
     emit_eof(state)
   end
@@ -280,45 +294,45 @@ defmodule PureHTML.Tokenizer do
   # --------------------------------------------------------------------------
 
   # Data state - the default state, reading regular content
-  defp step(%{state: :data, input: [?< | rest]} = state) do
+  defp step(%{state: :data, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :tag_open, input: rest)
   end
 
-  defp step(%{state: :data, input: [?& | _rest]} = state) do
+  defp step(%{state: :data, input: <<?&, _rest::binary>>} = state) do
     continue(state, state: :character_reference, return_state: :data)
   end
 
-  defp step(%{state: :data, input: [0 | rest]} = state) do
+  defp step(%{state: :data, input: <<0, rest::binary>>} = state) do
     # Null character - parse error, emit as character
     state
     |> parse_error()
     |> emit_char(<<0>>, input: rest)
   end
 
-  defp step(%{state: :data, input: input} = state) when input != [] do
+  defp step(%{state: :data, input: input} = state) when input != "" do
     # Read ahead until we hit <, &, null, or end - emit coalesced characters
     {chars, rest} = chars_until_data(input)
     emit_char(state, chars, input: rest)
   end
 
-  defp step(%{state: :data, input: []} = _state) do
+  defp step(%{state: :data, input: ""} = _state) do
     # Handled by next_token/1 - but keeping for completeness
     nil
   end
 
   # RAWTEXT state - for <style>, <xmp>, etc. No entity decoding.
-  defp step(%{state: :rawtext, input: [?< | rest]} = state) do
+  defp step(%{state: :rawtext, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :rawtext_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :rawtext, input: [0 | rest]} = state) do
+  defp step(%{state: :rawtext, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, input: rest)
   end
 
-  defp step(%{state: :rawtext, input: []} = _state), do: nil
+  defp step(%{state: :rawtext, input: ""} = _state), do: nil
 
   defp step(%{state: :rawtext, input: input} = state) do
     {chars, rest} = chars_until_rawtext(input)
@@ -326,21 +340,21 @@ defmodule PureHTML.Tokenizer do
   end
 
   # PLAINTEXT state - consumes everything until EOF, no end tag recognition
-  defp step(%{state: :plaintext, input: [0 | rest]} = state) do
+  defp step(%{state: :plaintext, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, input: rest)
   end
 
-  defp step(%{state: :plaintext, input: []} = _state), do: nil
+  defp step(%{state: :plaintext, input: ""} = _state), do: nil
 
   defp step(%{state: :plaintext, input: input} = state) do
     {chars, rest} = chars_until_null(input)
     emit_char(state, chars, input: rest)
   end
 
-  defp step(%{state: :rawtext_less_than_sign, input: [?/ | rest]} = state) do
+  defp step(%{state: :rawtext_less_than_sign, input: <<?/, rest::binary>>} = state) do
     continue(state, state: :rawtext_end_tag_open, buffer: "", input: rest)
   end
 
@@ -348,12 +362,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :rawtext)
   end
 
-  defp step(%{state: :rawtext_end_tag_open, input: [c | rest]} = state)
+  defp step(%{state: :rawtext_end_tag_open, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :rawtext_end_tag_name,
       token: {:end_tag, ""},
-      input: [c | rest]
+      input: <<c, rest::binary>>
     )
   end
 
@@ -361,7 +375,7 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "</", state: :rawtext)
   end
 
-  defp step(%{state: :rawtext_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
@@ -371,7 +385,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :rawtext_end_tag_name, input: [?/ | rest]} = state) do
+  defp step(%{state: :rawtext_end_tag_name, input: <<?/, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
@@ -380,7 +394,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :rawtext_end_tag_name, input: [?> | rest]} = state) do
+  defp step(%{state: :rawtext_end_tag_name, input: <<?>, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
@@ -389,14 +403,14 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :rawtext_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     state
     |> append_to_tag_name(<<c + 32>>)
     |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
-  defp step(%{state: :rawtext_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :rawtext_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_lower(c) do
     state
     |> append_to_tag_name(<<c>>)
@@ -408,29 +422,29 @@ defmodule PureHTML.Tokenizer do
   end
 
   # RCDATA state - for <textarea>, <title>. Processes entities.
-  defp step(%{state: :rcdata, input: [?< | rest]} = state) do
+  defp step(%{state: :rcdata, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :rcdata_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :rcdata, input: [?& | _rest]} = state) do
+  defp step(%{state: :rcdata, input: <<?&, _rest::binary>>} = state) do
     continue(state, state: :character_reference, return_state: :rcdata)
   end
 
-  defp step(%{state: :rcdata, input: [0 | rest]} = state) do
+  defp step(%{state: :rcdata, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, input: rest)
   end
 
-  defp step(%{state: :rcdata, input: []} = _state), do: nil
+  defp step(%{state: :rcdata, input: ""} = _state), do: nil
 
   defp step(%{state: :rcdata, input: input} = state) do
     {chars, rest} = chars_until_data(input)
     emit_char(state, chars, input: rest)
   end
 
-  defp step(%{state: :rcdata_less_than_sign, input: [?/ | rest]} = state) do
+  defp step(%{state: :rcdata_less_than_sign, input: <<?/, rest::binary>>} = state) do
     continue(state, state: :rcdata_end_tag_open, buffer: "", input: rest)
   end
 
@@ -438,12 +452,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :rcdata)
   end
 
-  defp step(%{state: :rcdata_end_tag_open, input: [c | rest]} = state)
+  defp step(%{state: :rcdata_end_tag_open, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :rcdata_end_tag_name,
       token: {:end_tag, ""},
-      input: [c | rest]
+      input: <<c, rest::binary>>
     )
   end
 
@@ -451,7 +465,7 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "</", state: :rcdata)
   end
 
-  defp step(%{state: :rcdata_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
@@ -461,7 +475,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :rcdata_end_tag_name, input: [?/ | rest]} = state) do
+  defp step(%{state: :rcdata_end_tag_name, input: <<?/, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
@@ -470,7 +484,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :rcdata_end_tag_name, input: [?> | rest]} = state) do
+  defp step(%{state: :rcdata_end_tag_name, input: <<?>, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
@@ -479,14 +493,14 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :rcdata_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     state
     |> append_to_tag_name(<<c + 32>>)
     |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
-  defp step(%{state: :rcdata_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :rcdata_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_lower(c) do
     state
     |> append_to_tag_name(<<c>>)
@@ -498,29 +512,29 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Script data state - for <script>. Similar to RAWTEXT but handles escaped states.
-  defp step(%{state: :script_data, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :script_data_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, input: rest)
   end
 
-  defp step(%{state: :script_data, input: []} = _state), do: nil
+  defp step(%{state: :script_data, input: ""} = _state), do: nil
 
   defp step(%{state: :script_data, input: input} = state) do
     {chars, rest} = chars_until_rawtext(input)
     emit_char(state, chars, input: rest)
   end
 
-  defp step(%{state: :script_data_less_than_sign, input: [?/ | rest]} = state) do
+  defp step(%{state: :script_data_less_than_sign, input: <<?/, rest::binary>>} = state) do
     continue(state, state: :script_data_end_tag_open, buffer: "", input: rest)
   end
 
-  defp step(%{state: :script_data_less_than_sign, input: [?! | rest]} = state) do
+  defp step(%{state: :script_data_less_than_sign, input: <<?!, rest::binary>>} = state) do
     emit_char(state, "<!", state: :script_data_escape_start, input: rest)
   end
 
@@ -528,12 +542,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :script_data)
   end
 
-  defp step(%{state: :script_data_end_tag_open, input: [c | rest]} = state)
+  defp step(%{state: :script_data_end_tag_open, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :script_data_end_tag_name,
       token: {:end_tag, ""},
-      input: [c | rest]
+      input: <<c, rest::binary>>
     )
   end
 
@@ -541,7 +555,7 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "</", state: :script_data)
   end
 
-  defp step(%{state: :script_data_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
@@ -551,7 +565,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_end_tag_name, input: [?/ | rest]} = state) do
+  defp step(%{state: :script_data_end_tag_name, input: <<?/, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
@@ -560,7 +574,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_end_tag_name, input: [?> | rest]} = state) do
+  defp step(%{state: :script_data_end_tag_name, input: <<?>, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
@@ -569,14 +583,14 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     state
     |> append_to_tag_name(<<c + 32>>)
     |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
-  defp step(%{state: :script_data_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :script_data_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_lower(c) do
     state
     |> append_to_tag_name(<<c>>)
@@ -588,7 +602,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Script data escape start
-  defp step(%{state: :script_data_escape_start, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_escape_start, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", state: :script_data_escape_start_dash, input: rest)
   end
 
@@ -596,7 +610,7 @@ defmodule PureHTML.Tokenizer do
     continue(state, state: :script_data)
   end
 
-  defp step(%{state: :script_data_escape_start_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_escape_start_dash, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", state: :script_data_escaped_dash_dash, input: rest)
   end
 
@@ -605,22 +619,22 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Script data escaped state
-  defp step(%{state: :script_data_escaped, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_escaped, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", state: :script_data_escaped_dash, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data_escaped, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :script_data_escaped_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data_escaped, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped, input: []} = state) do
+  defp step(%{state: :script_data_escaped, input: ""} = state) do
     # eof-in-script-html-comment-like-text parse error
     {:eof_parse_error, parse_error(state)}
   end
@@ -630,63 +644,63 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, chars, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", state: :script_data_escaped_dash_dash, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :script_data_escaped_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, state: :script_data_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash, input: []} = state) do
+  defp step(%{state: :script_data_escaped_dash, input: ""} = state) do
     # eof-in-script-html-comment-like-text parse error
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :script_data_escaped_dash, input: [c | rest]} = state) do
-    emit_char(state, codepoint_to_binary(c), state: :script_data_escaped, input: rest)
+  defp step(%{state: :script_data_escaped_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash_dash, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<?<, rest::binary>>} = state) do
     continue(state, state: :script_data_escaped_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash_dash, input: [?> | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<?>, rest::binary>>} = state) do
     emit_char(state, ">", state: :script_data, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash_dash, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, state: :script_data_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_dash_dash, input: []} = state) do
+  defp step(%{state: :script_data_escaped_dash_dash, input: ""} = state) do
     # eof-in-script-html-comment-like-text parse error
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :script_data_escaped_dash_dash, input: [c | rest]} = state) do
-    emit_char(state, codepoint_to_binary(c), state: :script_data_escaped, input: rest)
+  defp step(%{state: :script_data_escaped_dash_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_less_than_sign, input: [?/ | rest]} = state) do
+  defp step(%{state: :script_data_escaped_less_than_sign, input: <<?/, rest::binary>>} = state) do
     continue(state, state: :script_data_escaped_end_tag_open, buffer: "", input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_less_than_sign, input: [c | rest]} = state)
+  defp step(%{state: :script_data_escaped_less_than_sign, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
 
@@ -701,12 +715,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :script_data_escaped)
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_open, input: [c | rest]} = state)
+  defp step(%{state: :script_data_escaped_end_tag_open, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :script_data_escaped_end_tag_name,
       token: {:end_tag, ""},
-      input: [c | rest]
+      input: <<c, rest::binary>>
     )
   end
 
@@ -714,7 +728,7 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "</", state: :script_data_escaped)
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     if appropriate_end_tag?(state) do
       continue(state, state: :before_attribute_name, input: rest)
@@ -724,7 +738,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_name, input: [?/ | rest]} = state) do
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<?/, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       continue(state, state: :self_closing_start_tag, input: rest)
     else
@@ -733,7 +747,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_name, input: [?> | rest]} = state) do
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<?>, rest::binary>>} = state) do
     if appropriate_end_tag?(state) do
       emit(state, input: rest)
     else
@@ -746,14 +760,14 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     state
     |> append_to_tag_name(<<c + 32>>)
     |> continue(buffer: state.buffer <> <<c>>, input: rest)
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_name, input: [c | rest]} = state)
+  defp step(%{state: :script_data_escaped_end_tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_lower(c) do
     state
     |> append_to_tag_name(<<c>>)
@@ -765,7 +779,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Script data double escape start
-  defp step(%{state: :script_data_double_escape_start, input: [c | rest]} = state)
+  defp step(%{state: :script_data_double_escape_start, input: <<c, rest::binary>>} = state)
        when c in ~c[\t\n\f /] or c == ?> do
     if state.buffer == "script" do
       emit_char(state, <<c>>, state: :script_data_double_escaped, input: rest)
@@ -774,7 +788,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_double_escape_start, input: [c | rest]} = state)
+  defp step(%{state: :script_data_double_escape_start, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
     emit_char(state, <<c>>, buffer: state.buffer <> char, input: rest)
@@ -785,22 +799,22 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Script data double escaped state
-  defp step(%{state: :script_data_double_escaped, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", state: :script_data_double_escaped_dash, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped, input: <<?<, rest::binary>>} = state) do
     emit_char(state, "<", state: :script_data_double_escaped_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped, input: []} = state) do
+  defp step(%{state: :script_data_double_escaped, input: ""} = state) do
     # eof-in-script-html-comment-like-text parse error
     {:eof_parse_error, parse_error(state)}
   end
@@ -810,59 +824,63 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, chars, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", state: :script_data_double_escaped_dash_dash, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash, input: <<?<, rest::binary>>} = state) do
     emit_char(state, "<", state: :script_data_double_escaped_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, state: :script_data_double_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash, input: []} = state) do
+  defp step(%{state: :script_data_double_escaped_dash, input: ""} = state) do
     # eof-in-script-html-comment-like-text parse error
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :script_data_double_escaped_dash, input: [c | rest]} = state) do
-    emit_char(state, codepoint_to_binary(c), state: :script_data_double_escaped, input: rest)
+  defp step(%{state: :script_data_double_escaped_dash, input: <<c::utf8, rest::binary>>} = state) do
+    emit_char(state, <<c::utf8>>, state: :script_data_double_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<?-, rest::binary>>} = state) do
     emit_char(state, "-", input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: [?< | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<?<, rest::binary>>} = state) do
     emit_char(state, "<", state: :script_data_double_escaped_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: [?> | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<?>, rest::binary>>} = state) do
     emit_char(state, ">", state: :script_data, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: [0 | rest]} = state) do
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> emit_char(<<0xFFFD::utf8>>, state: :script_data_double_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: []} = state) do
+  defp step(%{state: :script_data_double_escaped_dash_dash, input: ""} = state) do
     # eof-in-script-html-comment-like-text parse error
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :script_data_double_escaped_dash_dash, input: [c | rest]} = state) do
-    emit_char(state, codepoint_to_binary(c), state: :script_data_double_escaped, input: rest)
+  defp step(
+         %{state: :script_data_double_escaped_dash_dash, input: <<c::utf8, rest::binary>>} = state
+       ) do
+    emit_char(state, <<c::utf8>>, state: :script_data_double_escaped, input: rest)
   end
 
-  defp step(%{state: :script_data_double_escaped_less_than_sign, input: [?/ | rest]} = state) do
+  defp step(
+         %{state: :script_data_double_escaped_less_than_sign, input: <<?/, rest::binary>>} = state
+       ) do
     emit_char(state, "/", state: :script_data_double_escape_end, buffer: "", input: rest)
   end
 
@@ -870,7 +888,7 @@ defmodule PureHTML.Tokenizer do
     continue(state, state: :script_data_double_escaped)
   end
 
-  defp step(%{state: :script_data_double_escape_end, input: [c | rest]} = state)
+  defp step(%{state: :script_data_double_escape_end, input: <<c, rest::binary>>} = state)
        when c in ~c[\t\n\f /] or c == ?> do
     if state.buffer == "script" do
       emit_char(state, <<c>>, state: :script_data_escaped, input: rest)
@@ -879,7 +897,7 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :script_data_double_escape_end, input: [c | rest]} = state)
+  defp step(%{state: :script_data_double_escape_end, input: <<c, rest::binary>>} = state)
        when is_ascii_alpha(c) do
     char = if is_ascii_upper(c), do: <<c + 32>>, else: <<c>>
     emit_char(state, <<c>>, buffer: state.buffer <> char, input: rest)
@@ -890,30 +908,30 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Tag open state - saw '<', determine what kind of tag
-  defp step(%{state: :tag_open, input: [?! | rest]} = state) do
+  defp step(%{state: :tag_open, input: <<?!, rest::binary>>} = state) do
     continue(state, state: :markup_declaration_open, input: rest)
   end
 
-  defp step(%{state: :tag_open, input: [?/ | rest]} = state) do
+  defp step(%{state: :tag_open, input: <<?/, rest::binary>>} = state) do
     continue(state, state: :end_tag_open, input: rest)
   end
 
-  defp step(%{state: :tag_open, input: [c | rest]} = state) when is_ascii_alpha(c) do
+  defp step(%{state: :tag_open, input: <<c, rest::binary>>} = state) when is_ascii_alpha(c) do
     continue(state,
       state: :tag_name,
-      input: [c | rest],
+      input: <<c, rest::binary>>,
       token: {:start_tag, "", [], false}
     )
   end
 
-  defp step(%{state: :tag_open, input: [?? | _rest]} = state) do
+  defp step(%{state: :tag_open, input: <<??, _rest::binary>>} = state) do
     # unexpected-question-mark-instead-of-tag-name parse error
     state
     |> parse_error()
     |> continue(state: :bogus_comment, token: {:comment, ""})
   end
 
-  defp step(%{state: :tag_open, input: []} = state) do
+  defp step(%{state: :tag_open, input: ""} = state) do
     # eof-before-tag-name parse error
     state
     |> parse_error()
@@ -928,18 +946,18 @@ defmodule PureHTML.Tokenizer do
   end
 
   # End tag open state - saw '</'
-  defp step(%{state: :end_tag_open, input: [c | rest]} = state) when is_ascii_alpha(c) do
-    continue(state, state: :tag_name, input: [c | rest], token: {:end_tag, ""})
+  defp step(%{state: :end_tag_open, input: <<c, rest::binary>>} = state) when is_ascii_alpha(c) do
+    continue(state, state: :tag_name, input: <<c, rest::binary>>, token: {:end_tag, ""})
   end
 
-  defp step(%{state: :end_tag_open, input: [?> | rest]} = state) do
+  defp step(%{state: :end_tag_open, input: <<?>, rest::binary>>} = state) do
     # Missing end tag name - parse error, ignore token
     state
     |> parse_error()
     |> continue(state: :data, input: rest)
   end
 
-  defp step(%{state: :end_tag_open, input: []} = state) do
+  defp step(%{state: :end_tag_open, input: ""} = state) do
     # eof-before-tag-name parse error
     state
     |> parse_error()
@@ -954,29 +972,29 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Tag name state - reading the tag name
-  defp step(%{state: :tag_name, input: [c | rest]} = state)
+  defp step(%{state: :tag_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest, state: :before_attribute_name)
   end
 
-  defp step(%{state: :tag_name, input: [?/ | rest]} = state) do
+  defp step(%{state: :tag_name, input: <<?/, rest::binary>>} = state) do
     continue(state, input: rest, state: :self_closing_start_tag)
   end
 
-  defp step(%{state: :tag_name, input: [?> | rest]} = state) do
+  defp step(%{state: :tag_name, input: <<?>, rest::binary>>} = state) do
     state
     |> maybe_update_last_start_tag()
     |> emit(input: rest)
   end
 
-  defp step(%{state: :tag_name, input: [c | rest]} = state) when is_ascii_upper(c) do
+  defp step(%{state: :tag_name, input: <<c, rest::binary>>} = state) when is_ascii_upper(c) do
     # Uppercase - lowercase it
     state
     |> append_to_tag_name(<<c + 32>>)
     |> continue(input: rest)
   end
 
-  defp step(%{state: :tag_name, input: [0 | rest]} = state) do
+  defp step(%{state: :tag_name, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -984,34 +1002,34 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :tag_name, input: []} = state) do
+  defp step(%{state: :tag_name, input: ""} = state) do
     # EOF in tag - discard the incomplete tag (parse error)
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :tag_name, input: [c | rest]} = state) do
+  defp step(%{state: :tag_name, input: <<c::utf8, rest::binary>>} = state) do
     state
-    |> append_to_tag_name(codepoint_to_binary(c))
+    |> append_to_tag_name(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # Before attribute name state
-  defp step(%{state: :before_attribute_name, input: [c | rest]} = state)
+  defp step(%{state: :before_attribute_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :before_attribute_name, input: [c | _]} = state)
+  defp step(%{state: :before_attribute_name, input: <<c, _::binary>>} = state)
        when c in ~c[/>] do
     continue(state, state: :after_attribute_name)
   end
 
-  defp step(%{state: :before_attribute_name, input: []} = state) do
+  defp step(%{state: :before_attribute_name, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :before_attribute_name, input: [?= | rest]} = state) do
+  defp step(%{state: :before_attribute_name, input: <<?=, rest::binary>>} = state) do
     # unexpected-equals-sign-before-attribute-name parse error
     state
     |> parse_error()
@@ -1026,37 +1044,37 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Attribute name state
-  defp step(%{state: :attribute_name, input: [c | _]} = state)
+  defp step(%{state: :attribute_name, input: <<c, _::binary>>} = state)
        when c in ~c[\t\n\f />] do
     state
     |> finalize_attribute_name()
     |> continue(state: :after_attribute_name)
   end
 
-  defp step(%{state: :attribute_name, input: []} = state) do
+  defp step(%{state: :attribute_name, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :attribute_name, input: [?= | rest]} = state) do
+  defp step(%{state: :attribute_name, input: <<?=, rest::binary>>} = state) do
     state
     |> finalize_attribute_name()
     |> continue(state: :before_attribute_value, input: rest)
   end
 
-  defp step(%{state: :attribute_name, input: [c | rest]} = state)
+  defp step(%{state: :attribute_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     continue(state, input: rest, buffer: state.buffer <> <<c + 32>>)
   end
 
-  defp step(%{state: :attribute_name, input: [0 | rest]} = state) do
+  defp step(%{state: :attribute_name, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> continue(input: rest, buffer: state.buffer <> <<0xFFFD::utf8>>)
   end
 
-  defp step(%{state: :attribute_name, input: [c | rest]} = state)
+  defp step(%{state: :attribute_name, input: <<c, rest::binary>>} = state)
        when c in [?", ?', ?<] do
     # unexpected-character-in-attribute-name parse error
     state
@@ -1064,27 +1082,27 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest, buffer: state.buffer <> <<c>>)
   end
 
-  defp step(%{state: :attribute_name, input: [c | rest]} = state) do
-    continue(state, input: rest, buffer: state.buffer <> codepoint_to_binary(c))
+  defp step(%{state: :attribute_name, input: <<c::utf8, rest::binary>>} = state) do
+    continue(state, input: rest, buffer: state.buffer <> <<c::utf8>>)
   end
 
   # After attribute name state
-  defp step(%{state: :after_attribute_name, input: [c | rest]} = state)
+  defp step(%{state: :after_attribute_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :after_attribute_name, input: [?/ | rest]} = state) do
+  defp step(%{state: :after_attribute_name, input: <<?/, rest::binary>>} = state) do
     state
     |> finalize_attribute_value()
     |> continue(state: :self_closing_start_tag, input: rest)
   end
 
-  defp step(%{state: :after_attribute_name, input: [?= | rest]} = state) do
+  defp step(%{state: :after_attribute_name, input: <<?=, rest::binary>>} = state) do
     continue(state, state: :before_attribute_value, input: rest)
   end
 
-  defp step(%{state: :after_attribute_name, input: [?> | rest]} = state) do
+  defp step(%{state: :after_attribute_name, input: <<?>, rest::binary>>} = state) do
     state
     |> finalize_attribute_value()
     |> maybe_update_last_start_tag()
@@ -1092,7 +1110,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :after_attribute_name, input: []} = state) do
+  defp step(%{state: :after_attribute_name, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
@@ -1105,20 +1123,20 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Before attribute value state
-  defp step(%{state: :before_attribute_value, input: [c | rest]} = state)
+  defp step(%{state: :before_attribute_value, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :before_attribute_value, input: [?" | rest]} = state) do
+  defp step(%{state: :before_attribute_value, input: <<?", rest::binary>>} = state) do
     continue(state, state: :attribute_value_double_quoted, input: rest)
   end
 
-  defp step(%{state: :before_attribute_value, input: [?' | rest]} = state) do
+  defp step(%{state: :before_attribute_value, input: <<?', rest::binary>>} = state) do
     continue(state, state: :attribute_value_single_quoted, input: rest)
   end
 
-  defp step(%{state: :before_attribute_value, input: [?> | rest]} = state) do
+  defp step(%{state: :before_attribute_value, input: <<?>, rest::binary>>} = state) do
     # missing-attribute-value parse error
     state
     |> parse_error()
@@ -1128,7 +1146,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :before_attribute_value, input: []} = state) do
+  defp step(%{state: :before_attribute_value, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
@@ -1138,72 +1156,72 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Attribute value (double-quoted) state
-  defp step(%{state: :attribute_value_double_quoted, input: [?" | rest]} = state) do
+  defp step(%{state: :attribute_value_double_quoted, input: <<?", rest::binary>>} = state) do
     state
     |> finalize_attribute_value()
     |> continue(state: :after_attribute_value_quoted, input: rest)
   end
 
-  defp step(%{state: :attribute_value_double_quoted, input: [?& | _]} = state) do
+  defp step(%{state: :attribute_value_double_quoted, input: <<?&, _::binary>>} = state) do
     continue(state, state: :character_reference, return_state: :attribute_value_double_quoted)
   end
 
-  defp step(%{state: :attribute_value_double_quoted, input: [0 | rest]} = state) do
+  defp step(%{state: :attribute_value_double_quoted, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> continue(input: rest, attr_value: state.attr_value <> <<0xFFFD::utf8>>)
   end
 
-  defp step(%{state: :attribute_value_double_quoted, input: []} = state) do
+  defp step(%{state: :attribute_value_double_quoted, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :attribute_value_double_quoted, input: [c | rest]} = state) do
-    continue(state, input: rest, attr_value: state.attr_value <> codepoint_to_binary(c))
+  defp step(%{state: :attribute_value_double_quoted, input: <<c::utf8, rest::binary>>} = state) do
+    continue(state, input: rest, attr_value: state.attr_value <> <<c::utf8>>)
   end
 
   # Attribute value (single-quoted) state
-  defp step(%{state: :attribute_value_single_quoted, input: [?' | rest]} = state) do
+  defp step(%{state: :attribute_value_single_quoted, input: <<?', rest::binary>>} = state) do
     state
     |> finalize_attribute_value()
     |> continue(state: :after_attribute_value_quoted, input: rest)
   end
 
-  defp step(%{state: :attribute_value_single_quoted, input: [?& | _]} = state) do
+  defp step(%{state: :attribute_value_single_quoted, input: <<?&, _::binary>>} = state) do
     continue(state, state: :character_reference, return_state: :attribute_value_single_quoted)
   end
 
-  defp step(%{state: :attribute_value_single_quoted, input: [0 | rest]} = state) do
+  defp step(%{state: :attribute_value_single_quoted, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> continue(input: rest, attr_value: state.attr_value <> <<0xFFFD::utf8>>)
   end
 
-  defp step(%{state: :attribute_value_single_quoted, input: []} = state) do
+  defp step(%{state: :attribute_value_single_quoted, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :attribute_value_single_quoted, input: [c | rest]} = state) do
-    continue(state, input: rest, attr_value: state.attr_value <> codepoint_to_binary(c))
+  defp step(%{state: :attribute_value_single_quoted, input: <<c::utf8, rest::binary>>} = state) do
+    continue(state, input: rest, attr_value: state.attr_value <> <<c::utf8>>)
   end
 
   # Attribute value (unquoted) state
-  defp step(%{state: :attribute_value_unquoted, input: [c | rest]} = state)
+  defp step(%{state: :attribute_value_unquoted, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     state
     |> finalize_attribute_value()
     |> continue(state: :before_attribute_name, input: rest)
   end
 
-  defp step(%{state: :attribute_value_unquoted, input: [?& | _]} = state) do
+  defp step(%{state: :attribute_value_unquoted, input: <<?&, _::binary>>} = state) do
     continue(state, state: :character_reference, return_state: :attribute_value_unquoted)
   end
 
-  defp step(%{state: :attribute_value_unquoted, input: [?> | rest]} = state) do
+  defp step(%{state: :attribute_value_unquoted, input: <<?>, rest::binary>>} = state) do
     state
     |> finalize_attribute_value()
     |> maybe_update_last_start_tag()
@@ -1211,19 +1229,19 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :attribute_value_unquoted, input: [0 | rest]} = state) do
+  defp step(%{state: :attribute_value_unquoted, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
     |> continue(input: rest, attr_value: state.attr_value <> <<0xFFFD::utf8>>)
   end
 
-  defp step(%{state: :attribute_value_unquoted, input: []} = state) do
+  defp step(%{state: :attribute_value_unquoted, input: ""} = state) do
     # EOF in tag - discard (parse error)
     {:eof_parse_error, parse_error(state)}
   end
 
-  defp step(%{state: :attribute_value_unquoted, input: [c | rest]} = state)
+  defp step(%{state: :attribute_value_unquoted, input: <<c, rest::binary>>} = state)
        when c in [?", ?', ?<, ?`] do
     # unexpected-character-in-unquoted-attribute-value parse error
     state
@@ -1231,28 +1249,28 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest, attr_value: state.attr_value <> <<c>>)
   end
 
-  defp step(%{state: :attribute_value_unquoted, input: [c | rest]} = state) do
-    continue(state, input: rest, attr_value: state.attr_value <> codepoint_to_binary(c))
+  defp step(%{state: :attribute_value_unquoted, input: <<c::utf8, rest::binary>>} = state) do
+    continue(state, input: rest, attr_value: state.attr_value <> <<c::utf8>>)
   end
 
   # After attribute value (quoted) state
-  defp step(%{state: :after_attribute_value_quoted, input: [c | rest]} = state)
+  defp step(%{state: :after_attribute_value_quoted, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, state: :before_attribute_name, input: rest)
   end
 
-  defp step(%{state: :after_attribute_value_quoted, input: [?/ | rest]} = state) do
+  defp step(%{state: :after_attribute_value_quoted, input: <<?/, rest::binary>>} = state) do
     continue(state, state: :self_closing_start_tag, input: rest)
   end
 
-  defp step(%{state: :after_attribute_value_quoted, input: [?> | rest]} = state) do
+  defp step(%{state: :after_attribute_value_quoted, input: <<?>, rest::binary>>} = state) do
     state
     |> maybe_update_last_start_tag()
     |> maybe_end_tag_with_attributes()
     |> emit(input: rest)
   end
 
-  defp step(%{state: :after_attribute_value_quoted, input: []} = state) do
+  defp step(%{state: :after_attribute_value_quoted, input: ""} = state) do
     # eof-in-tag parse error
     {:eof_parse_error, parse_error(state)}
   end
@@ -1266,7 +1284,7 @@ defmodule PureHTML.Tokenizer do
 
   # Self-closing start tag state
   defp step(
-         %{state: :self_closing_start_tag, input: [?> | rest], token: {:end_tag, _}} =
+         %{state: :self_closing_start_tag, input: <<?>, rest::binary>>, token: {:end_tag, _}} =
            state
        ) do
     # end-tag-with-trailing-solidus parse error
@@ -1276,14 +1294,14 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :self_closing_start_tag, input: [?> | rest]} = state) do
+  defp step(%{state: :self_closing_start_tag, input: <<?>, rest::binary>>} = state) do
     state
     |> set_self_closing()
     |> maybe_update_last_start_tag()
     |> emit(input: rest)
   end
 
-  defp step(%{state: :self_closing_start_tag, input: []} = state) do
+  defp step(%{state: :self_closing_start_tag, input: ""} = state) do
     # eof-in-tag parse error
     {:eof_parse_error, parse_error(state)}
   end
@@ -1296,14 +1314,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Markup declaration open state - after '<!'
-  defp step(%{state: :markup_declaration_open, input: [?-, ?- | rest]} = state) do
+  defp step(%{state: :markup_declaration_open, input: <<"--", rest::binary>>} = state) do
     continue(state, state: :comment_start, input: rest, token: {:comment, ""})
   end
 
-  defp step(
-         %{state: :markup_declaration_open, input: [d0, d1, d2, d3, d4, d5, d6 | rest]} = state
-       )
-       when is_doctype_name(d0, d1, d2, d3, d4, d5, d6) do
+  defp step(%{state: :markup_declaration_open, input: <<prefix::56, rest::binary>>} = state)
+       when is_doctype(prefix) do
     continue(state, state: :doctype, input: rest)
   end
 
@@ -1311,7 +1327,7 @@ defmodule PureHTML.Tokenizer do
   defp step(
          %{
            state: :markup_declaration_open,
-           input: [?[, ?C, ?D, ?A, ?T, ?A, ?[ | rest],
+           input: <<"[CDATA[", rest::binary>>,
            adjusted_current_node_not_in_html_namespace: true
          } = state
        ) do
@@ -1322,7 +1338,7 @@ defmodule PureHTML.Tokenizer do
   defp step(
          %{
            state: :markup_declaration_open,
-           input: [?[, ?C, ?D, ?A, ?T, ?A, ?[ | rest],
+           input: <<"[CDATA[", rest::binary>>,
            adjusted_current_node_not_in_html_namespace: false
          } = state
        ) do
@@ -1340,11 +1356,11 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment start state
-  defp step(%{state: :comment_start, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_start, input: <<?-, rest::binary>>} = state) do
     continue(state, state: :comment_start_dash, input: rest)
   end
 
-  defp step(%{state: :comment_start, input: [?> | rest]} = state) do
+  defp step(%{state: :comment_start, input: <<?>, rest::binary>>} = state) do
     # abrupt-closing-of-empty-comment parse error
     state
     |> parse_error()
@@ -1356,18 +1372,18 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment start dash state
-  defp step(%{state: :comment_start_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_start_dash, input: <<?-, rest::binary>>} = state) do
     continue(state, state: :comment_end, input: rest)
   end
 
-  defp step(%{state: :comment_start_dash, input: [?> | rest]} = state) do
+  defp step(%{state: :comment_start_dash, input: <<?>, rest::binary>>} = state) do
     # abrupt-closing-of-empty-comment parse error
     state
     |> parse_error()
     |> emit(input: rest)
   end
 
-  defp step(%{state: :comment_start_dash, input: []} = state) do
+  defp step(%{state: :comment_start_dash, input: ""} = state) do
     # eof-in-comment parse error
     state
     |> parse_error()
@@ -1381,17 +1397,17 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment state
-  defp step(%{state: :comment, input: [?< | rest]} = state) do
+  defp step(%{state: :comment, input: <<?<, rest::binary>>} = state) do
     state
     |> append_to_comment("<")
     |> continue(state: :comment_less_than_sign, input: rest)
   end
 
-  defp step(%{state: :comment, input: [?- | rest]} = state) do
+  defp step(%{state: :comment, input: <<?-, rest::binary>>} = state) do
     continue(state, state: :comment_end_dash, input: rest)
   end
 
-  defp step(%{state: :comment, input: [0 | rest]} = state) do
+  defp step(%{state: :comment, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -1399,27 +1415,27 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :comment, input: []} = state) do
+  defp step(%{state: :comment, input: ""} = state) do
     # eof-in-comment parse error
     state
     |> parse_error()
     |> emit()
   end
 
-  defp step(%{state: :comment, input: [c | rest]} = state) do
+  defp step(%{state: :comment, input: <<c::utf8, rest::binary>>} = state) do
     state
-    |> append_to_comment(codepoint_to_binary(c))
+    |> append_to_comment(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # Comment less-than sign state
-  defp step(%{state: :comment_less_than_sign, input: [?! | rest]} = state) do
+  defp step(%{state: :comment_less_than_sign, input: <<?!, rest::binary>>} = state) do
     state
     |> append_to_comment("!")
     |> continue(state: :comment_less_than_sign_bang, input: rest)
   end
 
-  defp step(%{state: :comment_less_than_sign, input: [?< | rest]} = state) do
+  defp step(%{state: :comment_less_than_sign, input: <<?<, rest::binary>>} = state) do
     state
     |> append_to_comment("<")
     |> continue(input: rest)
@@ -1430,7 +1446,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment less-than sign bang state
-  defp step(%{state: :comment_less_than_sign_bang, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_less_than_sign_bang, input: <<?-, rest::binary>>} = state) do
     continue(state, state: :comment_less_than_sign_bang_dash, input: rest)
   end
 
@@ -1439,7 +1455,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment less-than sign bang dash state
-  defp step(%{state: :comment_less_than_sign_bang_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_less_than_sign_bang_dash, input: <<?-, rest::binary>>} = state) do
     continue(state, state: :comment_less_than_sign_bang_dash_dash, input: rest)
   end
 
@@ -1448,11 +1464,11 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment less-than sign bang dash dash state
-  defp step(%{state: :comment_less_than_sign_bang_dash_dash, input: [?> | _]} = state) do
+  defp step(%{state: :comment_less_than_sign_bang_dash_dash, input: <<?>, _::binary>>} = state) do
     continue(state, state: :comment_end)
   end
 
-  defp step(%{state: :comment_less_than_sign_bang_dash_dash, input: []} = state) do
+  defp step(%{state: :comment_less_than_sign_bang_dash_dash, input: ""} = state) do
     continue(state, state: :comment_end)
   end
 
@@ -1464,11 +1480,11 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment end dash state
-  defp step(%{state: :comment_end_dash, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_end_dash, input: <<?-, rest::binary>>} = state) do
     continue(state, state: :comment_end, input: rest)
   end
 
-  defp step(%{state: :comment_end_dash, input: []} = state) do
+  defp step(%{state: :comment_end_dash, input: ""} = state) do
     # eof-in-comment parse error
     state
     |> parse_error()
@@ -1482,21 +1498,21 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment end state
-  defp step(%{state: :comment_end, input: [?> | rest]} = state) do
+  defp step(%{state: :comment_end, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :comment_end, input: [?! | rest]} = state) do
+  defp step(%{state: :comment_end, input: <<?!, rest::binary>>} = state) do
     continue(state, state: :comment_end_bang, input: rest)
   end
 
-  defp step(%{state: :comment_end, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_end, input: <<?-, rest::binary>>} = state) do
     state
     |> append_to_comment("-")
     |> continue(input: rest)
   end
 
-  defp step(%{state: :comment_end, input: []} = state) do
+  defp step(%{state: :comment_end, input: ""} = state) do
     # eof-in-comment parse error
     state
     |> parse_error()
@@ -1510,20 +1526,20 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Comment end bang state
-  defp step(%{state: :comment_end_bang, input: [?- | rest]} = state) do
+  defp step(%{state: :comment_end_bang, input: <<?-, rest::binary>>} = state) do
     state
     |> append_to_comment("--!")
     |> continue(state: :comment_end_dash, input: rest)
   end
 
-  defp step(%{state: :comment_end_bang, input: [?> | rest]} = state) do
+  defp step(%{state: :comment_end_bang, input: <<?>, rest::binary>>} = state) do
     # incorrectly-closed-comment parse error
     state
     |> parse_error()
     |> emit(input: rest)
   end
 
-  defp step(%{state: :comment_end_bang, input: []} = state) do
+  defp step(%{state: :comment_end_bang, input: ""} = state) do
     # eof-in-comment parse error
     state
     |> parse_error()
@@ -1537,15 +1553,15 @@ defmodule PureHTML.Tokenizer do
   end
 
   # DOCTYPE state
-  defp step(%{state: :doctype, input: [c | rest]} = state) when is_ascii_whitespace(c) do
+  defp step(%{state: :doctype, input: <<c, rest::binary>>} = state) when is_ascii_whitespace(c) do
     continue(state, state: :before_doctype_name, input: rest)
   end
 
-  defp step(%{state: :doctype, input: [?> | _]} = state) do
+  defp step(%{state: :doctype, input: <<?>, _::binary>>} = state) do
     continue(state, state: :before_doctype_name)
   end
 
-  defp step(%{state: :doctype, input: []} = state) do
+  defp step(%{state: :doctype, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1560,12 +1576,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Before DOCTYPE name state
-  defp step(%{state: :before_doctype_name, input: [c | rest]} = state)
+  defp step(%{state: :before_doctype_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :before_doctype_name, input: [c | rest]} = state)
+  defp step(%{state: :before_doctype_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     continue(state,
       state: :doctype_name,
@@ -1574,7 +1590,7 @@ defmodule PureHTML.Tokenizer do
     )
   end
 
-  defp step(%{state: :before_doctype_name, input: [0 | rest]} = state) do
+  defp step(%{state: :before_doctype_name, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -1585,46 +1601,46 @@ defmodule PureHTML.Tokenizer do
     )
   end
 
-  defp step(%{state: :before_doctype_name, input: [?> | rest]} = state) do
+  defp step(%{state: :before_doctype_name, input: <<?>, rest::binary>>} = state) do
     # missing-doctype-name parse error
     state
     |> parse_error()
     |> then(&emit(%{&1 | token: {:doctype, nil, nil, nil, true}}, input: rest))
   end
 
-  defp step(%{state: :before_doctype_name, input: []} = state) do
+  defp step(%{state: :before_doctype_name, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
     |> then(&emit(%{&1 | token: {:doctype, nil, nil, nil, true}}, []))
   end
 
-  defp step(%{state: :before_doctype_name, input: [c | rest]} = state) do
+  defp step(%{state: :before_doctype_name, input: <<c::utf8, rest::binary>>} = state) do
     continue(state,
       state: :doctype_name,
       input: rest,
-      token: {:doctype, codepoint_to_binary(c), nil, nil, false}
+      token: {:doctype, <<c::utf8>>, nil, nil, false}
     )
   end
 
   # DOCTYPE name state
-  defp step(%{state: :doctype_name, input: [c | rest]} = state)
+  defp step(%{state: :doctype_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest, state: :after_doctype_name)
   end
 
-  defp step(%{state: :doctype_name, input: [?> | rest]} = state) do
+  defp step(%{state: :doctype_name, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :doctype_name, input: [c | rest]} = state)
+  defp step(%{state: :doctype_name, input: <<c, rest::binary>>} = state)
        when is_ascii_upper(c) do
     state
     |> append_to_doctype_name(<<c + 32>>)
     |> continue(input: rest)
   end
 
-  defp step(%{state: :doctype_name, input: [0 | rest]} = state) do
+  defp step(%{state: :doctype_name, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -1632,7 +1648,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :doctype_name, input: []} = state) do
+  defp step(%{state: :doctype_name, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1640,23 +1656,23 @@ defmodule PureHTML.Tokenizer do
     |> emit()
   end
 
-  defp step(%{state: :doctype_name, input: [c | rest]} = state) do
+  defp step(%{state: :doctype_name, input: <<c::utf8, rest::binary>>} = state) do
     state
-    |> append_to_doctype_name(codepoint_to_binary(c))
+    |> append_to_doctype_name(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # After DOCTYPE name state
-  defp step(%{state: :after_doctype_name, input: [c | rest]} = state)
+  defp step(%{state: :after_doctype_name, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :after_doctype_name, input: [?> | rest]} = state) do
+  defp step(%{state: :after_doctype_name, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :after_doctype_name, input: []} = state) do
+  defp step(%{state: :after_doctype_name, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1664,13 +1680,13 @@ defmodule PureHTML.Tokenizer do
     |> emit()
   end
 
-  defp step(%{state: :after_doctype_name, input: [k0, k1, k2, k3, k4, k5 | rest]} = state)
-       when is_public_name(k0, k1, k2, k3, k4, k5) do
+  defp step(%{state: :after_doctype_name, input: <<prefix::48, rest::binary>>} = state)
+       when is_public(prefix) do
     continue(state, state: :after_doctype_public_keyword, input: rest)
   end
 
-  defp step(%{state: :after_doctype_name, input: [k0, k1, k2, k3, k4, k5 | rest]} = state)
-       when is_system_name(k0, k1, k2, k3, k4, k5) do
+  defp step(%{state: :after_doctype_name, input: <<prefix::48, rest::binary>>} = state)
+       when is_system(prefix) do
     continue(state, state: :after_doctype_system_keyword, input: rest)
   end
 
@@ -1683,12 +1699,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   # After DOCTYPE public keyword state
-  defp step(%{state: :after_doctype_public_keyword, input: [c | rest]} = state)
+  defp step(%{state: :after_doctype_public_keyword, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, state: :before_doctype_public_identifier, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_keyword, input: [?" | rest]} = state) do
+  defp step(%{state: :after_doctype_public_keyword, input: <<?", rest::binary>>} = state) do
     # missing-whitespace-after-doctype-public-keyword parse error
     state
     |> parse_error()
@@ -1696,7 +1712,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_public_identifier_double_quoted, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_keyword, input: [?' | rest]} = state) do
+  defp step(%{state: :after_doctype_public_keyword, input: <<?', rest::binary>>} = state) do
     # missing-whitespace-after-doctype-public-keyword parse error
     state
     |> parse_error()
@@ -1704,7 +1720,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_public_identifier_single_quoted, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_keyword, input: [?> | rest]} = state) do
+  defp step(%{state: :after_doctype_public_keyword, input: <<?>, rest::binary>>} = state) do
     # missing-doctype-public-identifier parse error
     state
     |> parse_error()
@@ -1712,7 +1728,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_keyword, input: []} = state) do
+  defp step(%{state: :after_doctype_public_keyword, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1729,24 +1745,24 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Before DOCTYPE public identifier state
-  defp step(%{state: :before_doctype_public_identifier, input: [c | rest]} = state)
+  defp step(%{state: :before_doctype_public_identifier, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :before_doctype_public_identifier, input: [?" | rest]} = state) do
+  defp step(%{state: :before_doctype_public_identifier, input: <<?", rest::binary>>} = state) do
     state
     |> set_doctype_public_id("")
     |> continue(state: :doctype_public_identifier_double_quoted, input: rest)
   end
 
-  defp step(%{state: :before_doctype_public_identifier, input: [?' | rest]} = state) do
+  defp step(%{state: :before_doctype_public_identifier, input: <<?', rest::binary>>} = state) do
     state
     |> set_doctype_public_id("")
     |> continue(state: :doctype_public_identifier_single_quoted, input: rest)
   end
 
-  defp step(%{state: :before_doctype_public_identifier, input: [?> | rest]} = state) do
+  defp step(%{state: :before_doctype_public_identifier, input: <<?>, rest::binary>>} = state) do
     # missing-doctype-public-identifier parse error
     state
     |> parse_error()
@@ -1754,7 +1770,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :before_doctype_public_identifier, input: []} = state) do
+  defp step(%{state: :before_doctype_public_identifier, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1771,11 +1787,15 @@ defmodule PureHTML.Tokenizer do
   end
 
   # DOCTYPE public identifier (double-quoted) state
-  defp step(%{state: :doctype_public_identifier_double_quoted, input: [?" | rest]} = state) do
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<?", rest::binary>>} = state
+       ) do
     continue(state, state: :after_doctype_public_identifier, input: rest)
   end
 
-  defp step(%{state: :doctype_public_identifier_double_quoted, input: [0 | rest]} = state) do
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<0, rest::binary>>} = state
+       ) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -1783,7 +1803,9 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :doctype_public_identifier_double_quoted, input: [?> | rest]} = state) do
+  defp step(
+         %{state: :doctype_public_identifier_double_quoted, input: <<?>, rest::binary>>} = state
+       ) do
     # abrupt-doctype-public-identifier parse error
     state
     |> parse_error()
@@ -1791,7 +1813,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :doctype_public_identifier_double_quoted, input: []} = state) do
+  defp step(%{state: :doctype_public_identifier_double_quoted, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1800,20 +1822,24 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(
-         %{state: :doctype_public_identifier_double_quoted, input: [c | rest]} =
+         %{state: :doctype_public_identifier_double_quoted, input: <<c::utf8, rest::binary>>} =
            state
        ) do
     state
-    |> append_to_doctype_public_id(codepoint_to_binary(c))
+    |> append_to_doctype_public_id(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # DOCTYPE public identifier (single-quoted) state
-  defp step(%{state: :doctype_public_identifier_single_quoted, input: [?' | rest]} = state) do
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<?', rest::binary>>} = state
+       ) do
     continue(state, state: :after_doctype_public_identifier, input: rest)
   end
 
-  defp step(%{state: :doctype_public_identifier_single_quoted, input: [0 | rest]} = state) do
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<0, rest::binary>>} = state
+       ) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -1821,7 +1847,9 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :doctype_public_identifier_single_quoted, input: [?> | rest]} = state) do
+  defp step(
+         %{state: :doctype_public_identifier_single_quoted, input: <<?>, rest::binary>>} = state
+       ) do
     # abrupt-doctype-public-identifier parse error
     state
     |> parse_error()
@@ -1829,7 +1857,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :doctype_public_identifier_single_quoted, input: []} = state) do
+  defp step(%{state: :doctype_public_identifier_single_quoted, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1838,25 +1866,25 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(
-         %{state: :doctype_public_identifier_single_quoted, input: [c | rest]} =
+         %{state: :doctype_public_identifier_single_quoted, input: <<c::utf8, rest::binary>>} =
            state
        ) do
     state
-    |> append_to_doctype_public_id(codepoint_to_binary(c))
+    |> append_to_doctype_public_id(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # After DOCTYPE public identifier state
-  defp step(%{state: :after_doctype_public_identifier, input: [c | rest]} = state)
+  defp step(%{state: :after_doctype_public_identifier, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, state: :between_doctype_public_and_system_identifiers, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_identifier, input: [?> | rest]} = state) do
+  defp step(%{state: :after_doctype_public_identifier, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_identifier, input: [?" | rest]} = state) do
+  defp step(%{state: :after_doctype_public_identifier, input: <<?", rest::binary>>} = state) do
     # missing-whitespace-between-doctype-public-and-system-identifiers parse error
     state
     |> parse_error()
@@ -1864,7 +1892,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_identifier, input: [?' | rest]} = state) do
+  defp step(%{state: :after_doctype_public_identifier, input: <<?', rest::binary>>} = state) do
     # missing-whitespace-between-doctype-public-and-system-identifiers parse error
     state
     |> parse_error()
@@ -1872,7 +1900,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
   end
 
-  defp step(%{state: :after_doctype_public_identifier, input: []} = state) do
+  defp step(%{state: :after_doctype_public_identifier, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1890,7 +1918,7 @@ defmodule PureHTML.Tokenizer do
 
   # Between DOCTYPE public and system identifiers state
   defp step(
-         %{state: :between_doctype_public_and_system_identifiers, input: [c | rest]} =
+         %{state: :between_doctype_public_and_system_identifiers, input: <<c, rest::binary>>} =
            state
        )
        when is_ascii_whitespace(c) do
@@ -1898,14 +1926,14 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(
-         %{state: :between_doctype_public_and_system_identifiers, input: [?> | rest]} =
+         %{state: :between_doctype_public_and_system_identifiers, input: <<?>, rest::binary>>} =
            state
        ) do
     emit(state, input: rest)
   end
 
   defp step(
-         %{state: :between_doctype_public_and_system_identifiers, input: [?" | rest]} =
+         %{state: :between_doctype_public_and_system_identifiers, input: <<?", rest::binary>>} =
            state
        ) do
     state
@@ -1914,7 +1942,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(
-         %{state: :between_doctype_public_and_system_identifiers, input: [?' | rest]} =
+         %{state: :between_doctype_public_and_system_identifiers, input: <<?', rest::binary>>} =
            state
        ) do
     state
@@ -1922,7 +1950,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
   end
 
-  defp step(%{state: :between_doctype_public_and_system_identifiers, input: []} = state) do
+  defp step(%{state: :between_doctype_public_and_system_identifiers, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1939,12 +1967,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   # After DOCTYPE system keyword state
-  defp step(%{state: :after_doctype_system_keyword, input: [c | rest]} = state)
+  defp step(%{state: :after_doctype_system_keyword, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, state: :before_doctype_system_identifier, input: rest)
   end
 
-  defp step(%{state: :after_doctype_system_keyword, input: [?" | rest]} = state) do
+  defp step(%{state: :after_doctype_system_keyword, input: <<?", rest::binary>>} = state) do
     # missing-whitespace-after-doctype-system-keyword parse error
     state
     |> parse_error()
@@ -1952,7 +1980,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
   end
 
-  defp step(%{state: :after_doctype_system_keyword, input: [?' | rest]} = state) do
+  defp step(%{state: :after_doctype_system_keyword, input: <<?', rest::binary>>} = state) do
     # missing-whitespace-after-doctype-system-keyword parse error
     state
     |> parse_error()
@@ -1960,7 +1988,7 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
   end
 
-  defp step(%{state: :after_doctype_system_keyword, input: [?> | rest]} = state) do
+  defp step(%{state: :after_doctype_system_keyword, input: <<?>, rest::binary>>} = state) do
     # missing-doctype-system-identifier parse error
     state
     |> parse_error()
@@ -1968,7 +1996,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :after_doctype_system_keyword, input: []} = state) do
+  defp step(%{state: :after_doctype_system_keyword, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -1985,24 +2013,24 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Before DOCTYPE system identifier state
-  defp step(%{state: :before_doctype_system_identifier, input: [c | rest]} = state)
+  defp step(%{state: :before_doctype_system_identifier, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :before_doctype_system_identifier, input: [?" | rest]} = state) do
+  defp step(%{state: :before_doctype_system_identifier, input: <<?", rest::binary>>} = state) do
     state
     |> set_doctype_system_id("")
     |> continue(state: :doctype_system_identifier_double_quoted, input: rest)
   end
 
-  defp step(%{state: :before_doctype_system_identifier, input: [?' | rest]} = state) do
+  defp step(%{state: :before_doctype_system_identifier, input: <<?', rest::binary>>} = state) do
     state
     |> set_doctype_system_id("")
     |> continue(state: :doctype_system_identifier_single_quoted, input: rest)
   end
 
-  defp step(%{state: :before_doctype_system_identifier, input: [?> | rest]} = state) do
+  defp step(%{state: :before_doctype_system_identifier, input: <<?>, rest::binary>>} = state) do
     # missing-doctype-system-identifier parse error
     state
     |> parse_error()
@@ -2010,7 +2038,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :before_doctype_system_identifier, input: []} = state) do
+  defp step(%{state: :before_doctype_system_identifier, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -2027,11 +2055,15 @@ defmodule PureHTML.Tokenizer do
   end
 
   # DOCTYPE system identifier (double-quoted) state
-  defp step(%{state: :doctype_system_identifier_double_quoted, input: [?" | rest]} = state) do
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<?", rest::binary>>} = state
+       ) do
     continue(state, state: :after_doctype_system_identifier, input: rest)
   end
 
-  defp step(%{state: :doctype_system_identifier_double_quoted, input: [0 | rest]} = state) do
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<0, rest::binary>>} = state
+       ) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -2039,7 +2071,9 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :doctype_system_identifier_double_quoted, input: [?> | rest]} = state) do
+  defp step(
+         %{state: :doctype_system_identifier_double_quoted, input: <<?>, rest::binary>>} = state
+       ) do
     # abrupt-doctype-system-identifier parse error
     state
     |> parse_error()
@@ -2047,7 +2081,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :doctype_system_identifier_double_quoted, input: []} = state) do
+  defp step(%{state: :doctype_system_identifier_double_quoted, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -2056,20 +2090,24 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(
-         %{state: :doctype_system_identifier_double_quoted, input: [c | rest]} =
+         %{state: :doctype_system_identifier_double_quoted, input: <<c::utf8, rest::binary>>} =
            state
        ) do
     state
-    |> append_to_doctype_system_id(codepoint_to_binary(c))
+    |> append_to_doctype_system_id(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # DOCTYPE system identifier (single-quoted) state
-  defp step(%{state: :doctype_system_identifier_single_quoted, input: [?' | rest]} = state) do
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<?', rest::binary>>} = state
+       ) do
     continue(state, state: :after_doctype_system_identifier, input: rest)
   end
 
-  defp step(%{state: :doctype_system_identifier_single_quoted, input: [0 | rest]} = state) do
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<0, rest::binary>>} = state
+       ) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -2077,7 +2115,9 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :doctype_system_identifier_single_quoted, input: [?> | rest]} = state) do
+  defp step(
+         %{state: :doctype_system_identifier_single_quoted, input: <<?>, rest::binary>>} = state
+       ) do
     # abrupt-doctype-system-identifier parse error
     state
     |> parse_error()
@@ -2085,7 +2125,7 @@ defmodule PureHTML.Tokenizer do
     |> emit(input: rest)
   end
 
-  defp step(%{state: :doctype_system_identifier_single_quoted, input: []} = state) do
+  defp step(%{state: :doctype_system_identifier_single_quoted, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -2094,25 +2134,25 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(
-         %{state: :doctype_system_identifier_single_quoted, input: [c | rest]} =
+         %{state: :doctype_system_identifier_single_quoted, input: <<c::utf8, rest::binary>>} =
            state
        ) do
     state
-    |> append_to_doctype_system_id(codepoint_to_binary(c))
+    |> append_to_doctype_system_id(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # After DOCTYPE system identifier state
-  defp step(%{state: :after_doctype_system_identifier, input: [c | rest]} = state)
+  defp step(%{state: :after_doctype_system_identifier, input: <<c, rest::binary>>} = state)
        when is_ascii_whitespace(c) do
     continue(state, input: rest)
   end
 
-  defp step(%{state: :after_doctype_system_identifier, input: [?> | rest]} = state) do
+  defp step(%{state: :after_doctype_system_identifier, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :after_doctype_system_identifier, input: []} = state) do
+  defp step(%{state: :after_doctype_system_identifier, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
@@ -2128,15 +2168,15 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Bogus comment state
-  defp step(%{state: :bogus_comment, input: [?> | rest]} = state) do
+  defp step(%{state: :bogus_comment, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :bogus_comment, input: []} = state) do
+  defp step(%{state: :bogus_comment, input: ""} = state) do
     emit(state)
   end
 
-  defp step(%{state: :bogus_comment, input: [0 | rest]} = state) do
+  defp step(%{state: :bogus_comment, input: <<0, rest::binary>>} = state) do
     # unexpected-null-character parse error
     state
     |> parse_error()
@@ -2144,55 +2184,55 @@ defmodule PureHTML.Tokenizer do
     |> continue(input: rest)
   end
 
-  defp step(%{state: :bogus_comment, input: [c | rest]} = state) do
+  defp step(%{state: :bogus_comment, input: <<c::utf8, rest::binary>>} = state) do
     state
-    |> append_to_comment(codepoint_to_binary(c))
+    |> append_to_comment(<<c::utf8>>)
     |> continue(input: rest)
   end
 
   # Bogus DOCTYPE state
-  defp step(%{state: :bogus_doctype, input: [?> | rest]} = state) do
+  defp step(%{state: :bogus_doctype, input: <<?>, rest::binary>>} = state) do
     emit(state, input: rest)
   end
 
-  defp step(%{state: :bogus_doctype, input: []} = state) do
+  defp step(%{state: :bogus_doctype, input: ""} = state) do
     emit(state)
   end
 
-  defp step(%{state: :bogus_doctype, input: [_ | rest]} = state) do
+  defp step(%{state: :bogus_doctype, input: <<_, rest::binary>>} = state) do
     continue(state, input: rest)
   end
 
   # CDATA section state - consume content until ]]>
-  defp step(%{state: :cdata_section, input: [?], ?], ?> | rest], buffer: ""} = state) do
+  defp step(%{state: :cdata_section, input: <<"]]>", rest::binary>>, buffer: ""} = state) do
     # Empty CDATA - don't emit anything, just continue
     continue(state, state: :data, input: rest)
   end
 
-  defp step(%{state: :cdata_section, input: [?], ?], ?> | rest]} = state) do
+  defp step(%{state: :cdata_section, input: <<"]]>", rest::binary>>} = state) do
     # End of CDATA - emit accumulated content as character token
     emit_char(state, state.buffer, state: :data, input: rest, buffer: "")
   end
 
-  defp step(%{state: :cdata_section, input: [?] | rest]} = state) do
+  defp step(%{state: :cdata_section, input: <<"]", rest::binary>>} = state) do
     continue(state, state: :cdata_section_bracket, input: rest)
   end
 
-  defp step(%{state: :cdata_section, input: [], buffer: ""} = state) do
+  defp step(%{state: :cdata_section, input: "", buffer: ""} = state) do
     # eof-in-cdata parse error
     state
     |> parse_error()
     |> continue(state: :data)
   end
 
-  defp step(%{state: :cdata_section, input: []} = state) do
+  defp step(%{state: :cdata_section, input: ""} = state) do
     # eof-in-cdata parse error
     state
     |> parse_error()
     |> emit_char(state.buffer, state: :data, buffer: "")
   end
 
-  defp step(%{state: :cdata_section, input: [0 | rest]} = state) do
+  defp step(%{state: :cdata_section, input: <<0, rest::binary>>} = state) do
     # NUL in CDATA - pass through unchanged (unlike other states)
     continue(state, input: rest, buffer: state.buffer <> <<0>>)
   end
@@ -2203,7 +2243,7 @@ defmodule PureHTML.Tokenizer do
     continue(state, input: rest, buffer: state.buffer <> chars)
   end
 
-  defp step(%{state: :cdata_section_bracket, input: [?] | rest]} = state) do
+  defp step(%{state: :cdata_section_bracket, input: <<"]", rest::binary>>} = state) do
     continue(state, state: :cdata_section_end, input: rest)
   end
 
@@ -2212,17 +2252,17 @@ defmodule PureHTML.Tokenizer do
     continue(state, state: :cdata_section, buffer: state.buffer <> "]")
   end
 
-  defp step(%{state: :cdata_section_end, input: [?] | rest]} = state) do
+  defp step(%{state: :cdata_section_end, input: <<"]", rest::binary>>} = state) do
     # Additional ] - keep accumulating
     continue(state, input: rest, buffer: state.buffer <> "]")
   end
 
-  defp step(%{state: :cdata_section_end, input: [?> | rest], buffer: ""} = state) do
+  defp step(%{state: :cdata_section_end, input: <<?>, rest::binary>>, buffer: ""} = state) do
     # ]]> found with empty content - don't emit anything
     continue(state, state: :data, input: rest)
   end
 
-  defp step(%{state: :cdata_section_end, input: [?> | rest]} = state) do
+  defp step(%{state: :cdata_section_end, input: <<?>, rest::binary>>} = state) do
     # ]]> found - emit content
     emit_char(state, state.buffer, state: :data, input: rest, buffer: "")
   end
@@ -2233,18 +2273,18 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Character reference state - handles &entities;
-  defp step(%{state: :character_reference, input: [?&, ?# | rest]} = state) do
+  defp step(%{state: :character_reference, input: <<"&#", rest::binary>>} = state) do
     continue(state, input: rest, buffer: "", state: :numeric_character_reference)
   end
 
-  defp step(%{state: :character_reference, input: [?&, next | _] = input} = state)
+  defp step(%{state: :character_reference, input: <<?&, next, _::binary>> = input} = state)
        when is_ascii_alpha(next) or is_ascii_digit(next) do
-    case lookup_named_entity(input) do
+    case Entities.lookup(input) do
       {chars, rest} ->
         consume_named_entity(state, input, chars, rest)
 
       nil ->
-        [_amp | after_amp] = input
+        <<_, after_amp::binary>> = input
 
         state
         |> ambiguous_ampersand_error(after_amp)
@@ -2252,12 +2292,12 @@ defmodule PureHTML.Tokenizer do
     end
   end
 
-  defp step(%{state: :character_reference, input: [?& | rest]} = state) do
+  defp step(%{state: :character_reference, input: <<?&, rest::binary>>} = state) do
     flush_char_ref(state, "&", rest)
   end
 
   # Numeric character reference state
-  defp step(%{state: :numeric_character_reference, input: [c | rest]} = state)
+  defp step(%{state: :numeric_character_reference, input: <<c, rest::binary>>} = state)
        when c in ~c[xX] do
     # Store the x/X in buffer to preserve case if we need to emit it as text
     continue(state, input: rest, buffer: <<c>>, state: :hexadecimal_character_reference_start)
@@ -2268,7 +2308,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Decimal character reference start
-  defp step(%{state: :decimal_character_reference_start, input: [c | _]} = state)
+  defp step(%{state: :decimal_character_reference_start, input: <<c, _::binary>>} = state)
        when is_ascii_digit(c) do
     continue(state, state: :decimal_character_reference)
   end
@@ -2281,12 +2321,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Decimal character reference
-  defp step(%{state: :decimal_character_reference, input: [c | rest]} = state)
+  defp step(%{state: :decimal_character_reference, input: <<c, rest::binary>>} = state)
        when is_ascii_digit(c) do
     continue(state, input: rest, buffer: state.buffer <> <<c>>)
   end
 
-  defp step(%{state: :decimal_character_reference, input: [?; | rest]} = state) do
+  defp step(%{state: :decimal_character_reference, input: <<?;, rest::binary>>} = state) do
     finish_numeric_char_ref(state, rest, 10)
   end
 
@@ -2298,7 +2338,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Hexadecimal character reference start
-  defp step(%{state: :hexadecimal_character_reference_start, input: [c | _]} = state)
+  defp step(%{state: :hexadecimal_character_reference_start, input: <<c, _::binary>>} = state)
        when is_ascii_hex_digit(c) do
     # Clear the x/X from buffer, start collecting digits
     continue(state, buffer: "", state: :hexadecimal_character_reference)
@@ -2312,12 +2352,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   # Hexadecimal character reference
-  defp step(%{state: :hexadecimal_character_reference, input: [c | rest]} = state)
+  defp step(%{state: :hexadecimal_character_reference, input: <<c, rest::binary>>} = state)
        when is_ascii_hex_digit(c) do
     continue(state, input: rest, buffer: state.buffer <> <<c>>)
   end
 
-  defp step(%{state: :hexadecimal_character_reference, input: [?; | rest]} = state) do
+  defp step(%{state: :hexadecimal_character_reference, input: <<?;, rest::binary>>} = state) do
     finish_numeric_char_ref(state, rest, 16)
   end
 
@@ -2641,22 +2681,8 @@ defmodule PureHTML.Tokenizer do
       state = if has_semicolon?, do: state, else: parse_error(state)
       flush_char_ref(state, chars, rest)
     else
-      [_amp | after_amp] = input
+      <<_, after_amp::binary>> = input
       flush_char_ref(state, "&", after_amp)
-    end
-  end
-
-  defp lookup_named_entity(input) do
-    {ascii, tail} = Enum.split_while(input, &(&1 < 128))
-    bin = List.to_string(ascii)
-
-    case Entities.lookup(bin) do
-      {chars, rest_bin} ->
-        consumed = byte_size(bin) - byte_size(rest_bin)
-        {chars, Enum.drop(ascii, consumed) ++ tail}
-
-      nil ->
-        nil
     end
   end
 
@@ -2665,12 +2691,12 @@ defmodule PureHTML.Tokenizer do
   # is an unknown-named-character-reference parse error.
   defp ambiguous_ampersand_error(state, input) do
     case skip_ascii_alphanumerics(input) do
-      [?; | _] -> parse_error(state)
+      <<?;, _::binary>> -> parse_error(state)
       _ -> state
     end
   end
 
-  defp skip_ascii_alphanumerics([c | rest]) when is_ascii_alpha(c) or is_ascii_digit(c),
+  defp skip_ascii_alphanumerics(<<c, rest::binary>>) when is_ascii_alpha(c) or is_ascii_digit(c),
     do: skip_ascii_alphanumerics(rest)
 
   defp skip_ascii_alphanumerics(rest), do: rest
@@ -2678,8 +2704,9 @@ defmodule PureHTML.Tokenizer do
   # The matched text is the prefix of input that Entities.lookup consumed.
   # Legacy references like "&amp" match without a terminating semicolon.
   defp entity_has_semicolon?(input, rest) do
-    consumed = length(input) - length(rest)
-    Enum.at(input, consumed - 1) == ?;
+    matched_len = byte_size(input) - byte_size(rest)
+    <<matched::binary-size(^matched_len), _::binary>> = input
+    String.ends_with?(matched, ";")
   end
 
   # Per HTML5 spec: in attribute values, legacy entities (no semicolon) followed
@@ -2688,8 +2715,8 @@ defmodule PureHTML.Tokenizer do
        when is_attribute_value_state(return_state) do
     legacy_follows_problematic_char? =
       case rest do
-        [?= | _] -> true
-        [c | _] when is_ascii_digit(c) or is_ascii_alpha(c) -> true
+        <<?=, _::binary>> -> true
+        <<c, _::binary>> when is_ascii_digit(c) or is_ascii_alpha(c) -> true
         _ -> false
       end
 
@@ -2702,148 +2729,294 @@ defmodule PureHTML.Tokenizer do
   # Returns {collected_chars, remaining_input}
   # Specialized functions with guards for each stop set (faster than Enum.member?)
 
+  # Data state: stop on <, &, or null
+  # Uses multi-byte scanning with guards for better performance on long text runs
   defguardp is_data_safe(c) when c != ?< and c != ?& and c != 0 and c < 128
 
   defp chars_until_data(input), do: chars_until_data(input, [])
 
-  defp chars_until_data([c | rest], acc) when is_data_safe(c) do
+  # 8-byte fast path - processes 8 ASCII chars per function call
+  defp chars_until_data(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_data_safe(a) and is_data_safe(b) and is_data_safe(c) and is_data_safe(d) and
+              is_data_safe(e) and is_data_safe(f) and is_data_safe(g) and is_data_safe(h) do
+    chars_until_data(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_data(<<a, b, c, d, rest::binary>>, acc)
+       when is_data_safe(a) and is_data_safe(b) and is_data_safe(c) and is_data_safe(d) do
+    chars_until_data(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_data(<<a, b, rest::binary>>, acc)
+       when is_data_safe(a) and is_data_safe(b) do
+    chars_until_data(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path (handles tail bytes before delimiter/UTF-8)
+  defp chars_until_data(<<c, rest::binary>>, acc) when is_data_safe(c) do
     chars_until_data(rest, [c | acc])
   end
 
-  defp chars_until_data([c | _] = input, acc) when c == ?< or c == ?& or c == 0 do
-    {codepoints_to_binary(:lists.reverse(acc)), input}
+  # Stop on delimiter
+  defp chars_until_data(<<c, _::binary>> = input, acc) when c == ?< or c == ?& or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_data([c | rest], acc) do
+  # UTF-8 multibyte characters (>= 128 leading byte)
+  defp chars_until_data(<<c::utf8, rest::binary>>, acc) do
+    chars_until_data(rest, [<<c::utf8>> | acc])
+  end
+
+  # Fallback for invalid UTF-8 bytes
+  defp chars_until_data(<<c, rest::binary>>, acc) do
     chars_until_data(rest, [c | acc])
   end
 
-  defp chars_until_data([], acc) do
-    {codepoints_to_binary(:lists.reverse(acc)), []}
+  # End of input
+  defp chars_until_data("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
+  # Rawtext/script: stop on < or null
+  # Uses multi-byte scanning with guards for better performance
   defguardp is_rawtext_safe(c) when c != ?< and c != 0 and c < 128
 
   defp chars_until_rawtext(input), do: chars_until_rawtext(input, [])
 
-  defp chars_until_rawtext([c | rest], acc) when is_rawtext_safe(c) do
+  # 8-byte fast path
+  defp chars_until_rawtext(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_rawtext_safe(a) and is_rawtext_safe(b) and is_rawtext_safe(c) and
+              is_rawtext_safe(d) and is_rawtext_safe(e) and is_rawtext_safe(f) and
+              is_rawtext_safe(g) and is_rawtext_safe(h) do
+    chars_until_rawtext(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_rawtext(<<a, b, c, d, rest::binary>>, acc)
+       when is_rawtext_safe(a) and is_rawtext_safe(b) and is_rawtext_safe(c) and
+              is_rawtext_safe(d) do
+    chars_until_rawtext(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_rawtext(<<a, b, rest::binary>>, acc)
+       when is_rawtext_safe(a) and is_rawtext_safe(b) do
+    chars_until_rawtext(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_rawtext(<<c, rest::binary>>, acc) when is_rawtext_safe(c) do
     chars_until_rawtext(rest, [c | acc])
   end
 
-  defp chars_until_rawtext([c | _] = input, acc) when c == ?< or c == 0 do
-    {codepoints_to_binary(:lists.reverse(acc)), input}
+  # Stop on delimiter
+  defp chars_until_rawtext(<<c, _::binary>> = input, acc) when c == ?< or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_rawtext([c | rest], acc) do
+  # UTF-8 multibyte characters
+  defp chars_until_rawtext(<<c::utf8, rest::binary>>, acc) do
+    chars_until_rawtext(rest, [<<c::utf8>> | acc])
+  end
+
+  # Fallback for invalid UTF-8 bytes
+  defp chars_until_rawtext(<<c, rest::binary>>, acc) do
     chars_until_rawtext(rest, [c | acc])
   end
 
-  defp chars_until_rawtext([], acc) do
-    {codepoints_to_binary(:lists.reverse(acc)), []}
+  # End of input
+  defp chars_until_rawtext("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
+  # Plaintext/CDATA: stop on null only
+  # Uses multi-byte scanning with guards for better performance
   defguardp is_null_safe(c) when c != 0 and c < 128
 
   defp chars_until_null(input), do: chars_until_null(input, [])
 
-  defp chars_until_null([c | rest], acc) when is_null_safe(c) do
+  # 8-byte fast path
+  defp chars_until_null(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_null_safe(a) and is_null_safe(b) and is_null_safe(c) and is_null_safe(d) and
+              is_null_safe(e) and is_null_safe(f) and is_null_safe(g) and is_null_safe(h) do
+    chars_until_null(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_null(<<a, b, c, d, rest::binary>>, acc)
+       when is_null_safe(a) and is_null_safe(b) and is_null_safe(c) and is_null_safe(d) do
+    chars_until_null(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_null(<<a, b, rest::binary>>, acc)
+       when is_null_safe(a) and is_null_safe(b) do
+    chars_until_null(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_null(<<c, rest::binary>>, acc) when is_null_safe(c) do
     chars_until_null(rest, [c | acc])
   end
 
-  defp chars_until_null([0 | _] = input, acc) do
-    {codepoints_to_binary(:lists.reverse(acc)), input}
+  # Stop on null
+  defp chars_until_null(<<0, _::binary>> = input, acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_null([c | rest], acc) do
+  # UTF-8 multibyte characters
+  defp chars_until_null(<<c::utf8, rest::binary>>, acc) do
+    chars_until_null(rest, [<<c::utf8>> | acc])
+  end
+
+  # Fallback for invalid UTF-8 bytes
+  defp chars_until_null(<<c, rest::binary>>, acc) do
     chars_until_null(rest, [c | acc])
   end
 
-  defp chars_until_null([], acc) do
-    {codepoints_to_binary(:lists.reverse(acc)), []}
+  # End of input
+  defp chars_until_null("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
+  # Comment: stop on -, <, or null
+  # Uses multi-byte scanning with guards for better performance
   defguardp is_comment_safe(c) when c != ?- and c != ?< and c != 0 and c < 128
 
   defp chars_until_comment(input), do: chars_until_comment(input, [])
 
-  defp chars_until_comment([c | rest], acc) when is_comment_safe(c) do
+  # 8-byte fast path
+  defp chars_until_comment(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_comment_safe(a) and is_comment_safe(b) and is_comment_safe(c) and
+              is_comment_safe(d) and is_comment_safe(e) and is_comment_safe(f) and
+              is_comment_safe(g) and is_comment_safe(h) do
+    chars_until_comment(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_comment(<<a, b, c, d, rest::binary>>, acc)
+       when is_comment_safe(a) and is_comment_safe(b) and is_comment_safe(c) and
+              is_comment_safe(d) do
+    chars_until_comment(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_comment(<<a, b, rest::binary>>, acc)
+       when is_comment_safe(a) and is_comment_safe(b) do
+    chars_until_comment(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_comment(<<c, rest::binary>>, acc) when is_comment_safe(c) do
     chars_until_comment(rest, [c | acc])
   end
 
-  defp chars_until_comment([c | _] = input, acc) when c == ?- or c == ?< or c == 0 do
-    {codepoints_to_binary(:lists.reverse(acc)), input}
+  # Stop on delimiter
+  defp chars_until_comment(<<c, _::binary>> = input, acc) when c == ?- or c == ?< or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_comment([c | rest], acc) do
+  # UTF-8 multibyte characters
+  defp chars_until_comment(<<c::utf8, rest::binary>>, acc) do
+    chars_until_comment(rest, [<<c::utf8>> | acc])
+  end
+
+  # Fallback for invalid UTF-8 bytes
+  defp chars_until_comment(<<c, rest::binary>>, acc) do
     chars_until_comment(rest, [c | acc])
   end
 
-  defp chars_until_comment([], acc) do
-    {codepoints_to_binary(:lists.reverse(acc)), []}
+  # End of input
+  defp chars_until_comment("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
+  # CDATA: stop on ] or null
+  # Uses multi-byte scanning with guards for better performance
   defguardp is_cdata_safe(c) when c != ?] and c != 0 and c < 128
 
   defp chars_until_cdata(input), do: chars_until_cdata(input, [])
 
-  defp chars_until_cdata([c | rest], acc) when is_cdata_safe(c) do
+  # 8-byte fast path
+  defp chars_until_cdata(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when is_cdata_safe(a) and is_cdata_safe(b) and is_cdata_safe(c) and is_cdata_safe(d) and
+              is_cdata_safe(e) and is_cdata_safe(f) and is_cdata_safe(g) and is_cdata_safe(h) do
+    chars_until_cdata(rest, [<<a, b, c, d, e, f, g, h>> | acc])
+  end
+
+  # 4-byte path
+  defp chars_until_cdata(<<a, b, c, d, rest::binary>>, acc)
+       when is_cdata_safe(a) and is_cdata_safe(b) and is_cdata_safe(c) and is_cdata_safe(d) do
+    chars_until_cdata(rest, [<<a, b, c, d>> | acc])
+  end
+
+  # 2-byte path
+  defp chars_until_cdata(<<a, b, rest::binary>>, acc)
+       when is_cdata_safe(a) and is_cdata_safe(b) do
+    chars_until_cdata(rest, [<<a, b>> | acc])
+  end
+
+  # 1-byte ASCII path
+  defp chars_until_cdata(<<c, rest::binary>>, acc) when is_cdata_safe(c) do
     chars_until_cdata(rest, [c | acc])
   end
 
-  defp chars_until_cdata([c | _] = input, acc) when c == ?] or c == 0 do
-    {codepoints_to_binary(:lists.reverse(acc)), input}
+  # Stop on delimiter
+  defp chars_until_cdata(<<c, _::binary>> = input, acc) when c == ?] or c == 0 do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), input}
   end
 
-  defp chars_until_cdata([c | rest], acc) do
-    chars_until_cdata(rest, [c | acc])
+  # UTF-8 multibyte characters
+  defp chars_until_cdata(<<c::utf8, rest::binary>>, acc) do
+    chars_until_cdata(rest, [<<c::utf8>> | acc])
   end
 
-  defp chars_until_cdata([], acc) do
-    {codepoints_to_binary(:lists.reverse(acc)), []}
+  # End of input
+  defp chars_until_cdata("", acc) do
+    {acc |> :lists.reverse() |> IO.iodata_to_binary(), ""}
   end
 
-  defp normalize_newlines(cps) when is_list(cps), do: normalize_newlines(cps, [])
+  # Single-pass newline normalization: CRLF → LF, CR → LF
+  # More efficient than two String.replace calls
+  defp normalize_newlines(input), do: normalize_newlines(input, [])
 
-  defp normalize_newlines([?\r, ?\n | rest], acc), do: normalize_newlines(rest, [?\n | acc])
-  defp normalize_newlines([?\r | rest], acc), do: normalize_newlines(rest, [?\n | acc])
-  defp normalize_newlines([c | rest], acc), do: normalize_newlines(rest, [c | acc])
-  defp normalize_newlines([], acc), do: Enum.reverse(acc)
-
-  defp decode_input(bytes) when is_binary(bytes) do
-    cps =
-      bytes
-      |> utf8_with_replacement()
-      |> :unicode.characters_to_list()
-      |> normalize_newlines()
-
-    {cps, preprocess_error_count(cps)}
+  # 8-byte fast path for ASCII without CR
+  defp normalize_newlines(<<a, b, c, d, e, f, g, h, rest::binary>>, acc)
+       when a != ?\r and b != ?\r and c != ?\r and d != ?\r and
+              e != ?\r and f != ?\r and g != ?\r and h != ?\r do
+    normalize_newlines(rest, [<<a, b, c, d, e, f, g, h>> | acc])
   end
 
-  defp decode_input(cps) when is_list(cps) do
-    cps = normalize_newlines(cps)
-    {cps, preprocess_error_count(cps)}
+  # CRLF → LF
+  defp normalize_newlines(<<"\r\n", rest::binary>>, acc) do
+    normalize_newlines(rest, [?\n | acc])
   end
 
-  defp preprocess_error_count(cps) do
-    Enum.count(cps, &preprocess_error?/1)
+  # Lone CR → LF
+  defp normalize_newlines(<<"\r", rest::binary>>, acc) do
+    normalize_newlines(rest, [?\n | acc])
   end
 
-  defp preprocess_error?(cp) when cp in 0xD800..0xDFFF, do: true
-  defp preprocess_error?(cp) when cp in 0xFDD0..0xFDEF, do: true
-  defp preprocess_error?(cp) when rem(cp, 0x10000) in [0xFFFE, 0xFFFF], do: true
-  defp preprocess_error?(cp) when cp in 0x01..0x08 or cp in 0x0E..0x1F or cp == 0x0B, do: true
-  defp preprocess_error?(0x7F), do: true
-  defp preprocess_error?(cp) when cp in 0x80..0x9F, do: true
-  defp preprocess_error?(_), do: false
-
-  defp codepoints_to_binary(cps) do
-    cps
-    |> Enum.map(&codepoint_to_binary/1)
-    |> IO.iodata_to_binary()
+  # Regular byte
+  defp normalize_newlines(<<c, rest::binary>>, acc) do
+    normalize_newlines(rest, [c | acc])
   end
 
-  defp codepoint_to_binary(cp) when cp in 0xD800..0xDFFF, do: <<cp::16>>
-  defp codepoint_to_binary(cp), do: <<cp::utf8>>
+  # End of input
+  defp normalize_newlines(<<>>, acc) do
+    acc |> :lists.reverse() |> IO.iodata_to_binary()
+  end
+
+  defp preprocess_error_count(input), do: preprocess_error_count(input, 0)
+
+  defp preprocess_error_count(<<cp::utf8, rest::binary>>, n) when is_input_stream_error(cp) do
+    preprocess_error_count(rest, n + 1)
+  end
+
+  defp preprocess_error_count(<<_::utf8, rest::binary>>, n), do: preprocess_error_count(rest, n)
+  defp preprocess_error_count(<<>>, n), do: n
 
   # Decode as UTF-8 with U+FFFD replacement, matching the spec input stream.
   defp utf8_with_replacement(input) do

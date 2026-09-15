@@ -18,5 +18,18 @@ defmodule PureHTML.Html5libTokenizerTest do
       assert failures == [],
              "#{length(failures)} failing case(s):\n\n" <> Enum.join(failures, "\n")
     end
+
+    # Cases whose input holds a lone surrogate are outside the parser's domain
+    # (see H5.script_api_cases/1). One skipped test each keeps them in the
+    # result line instead of inside a green count.
+    for {index, description} <- H5.script_api_cases(path) do
+      @tag :html5lib
+      @tag :tokenizer
+      @tag test_file: filename
+      @tag skip: "only a script API can put a lone surrogate in the input stream"
+      test "#{filename}:#{index} #{description}" do
+        flunk("only a script API can put a lone surrogate in the input stream")
+      end
+    end
   end
 end

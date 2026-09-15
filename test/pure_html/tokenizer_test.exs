@@ -43,17 +43,29 @@ defmodule PureHTML.TokenizerTest do
       assert [{:character, "abc"}] = tokens
     end
 
-    test "keeps an unpaired surrogate from a code-point stream" do
+    test "counts a control character in the input stream once" do
+      assert %{error_count: 1} = Tokenizer.new("a\x01b")
+    end
+
+    test "counts a noncharacter in the input stream once" do
+      assert %{error_count: 1} = Tokenizer.new(<<0xFDD0::utf8>>)
+    end
+
+    test "does not count ASCII whitespace or NUL as input stream errors" do
+      assert %{error_count: 0} = Tokenizer.new("\t\n\f \0")
+    end
+
+    @tag timeout: 5_000
+    test "named character references stay linear before a long ASCII run" do
       # Arrange
-      input = [0xDFFF]
+      html = String.duplicate("&amp;", 20_000) <> String.duplicate("a", 400_000)
 
       # Act
-      tokens = Tokenizer.tokenize(input) |> Enum.to_list()
-      %{error_count: error_count} = Tokenizer.new(input)
+      tokens = Enum.to_list(Tokenizer.tokenize(html))
 
       # Assert
-      assert [{:character, <<0xDFFF::16>>}] = tokens
-      assert error_count >= 1
+      assert [{:character, text}] = tokens
+      assert byte_size(text) == 420_000
     end
   end
 

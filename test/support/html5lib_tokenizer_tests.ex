@@ -63,10 +63,37 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     tests
     |> Enum.with_index()
     |> Enum.filter(&selected?(filename, &1))
+    |> Enum.reject(fn {test, _index} -> needs_script_api?(test) end)
     |> Enum.flat_map(&case_runs(&1, xml_violation_mode))
     |> Enum.reject(&passes?/1)
     |> Enum.map(&failure_report(filename, &1))
   end
+
+  @doc """
+  Cases of a fixture file that need a script API, as `{index, description}`.
+
+  "Surrogates can only find their way into the input stream via script APIs
+  such as document.write()" (parse error surrogate-in-input-stream). The
+  library has no script API: parse/2 takes decoded text, and the Encoding
+  Standard's decoders replace a lone surrogate before the stream exists. A
+  case whose input holds a lone surrogate is therefore outside the parser's
+  domain; the test file reports it as skipped instead of running it.
+  """
+  def script_api_cases(path) do
+    {tests, _xml_violation_mode} = parse_file(path)
+
+    for {test, index} <- Enum.with_index(tests), needs_script_api?(test) do
+      {index, test["description"]}
+    end
+  end
+
+  defp needs_script_api?(%{"doubleEscaped" => true, "input" => input}) do
+    input
+    |> unicode_parts()
+    |> Enum.any?(&match?({:codepoint, cp} when cp in 0xD800..0xDFFF, &1))
+  end
+
+  defp needs_script_api?(_test), do: false
 
   defp selected?(filename, {_test, index}) do
     case System.get_env("HTML5LIB_CASE") do
@@ -132,7 +159,7 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
     %{
       description: test["description"],
-      input: maybe_unescape_input(test["input"], double_escaped?),
+      input: maybe_unescape(test["input"], double_escaped?),
       expected_tokens: normalize_tokens(test["output"], double_escaped?),
       initial_states: test["initialStates"] || ["Data state"],
       last_start_tag: test["lastStartTag"],
@@ -182,39 +209,23 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   defp maybe_unescape(string, false), do: string
   defp maybe_unescape(string, true), do: unescape_unicode(string)
 
-  # Tokenizer input is a code-point stream. Double-escaped tests may include
-  # unpaired surrogates, which cannot live in a UTF-8 binary.
-  defp maybe_unescape_input(string, false), do: string
-  defp maybe_unescape_input(string, true), do: unescape_unicode_codepoints(string)
-
-  defp unescape_unicode_codepoints(string) when is_binary(string) do
-    ~r/\\u([0-9A-Fa-f]{4})/
-    |> Regex.split(string, include_captures: true)
-    |> parse_unicode_parts()
-    |> combine_surrogate_pairs()
-    |> parts_to_codepoints()
-  end
-
-  defp parts_to_codepoints(parts) do
-    Enum.flat_map(parts, fn
-      {:text, str} -> String.to_charlist(str)
-      {:codepoint, cp} -> [cp]
-    end)
-  end
-
   defp unescape_unicode(string) when is_binary(string) do
-    # Split on \uXXXX patterns, keeping the captures
-    parts = Regex.split(~r/\\u([0-9A-Fa-f]{4})/, string, include_captures: true)
-
-    parts
-    |> parse_unicode_parts()
-    |> combine_surrogate_pairs()
+    string
+    |> unicode_parts()
     |> parts_to_binary()
   end
 
   defp unescape_unicode(other), do: other
 
-  # Parse string parts into {:text, str} or {:codepoint, int}
+  # Split on \uXXXX escapes into {:text, str} and {:codepoint, int} parts,
+  # with UTF-16 surrogate pairs combined into one code point.
+  defp unicode_parts(string) do
+    ~r/\\u([0-9A-Fa-f]{4})/
+    |> Regex.split(string, include_captures: true)
+    |> parse_unicode_parts()
+    |> combine_surrogate_pairs()
+  end
+
   defp parse_unicode_parts(parts) do
     Enum.map(parts, fn part ->
       case Regex.run(~r/^\\u([0-9A-Fa-f]{4})$/, part) do
@@ -247,12 +258,10 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     combine_surrogate_pairs(rest, [part | acc])
   end
 
-  # Convert parts back to binary
   defp parts_to_binary(parts) do
     parts
     |> Enum.map(fn
       {:text, str} -> str
-      {:codepoint, cp} when cp >= 0xD800 and cp <= 0xDFFF -> <<cp::16>>
       {:codepoint, cp} -> <<cp::utf8>>
     end)
     |> IO.iodata_to_binary()
