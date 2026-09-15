@@ -34,6 +34,44 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "drops NUL in body with a tokenizer and a tree builder error" do
+      # Arrange
+      html = "<p>a\0b</p>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["ab"]}]}]}] = nodes
+      assert error_count == 3
+    end
+
+    test "replaces NUL in foreign content with U+FFFD" do
+      # Arrange
+      html = "<svg>a\0b</svg>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{{:svg, "svg"}, [], ["a\uFFFDb"]}]}]}] =
+               nodes
+
+      assert error_count == 3
+    end
+
+    test "ignores NUL in frameset without inserting a text node" do
+      # Arrange
+      html = "<frameset>\0"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"frameset", [], []}]}] = nodes
+      assert error_count == 4
+    end
+
     test "treats NBSP before the first tag as a character, not whitespace" do
       # Arrange
       html = "\u00A0<p>x"
