@@ -64,9 +64,9 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     |> Enum.with_index()
     |> Enum.filter(&selected?(filename, &1))
     |> Enum.reject(fn {test, _index} -> needs_script_api?(test) end)
-    |> Enum.flat_map(&case_runs(&1, xml_violation_mode))
+    |> Enum.flat_map(&case_runs(&1, xml_violation_mode, filename))
     |> Enum.reject(&passes?/1)
-    |> Enum.map(&failure_report(filename, &1))
+    |> Enum.map(&failure_report/1)
   end
 
   @doc """
@@ -95,6 +95,56 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
   defp needs_script_api?(_test), do: false
 
+  @doc """
+  Cases whose expected error list contradicts "preprocessing the input
+  stream", as `{index, description}`.
+
+  "Any occurrences of noncharacters are noncharacter-in-input-stream parse
+  errors and any occurrences of controls other than ASCII whitespace and
+  U+0000 NULL characters are control-character-in-input-stream parse
+  errors." A case whose input holds such a code point but whose error list
+  has no entry for it disagrees with the text on the count; its tokens are
+  still asserted, and the test file reports the count as skipped.
+  """
+  def uncounted_input_stream_error_cases(path) do
+    {tests, _xml_violation_mode} = parse_file(path)
+
+    for {test, index} <- Enum.with_index(tests),
+        not needs_script_api?(test),
+        omits_input_stream_error?(normalize_test(test)) do
+      {index, test["description"]}
+    end
+  end
+
+  @input_stream_error_codes ~w(noncharacter-in-input-stream control-character-in-input-stream)
+
+  defp omits_input_stream_error?(normalized), do: omitted_input_stream_errors(normalized) > 0
+
+  # How many input stream errors the text requires for the input beyond those
+  # the fixture lists; zero for a fixture that agrees with the text.
+  defp omitted_input_stream_errors(%{input: input, expected_errors: errors}) do
+    codes = Enum.map(errors, & &1["code"])
+    listed = Enum.count(codes, &(&1 in @input_stream_error_codes))
+
+    max(input_stream_errors(input) - listed, 0)
+  end
+
+  defp input_stream_errors(input) do
+    input
+    |> String.to_charlist()
+    |> Enum.count(&input_stream_error?/1)
+  end
+
+  # Noncharacters, then controls other than ASCII whitespace and U+0000.
+  defp input_stream_error?(cp) when cp in 0xFDD0..0xFDEF, do: true
+
+  defp input_stream_error?(cp) when is_integer(cp) and rem(cp, 0x10000) in [0xFFFE, 0xFFFF],
+    do: true
+
+  defp input_stream_error?(cp) when cp in 0x01..0x08 or cp == 0x0B or cp in 0x0E..0x1F, do: true
+  defp input_stream_error?(cp) when cp in 0x7F..0x9F, do: true
+  defp input_stream_error?(_cp), do: false
+
   defp selected?(filename, {_test, index}) do
     case System.get_env("HTML5LIB_CASE") do
       nil -> true
@@ -102,7 +152,7 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     end
   end
 
-  defp case_runs({test, index}, xml_violation_mode) do
+  defp case_runs({test, index}, xml_violation_mode, filename) do
     normalized = normalize_test(test)
 
     for state <- normalized.initial_states, state_atom = @state_map[state], state_atom != nil do
@@ -110,21 +160,26 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
         [initial_state: state_atom, xml_violation_mode: xml_violation_mode]
         |> put_last_start_tag(normalized.last_start_tag)
 
-      {index, state, normalized, opts}
+      {index, state, normalized, opts, filename}
     end
   end
 
   defp put_last_start_tag(opts, nil), do: opts
   defp put_last_start_tag(opts, tag), do: Keyword.put(opts, :last_start_tag, tag)
 
-  defp passes?({_index, _state, normalized, opts}) do
-    actual_tokens(normalized, opts) == normalized.expected_tokens
+  # Tokens always, and the count against the fixture's list plus the input
+  # stream errors it omits (see uncounted_input_stream_error_cases/1), so a
+  # classified case still catches any other surplus error.
+  defp passes?({_index, _state, normalized, opts, _filename}) do
+    {tokens, error_count} = actual(normalized, opts)
+
+    tokens == normalized.expected_tokens and
+      error_count == length(normalized.expected_errors) + omitted_input_stream_errors(normalized)
   end
 
-  defp actual_tokens(normalized, opts) do
-    normalized.input
-    |> PureHTML.Tokenizer.tokenize(opts)
-    |> Enum.map(&sort_start_tag_attrs/1)
+  defp actual(normalized, opts) do
+    {tokens, error_count} = PureHTML.Tokenizer.tokenize_with_errors(normalized.input, opts)
+    {Enum.map(tokens, &sort_start_tag_attrs/1), error_count}
   end
 
   # Sort attrs in start tags for deterministic comparison
@@ -134,12 +189,14 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
   defp sort_start_tag_attrs(token), do: token
 
-  defp failure_report(filename, {index, state, normalized, opts}) do
+  defp failure_report({index, state, normalized, opts, filename}) do
+    {tokens, error_count} = actual(normalized, opts)
+
     """
     #{filename}:#{index} (#{state}): #{normalized.description}
     input:    #{inspect(normalized.input)}
-    expected: #{inspect(normalized.expected_tokens)}
-    actual:   #{inspect(actual_tokens(normalized, opts))}
+    expected: #{inspect(normalized.expected_tokens)} with #{length(normalized.expected_errors)} error(s)
+    actual:   #{inspect(tokens)} with #{error_count} error(s)
     """
   end
 

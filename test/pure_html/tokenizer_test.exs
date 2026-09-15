@@ -69,6 +69,40 @@ defmodule PureHTML.TokenizerTest do
     end
   end
 
+  describe "tokenize_with_errors/2" do
+    test "returns the tokens and the parse error count" do
+      assert {[{:start_tag, "p", [], false}, {:character, "x"}], 0} =
+               Tokenizer.tokenize_with_errors("<p>x")
+    end
+
+    test "unquoted equals in an attribute value is a parse error" do
+      assert {[{:start_tag, "z", [{"z", "z=z"}], false}], 1} =
+               Tokenizer.tokenize_with_errors("<z z=z=z>")
+    end
+
+    test "CR numeric character reference is a control-character-reference" do
+      assert {[{:character, "\r"}], 1} = Tokenizer.tokenize_with_errors("&#13;")
+    end
+
+    test "NUL in a bogus doctype is an unexpected-null-character" do
+      assert {[{:doctype, "a", nil, nil, true}], 2} =
+               Tokenizer.tokenize_with_errors("<!DOCTYPE a \0")
+    end
+
+    test "duplicate attributes on an end tag count as well as end-tag-with-attributes" do
+      assert {[{:end_tag, "x"}], 2} = Tokenizer.tokenize_with_errors("</x x x>")
+    end
+
+    test "attribute names on an end tag are lowercased before the duplicate check" do
+      assert {[{:end_tag, "x"}], 2} = Tokenizer.tokenize_with_errors("</x x X>")
+    end
+
+    test "a discarded duplicate attribute still consumes its value" do
+      assert {[{:start_tag, "a", [{"b", "1"}], false}], 1} =
+               Tokenizer.tokenize_with_errors("<a b=1 b=2>")
+    end
+  end
+
   describe "tag names" do
     test "lowercases tag names" do
       assert [{:start_tag, "div", [], false}] =

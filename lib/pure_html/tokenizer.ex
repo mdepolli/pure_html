@@ -68,8 +68,13 @@ defmodule PureHTML.Tokenizer do
     eof_emitted: false,
     # Parse error count
     error_count: 0,
-    # Set while building an end tag that saw attributes; counted once at emit.
-    end_tag_has_attributes: false
+    # Names of the attributes seen on the tag token being built, for the
+    # duplicate check when leaving the attribute name state. An end tag with
+    # any is an end-tag-with-attributes parse error at emit.
+    attr_names: [],
+    # The current attribute is a duplicate: its value is still consumed, then
+    # dropped.
+    duplicate_attr: false
   ]
 
   # Guards
@@ -167,6 +172,25 @@ defmodule PureHTML.Tokenizer do
     |> new(opts)
     |> Stream.unfold(&next_token/1)
     |> Stream.reject(&(&1 == :eof))
+  end
+
+  @doc """
+  Tokenizes an HTML string and returns `{tokens, error_count}`, where the
+  count follows the parse errors of the tokenizer and the input stream.
+  """
+  @spec tokenize_with_errors(String.t(), keyword()) :: {[term()], non_neg_integer()}
+  def tokenize_with_errors(input, opts \\ []) when is_binary(input) do
+    input
+    |> new(opts)
+    |> drain([])
+  end
+
+  defp drain(state, acc) do
+    case next_token(state) do
+      {:eof, state} -> {Enum.reverse(acc), state.error_count}
+      {token, state} -> drain(state, [token | acc])
+      nil -> {Enum.reverse(acc), state.error_count}
+    end
   end
 
   @doc """
@@ -367,6 +391,7 @@ defmodule PureHTML.Tokenizer do
     continue(state,
       state: :rawtext_end_tag_name,
       token: {:end_tag, ""},
+      attr_names: [],
       input: <<c, rest::binary>>
     )
   end
@@ -457,6 +482,7 @@ defmodule PureHTML.Tokenizer do
     continue(state,
       state: :rcdata_end_tag_name,
       token: {:end_tag, ""},
+      attr_names: [],
       input: <<c, rest::binary>>
     )
   end
@@ -547,6 +573,7 @@ defmodule PureHTML.Tokenizer do
     continue(state,
       state: :script_data_end_tag_name,
       token: {:end_tag, ""},
+      attr_names: [],
       input: <<c, rest::binary>>
     )
   end
@@ -722,6 +749,7 @@ defmodule PureHTML.Tokenizer do
     continue(state,
       state: :script_data_escaped_end_tag_name,
       token: {:end_tag, ""},
+      attr_names: [],
       input: <<c, rest::binary>>
     )
   end
@@ -922,7 +950,8 @@ defmodule PureHTML.Tokenizer do
     continue(state,
       state: :tag_name,
       input: <<c, rest::binary>>,
-      token: {:start_tag, "", [], false}
+      token: {:start_tag, "", [], false},
+      attr_names: []
     )
   end
 
@@ -949,7 +978,12 @@ defmodule PureHTML.Tokenizer do
 
   # End tag open state - saw '</'
   defp step(%{state: :end_tag_open, input: <<c, rest::binary>>} = state) when is_ascii_alpha(c) do
-    continue(state, state: :tag_name, input: <<c, rest::binary>>, token: {:end_tag, ""})
+    continue(state,
+      state: :tag_name,
+      input: <<c, rest::binary>>,
+      token: {:end_tag, ""},
+      attr_names: []
+    )
   end
 
   defp step(%{state: :end_tag_open, input: <<?>, rest::binary>>} = state) do
@@ -1244,7 +1278,7 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp step(%{state: :attribute_value_unquoted, input: <<c, rest::binary>>} = state)
-       when c in [?", ?', ?<, ?`] do
+       when c in [?", ?', ?<, ?=, ?`] do
     # unexpected-character-in-unquoted-attribute-value parse error
     state
     |> parse_error()
@@ -2201,6 +2235,13 @@ defmodule PureHTML.Tokenizer do
     emit(state)
   end
 
+  defp step(%{state: :bogus_doctype, input: <<0, rest::binary>>} = state) do
+    # unexpected-null-character parse error; ignore the character
+    state
+    |> parse_error()
+    |> continue(input: rest)
+  end
+
   defp step(%{state: :bogus_doctype, input: <<_, rest::binary>>} = state) do
     continue(state, input: rest)
   end
@@ -2458,8 +2499,9 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp check_numeric_char_ref(state, cp)
-       when cp in 0x01..0x08 or cp in 0x0E..0x1F or cp == 0x0B do
-    # control-character-reference parse error (C0 controls except HT, LF, FF)
+       when cp in 0x01..0x08 or cp in 0x0E..0x1F or cp in [0x0B, 0x0D] do
+    # control-character-reference parse error: "the number is 0x0D, or a
+    # control that's not ASCII whitespace" (C0 except HT, LF, FF)
     parse_error(state)
   end
 
@@ -2561,53 +2603,44 @@ defmodule PureHTML.Tokenizer do
     %{state | token: {:end_tag, name <> char}}
   end
 
-  defp start_new_attribute(%{token: {:start_tag, _, _, _}} = state, initial_char) do
-    %{state | attr_name: initial_char, attr_value: "", buffer: ""}
+  defp start_new_attribute(state, initial_char) do
+    %{state | attr_name: initial_char, attr_value: "", buffer: "", duplicate_attr: false}
   end
 
-  defp start_new_attribute(%{token: {:end_tag, _}} = state, _initial_char) do
-    %{state | end_tag_has_attributes: true}
-  end
-
-  defp start_new_attribute(state, _), do: state
-
-  defp maybe_end_tag_with_attributes(
-         %{token: {:end_tag, _}, end_tag_has_attributes: true} = state
-       ) do
-    parse_error(%{state | end_tag_has_attributes: false})
+  # "end-tag-with-attributes": counted once when the end tag is emitted.
+  defp maybe_end_tag_with_attributes(%{token: {:end_tag, _}, attr_names: [_ | _]} = state) do
+    parse_error(state)
   end
 
   defp maybe_end_tag_with_attributes(state), do: state
 
-  defp finalize_attribute_name(%{token: {:start_tag, _, _, _}} = state) do
-    # Move buffer contents to attr_name, clear buffer
-    %{state | attr_name: state.attr_name <> state.buffer, buffer: ""}
+  # The duplicate check happens on leaving the attribute name state. A
+  # duplicate stays the current attribute: its value is consumed, then dropped.
+  defp finalize_attribute_name(state) do
+    name = state.attr_name <> state.buffer
+
+    if name in state.attr_names do
+      parse_error(%{state | attr_name: name, buffer: "", duplicate_attr: true})
+    else
+      %{state | attr_name: name, buffer: "", attr_names: [name | state.attr_names]}
+    end
   end
 
-  defp finalize_attribute_name(state), do: state
+  defp finalize_attribute_value(%{attr_name: ""} = state), do: state
 
-  defp finalize_attribute_value(
-         %{token: {:start_tag, name, attrs, sc}, attr_name: attr_name, attr_value: attr_value} =
-           state
-       ) do
-    # Add the attribute to the token (only if name is non-empty and not duplicate)
-    {attrs, state} =
-      cond do
-        attr_name == "" ->
-          {attrs, state}
+  defp finalize_attribute_value(%{duplicate_attr: true} = state) do
+    %{state | attr_name: "", attr_value: "", duplicate_attr: false}
+  end
 
-        List.keymember?(attrs, attr_name, 0) ->
-          # duplicate-attribute parse error
-          {attrs, parse_error(state)}
-
-        true ->
-          {[{attr_name, attr_value} | attrs], state}
-      end
-
+  defp finalize_attribute_value(%{token: {:start_tag, name, attrs, sc}} = state) do
+    attrs = [{state.attr_name, state.attr_value} | attrs]
     %{state | token: {:start_tag, name, attrs, sc}, attr_name: "", attr_value: ""}
   end
 
-  defp finalize_attribute_value(state), do: state
+  # An end tag keeps no attributes; the names were recorded for the checks.
+  defp finalize_attribute_value(%{token: {:end_tag, _}} = state) do
+    %{state | attr_name: "", attr_value: ""}
+  end
 
   defp set_self_closing(%{token: {:start_tag, name, attrs, _}} = state) do
     %{state | token: {:start_tag, name, attrs, true}}

@@ -19,6 +19,19 @@ defmodule PureHTML.Html5libTokenizerTest do
              "#{length(failures)} failing case(s):\n\n" <> Enum.join(failures, "\n")
     end
 
+    # Cases whose error list omits an input stream error the text requires
+    # (see H5.uncounted_input_stream_error_cases/1): the tokens run in the
+    # file's test above, the count is reported as skipped with the citation.
+    for {index, description} <- H5.uncounted_input_stream_error_cases(path) do
+      @tag :html5lib
+      @tag :tokenizer
+      @tag test_file: filename
+      @tag skip: "the fixture omits an input stream parse error the text requires"
+      test "#{filename}:#{index} error count: #{description}" do
+        flunk("the fixture omits an input stream parse error the text requires")
+      end
+    end
+
     # Cases whose input holds a lone surrogate are outside the parser's domain
     # (see H5.script_api_cases/1). One skipped test each keeps them in the
     # result line instead of inside a green count.
