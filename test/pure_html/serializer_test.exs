@@ -162,23 +162,26 @@ defmodule PureHTML.SerializerTest do
       assert Serializer.serialize([{:doctype, "html", nil, nil}]) == "<!DOCTYPE html>"
     end
 
-    test "doctype with public identifier" do
+    test "doctype with public identifier serializes the name only" do
       nodes = [{:doctype, "HTML", "-//W3C//DTD HTML 4.01//EN", nil}]
-      assert Serializer.serialize(nodes) == "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">"
+      assert Serializer.serialize(nodes) == "<!DOCTYPE HTML>"
     end
 
-    test "doctype with system identifier only" do
+    test "doctype with system identifier serializes the name only" do
       nodes = [{:doctype, "html", "", "http://example.com/dtd"}]
-      assert Serializer.serialize(nodes) == "<!DOCTYPE html SYSTEM \"http://example.com/dtd\">"
+      assert Serializer.serialize(nodes) == "<!DOCTYPE html>"
     end
 
-    test "doctype with both identifiers" do
+    test "doctype with both identifiers serializes the name only" do
       nodes = [
         {:doctype, "HTML", "-//W3C//DTD HTML 4.01//EN", "http://www.w3.org/TR/html4/strict.dtd"}
       ]
 
-      assert Serializer.serialize(nodes) ==
-               "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">"
+      assert Serializer.serialize(nodes) == "<!DOCTYPE HTML>"
+    end
+
+    test "doctype with a missing name" do
+      assert Serializer.serialize([{:doctype, nil, nil, nil}]) == "<!DOCTYPE>"
     end
   end
 

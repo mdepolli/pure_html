@@ -1703,6 +1703,32 @@ defmodule PureHTMLTest do
       # Assert
       assert result =~ "xlink:href=foo"
     end
+
+    test "serializes a SYSTEM about:legacy-compat doctype by name only" do
+      # Arrange
+      html = "<!DOCTYPE html SYSTEM \"about:legacy-compat\">"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, "html", nil, "about:legacy-compat"} | _] = nodes
+      assert error_count == 0
+      assert PureHTML.to_html(nodes) |> String.starts_with?("<!DOCTYPE html>")
+    end
+
+    test "serializes a doctype with a missing name" do
+      # Arrange
+      html = "<!DOCTYPE>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, nil, nil, nil} | _] = nodes
+      assert error_count >= 1
+      assert PureHTML.to_html(nodes) |> String.starts_with?("<!DOCTYPE")
+    end
   end
 
   defp valid_node?({tag, attrs, children}) when is_binary(tag) and is_list(attrs) do
