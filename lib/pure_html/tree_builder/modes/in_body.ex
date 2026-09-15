@@ -41,8 +41,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   @frameset_disabling_elements ~w(pre listing textarea xmp iframe select embed keygen applet
                                   marquee object table button img hr br wbr area dd dt li)
 
-  @newline_skipping_elements ~w(pre listing)
-
   # --------------------------------------------------------------------------
   # Token processing
   # --------------------------------------------------------------------------
@@ -52,10 +50,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # U+0000: "Parse error. Ignore the token." One error per NUL; the rest of
   # the text is inserted as usual.
   def process({:character, text}, state) do
-    {text, null_count} =
-      text
-      |> maybe_skip_leading_newline(state)
-      |> split_null_characters()
+    {text, null_count} = split_null_characters(text)
 
     state
     |> parse_error(null_count)
@@ -345,13 +340,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Per spec: "</br> — Parse error. Drop the attributes from the token,
-  # and act as described in the 'start tag' entry for br."
+  # "Parse error. Drop the attributes from the token, and act as if this was a
+  # br start tag token with no attributes."
   defp do_process_end_tag({:end_tag, "br"}, state) do
     state
     |> parse_error()
-    |> reconstruct_active_formatting()
-    |> add_child_to_stack({"br", [], []})
+    |> dispatch_start_tag({:start_tag, "br", [], false})
     |> ok()
   end
 
@@ -413,13 +407,29 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
-  # Void elements
-  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in @void_elements do
+  # "area, br, embed, img, keygen, wbr": reconstruct the active formatting
+  # elements, insert, pop, set frameset-ok to "not ok".
+  defp start_tag({:start_tag, tag, attrs, _}, state)
+       when tag in ~w(area br embed img keygen wbr) do
     state
     |> reconstruct_active_formatting()
-    |> maybe_close_p(tag)
     |> add_child_to_stack({tag, attrs, []})
-    |> maybe_set_frameset_not_ok_for_element(tag)
+    |> set_frameset_not_ok()
+  end
+
+  # "param, source, track": insert and pop; no reconstruction, frameset-ok kept.
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in ~w(param source track) do
+    add_child_to_stack(state, {tag, attrs, []})
+  end
+
+  # "pre", "listing": close a p in button scope, insert, ignore a LF that is
+  # the next token, set frameset-ok to "not ok".
+  defp start_tag({:start_tag, tag, attrs, _}, state) when tag in ~w(pre listing) do
+    state
+    |> maybe_close_p(tag)
+    |> push_element(tag, attrs)
+    |> ignore_next_lf()
+    |> set_frameset_not_ok()
   end
 
   # "A start tag whose tag name is one of: caption, col, colgroup, frame, head,
@@ -492,12 +502,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> enter_raw_text("noembed", attrs)
   end
 
-  # Per spec: insert the textarea, switch the tokenizer to RCDATA, set
-  # frameset-ok to "not ok", and enter the text mode. The text mode drops a
-  # line feed that immediately follows the start tag.
+  # Per spec: insert the textarea, ignore a LF that is the next token, switch
+  # the tokenizer to RCDATA, set frameset-ok to "not ok", and enter the text
+  # mode.
   defp start_tag({:start_tag, "textarea", attrs, _}, state) do
     state
     |> push_element("textarea", attrs)
+    |> ignore_next_lf()
     |> set_frameset_not_ok()
     |> enter_text_mode(:rcdata)
   end
@@ -815,18 +826,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_set_frameset_not_ok(text)
     |> ok()
   end
-
-  defp maybe_skip_leading_newline(<<?\n, rest::binary>>, state) do
-    case current_element(state) do
-      %{tag: tag, children: []} when tag in @newline_skipping_elements ->
-        rest
-
-      _ ->
-        <<?\n, rest::binary>>
-    end
-  end
-
-  defp maybe_skip_leading_newline(text, _state), do: text
 
   defp eof_in_body(state) do
     state
@@ -1217,11 +1216,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp apply_pop_result(state, :not_found), do: state
 
-  # Check if element tag matches target (case-insensitive for SVG)
+  # The end-tag walks look for "an HTML element with the same tag name";
+  # a foreign element never matches.
   defp tag_matches?(tag, target) when is_binary(tag), do: tag == target
-  defp tag_matches?({:svg, svg_tag}, target), do: String.downcase(svg_tag) == target
-  defp tag_matches?({:math, math_tag}, target), do: math_tag == target
-  defp tag_matches?(_, _), do: false
+  defp tag_matches?(_foreign, _target), do: false
 
   # Check if tag is a special element that acts as a barrier
 

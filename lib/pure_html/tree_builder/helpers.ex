@@ -447,6 +447,13 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def set_frameset_not_ok(state), do: %{state | frameset_ok: false}
 
   @doc """
+  "If the next token is a U+000A LINE FEED (LF) character token, then ignore
+  that token and move on to the next one." The tree builder clears the flag
+  on the next token.
+  """
+  def ignore_next_lf(state), do: %{state | ignore_next_lf: true}
+
+  @doc """
   Clears active formatting elements up to and including the last marker.
   """
   def clear_af_to_marker(%{af: af} = state) do

@@ -143,6 +143,7 @@ defmodule PureHTML.TreeBuilder do
             tokenizer_state: atom() | nil,
             pending_table_text: String.t(),
             frameset_ok: boolean(),
+            ignore_next_lf: boolean(),
             head_element: element_ref() | nil,
             form_element: element_ref() | nil,
             scripting: boolean(),
@@ -171,6 +172,8 @@ defmodule PureHTML.TreeBuilder do
       pending_table_text: "",
       # Frameset-ok flag
       frameset_ok: true,
+      # Set by pre, listing, and textarea start tags for the next token only
+      ignore_next_lf: false,
       # Head element pointer (for "in head" processing)
       head_element: nil,
       # Form element pointer (for form association)
@@ -415,11 +418,25 @@ defmodule PureHTML.TreeBuilder do
   # Per spec, foster parenting is enabled by an insertion mode for one token
   # ("enable foster parenting, process the token ..., and then disable foster
   # parenting"). The flag stays on through any reprocessing of that token.
+  # A pre, listing, or textarea start tag ignores a LF that is the very next
+  # token. The tokenizer coalesces characters, so that LF is the head of the
+  # next character token; any other token just clears the flag.
+  defp process_token_fully({:character, "\n" <> rest}, %State{ignore_next_lf: true} = state) do
+    process_character_after_lf(rest, %{state | ignore_next_lf: false})
+  end
+
+  defp process_token_fully(token, %State{ignore_next_lf: true} = state) do
+    process_token_fully(token, %{state | ignore_next_lf: false})
+  end
+
   defp process_token_fully(token, state) do
     token
     |> dispatch(state)
     |> disable_foster_parenting()
   end
+
+  defp process_character_after_lf("", state), do: state
+  defp process_character_after_lf(rest, state), do: process_token_fully({:character, rest}, state)
 
   # Per WHATWG spec: DOCTYPE is a parse error if name != "html", public_id is not
   # missing, or system_id is not missing and != "about:legacy-compat".

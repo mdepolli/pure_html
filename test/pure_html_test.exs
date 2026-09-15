@@ -34,6 +34,66 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "param does not reconstruct the active formatting elements" do
+      # Arrange
+      html = "<p><b></p><param>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [{"head", [], []}, {"body", [], [{"p", [], [{"b", [], []}]}, {"param", [], []}]}]}
+             ] =
+               nodes
+
+      assert error_count == 2
+    end
+
+    test "br reconstructs the active formatting elements" do
+      # Arrange
+      html = "<p><b></p><br>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"p", [], [{"b", [], []}]}, {"b", [], [{"br", [], []}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
+    test "br end tag sets frameset-ok to not ok" do
+      # Arrange
+      html = "</br><frameset>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{"br", [], []}]}]}] = nodes
+      assert error_count == 3
+    end
+
+    test "pre keeps a LF that is not the token right after its start tag" do
+      # Arrange
+      html = "<pre></b>\nx</pre>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{"pre", [], ["\nx"]}]}]}] = nodes
+      assert error_count == 2
+    end
+
     test "CDATA in an HTML fragment context is a bogus comment" do
       # Arrange / Act
       {nodes, error_count} = PureHTML.parse_with_errors("<![CDATA[x]]>", context: "div")
