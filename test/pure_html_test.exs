@@ -34,6 +34,29 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "HTML breakout stops at a MathML text integration point" do
+      # Arrange
+      html = "<math><mi><svg><b>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [
+                     {{:math, "math"}, [],
+                      [{{:math, "mi"}, [], [{{:svg, "svg"}, [], []}, {"b", [], ["x"]}]}]}
+                   ]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "html start tag in a template is ignored by the in-body rules" do
       # Arrange
       html = "<template><html lang=en></template>"

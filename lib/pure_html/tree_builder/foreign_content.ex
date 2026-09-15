@@ -507,6 +507,10 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
       tag when is_binary(tag) ->
         {stack, ref}
 
+      # MathML text integration points - stop here
+      {:math, math_tag} when math_tag in @mathml_text_integration_points ->
+        {stack, ref}
+
       # SVG HTML integration points - stop here
       {:svg, svg_tag} when svg_tag in ~w(foreignObject desc title) ->
         {stack, ref}
