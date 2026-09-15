@@ -47,6 +47,12 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
     |> ok()
   end
 
+  def process({:pi, target, data}, state) do
+    state
+    |> insert_pi(target, data)
+    |> ok()
+  end
+
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
     state

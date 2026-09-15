@@ -179,6 +179,12 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
     |> ok()
   end
 
+  def process({:pi, target, data}, state) do
+    state
+    |> insert_pi(target, data)
+    |> ok()
+  end
+
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
     state

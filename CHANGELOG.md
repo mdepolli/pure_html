@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The html5lib runners list fixtures recursively under relative names (`scripted/webkit01`), run the three `unsafe` tree-construction files, and report fixtures they cannot pass as skipped tests with the reason: `scripted/` fixtures need script execution, the four `unicodeCharsProblematic` tokenizer cases hold a lone surrogate that only a script API can put in the input stream, and the html5lib serializer cases test html5lib's token serializer rather than the fragment algorithm
 - The html5lib serializer suite builds a tree from each token stream and serializes it through `PureHTML.Serializer` instead of a copy of the serializer
 - The html5lib tree-construction runner asserts `error_count == length(#errors)` as well as the tree. `webkit02:44-48` and `adoption02:2` are overridden in `test/html5lib-overrides/` with the living standard's errors (`#spec` citation, `text:` lines) where the original fixtures contradicted it
+- `{:pi, target, data}` processing-instruction nodes. `<?php …?>` is a PI; `<?xml …>` and `<?xml-stylesheet …>` stay comments. html5lib `<?` tokenizer and tree fixtures that still expected the old bogus-comment path are overridden in `test/html5lib-overrides/`
 
 ### Changed
 

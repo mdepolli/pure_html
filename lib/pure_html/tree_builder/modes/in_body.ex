@@ -66,6 +66,14 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
+  def process({:pi, _target, _data}, %{stack: []} = state), do: ok(state)
+
+  def process({:pi, target, data}, state) do
+    state
+    |> insert_pi(target, data)
+    |> ok()
+  end
+
   # DOCTYPE - parse error, ignore
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     state

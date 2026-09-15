@@ -28,6 +28,7 @@ defmodule PureHTML do
   - `{tag, attrs, children}` - Element with tag name, attribute list, and children
   - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration
   - `{:comment, text}` - HTML comment
+  - `{:pi, target, data}` - Processing instruction
   - `"text"` - Text content (binary string)
 
   Attributes are lists of `{name, value}` tuples, sorted alphabetically.
@@ -41,6 +42,7 @@ defmodule PureHTML do
   Returns a list of nodes where each node is one of:
   - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration (if present, always first)
   - `{:comment, text}` - HTML comment
+  - `{:pi, target, data}` - Processing instruction
   - `{tag, attrs, children}` - Element with tag name, attributes list, and child nodes
   - `text` - Text content (binary)
 

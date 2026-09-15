@@ -64,6 +64,12 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> ok()
   end
 
+  defp do_process({:pi, target, data}, state) do
+    state
+    |> insert_pi(target, data)
+    |> ok()
+  end
+
   # DOCTYPE: parse error, ignore
   defp do_process({:doctype, _, _, _, _}, state) do
     state

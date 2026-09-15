@@ -45,6 +45,8 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
     ok(state)
   end
 
+  def process({:pi, _target, _data}, state), do: ok(state)
+
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
     state

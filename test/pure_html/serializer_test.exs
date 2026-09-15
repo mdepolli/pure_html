@@ -177,6 +177,16 @@ defmodule PureHTML.SerializerTest do
     end
   end
 
+  describe "processing instructions" do
+    test "serializes target, a space, and data" do
+      assert Serializer.serialize([{:pi, "php", "echo 1; "}]) == "<?php echo 1; ?>"
+    end
+
+    test "keeps the space when data is empty" do
+      assert Serializer.serialize([{:pi, "php", ""}]) == "<?php ?>"
+    end
+  end
+
   describe "comments" do
     test "basic comment" do
       assert Serializer.serialize([{:comment, " hello "}]) == "<!-- hello -->"

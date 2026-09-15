@@ -31,6 +31,8 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     ok(state)
   end
 
+  def process({:pi, _target, _data}, state), do: ok(state)
+
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # DOCTYPE handling is done at process_token level
     # Valid DOCTYPE -> not quirks mode (quirks_mode stays false)

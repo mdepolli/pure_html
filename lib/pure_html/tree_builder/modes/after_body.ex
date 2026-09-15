@@ -34,6 +34,12 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
     |> ok()
   end
 
+  def process({:pi, target, data}, state) do
+    state
+    |> add_node_to_html({:pi, target, data})
+    |> ok()
+  end
+
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
     state
@@ -86,17 +92,19 @@ defmodule PureHTML.TreeBuilder.Modes.AfterBody do
   end
 
   # Add comment as last child of html element.
-  defp add_comment_to_html(state, text) do
+  defp add_comment_to_html(state, text), do: add_node_to_html(state, {:comment, text})
+
+  defp add_node_to_html(state, node) do
     state
     |> find_ref("html")
-    |> append_comment_to_html(state, text)
+    |> append_node_to_html(state, node)
   end
 
-  defp append_comment_to_html(nil, state, _text), do: state
+  defp append_node_to_html(nil, state, _node), do: state
 
-  defp append_comment_to_html(ref, %{elements: elements} = state, text) do
+  defp append_node_to_html(ref, %{elements: elements} = state, node) do
     html_elem = elements[ref]
-    updated_html = %{html_elem | children: [{:comment, text} | html_elem.children]}
+    updated_html = %{html_elem | children: [node | html_elem.children]}
     %{state | elements: Map.put(elements, ref, updated_html)}
   end
 end

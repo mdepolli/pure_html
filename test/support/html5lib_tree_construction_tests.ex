@@ -224,6 +224,11 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     "#{indent}<!-- #{text} -->\n"
   end
 
+  defp serialize_node({:pi, target, data}, depth) do
+    indent = "| " <> String.duplicate("  ", depth)
+    "#{indent}<?#{target} #{data}>\n"
+  end
+
   defp serialize_node({{ns, tag}, attrs, children}, depth) do
     serialize_element("#{ns} #{tag}", attrs, children, depth)
   end

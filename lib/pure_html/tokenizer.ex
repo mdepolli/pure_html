@@ -20,6 +20,7 @@ defmodule PureHTML.Tokenizer do
   - `{:start_tag, name, attrs, self_closing?}`
   - `{:end_tag, name}`
   - `{:comment, data}`
+  - `{:pi, target, data}`
   - `{:character, data}`
 
   """
@@ -33,6 +34,7 @@ defmodule PureHTML.Tokenizer do
           | {:start_tag, String.t(), [{String.t(), String.t()}], boolean()}
           | {:end_tag, String.t()}
           | {:comment, String.t()}
+          | {:pi, String.t(), String.t()}
           | {:character, String.t()}
           | :eof
 
@@ -955,11 +957,8 @@ defmodule PureHTML.Tokenizer do
     )
   end
 
-  defp step(%{state: :tag_open, input: <<??, _rest::binary>>} = state) do
-    # unexpected-question-mark-instead-of-tag-name parse error
-    state
-    |> parse_error()
-    |> continue(state: :bogus_comment, token: {:comment, ""})
+  defp step(%{state: :tag_open, input: <<??, rest::binary>>} = state) do
+    continue(state, state: :processing_instruction_open, input: rest, buffer: "")
   end
 
   defp step(%{state: :tag_open, input: ""} = state) do
@@ -974,6 +973,96 @@ defmodule PureHTML.Tokenizer do
     state
     |> parse_error()
     |> emit_char("<", state: :data)
+  end
+
+  # Processing instruction open state
+  defp step(%{state: :processing_instruction_open, input: <<c, _::binary>>} = state)
+       when is_ascii_alpha(c) or c == ?_ do
+    continue(state, state: :processing_instruction_target)
+  end
+
+  # EOF here (and in target, data, and questionable) is the tag-state shape,
+  # not comment-state emit/1. The text is "eof-in-processing-instruction parse
+  # error. Emit an end-of-file token." emit/1 would flush state.token, and
+  # after the target state that is a half-built {:pi, target, ""}.
+  defp step(%{state: :processing_instruction_open, input: ""} = state) do
+    {:eof_parse_error, parse_error(state)}
+  end
+
+  defp step(%{state: :processing_instruction_open, input: _} = state) do
+    # invalid-first-character-of-processing-instruction-target
+    state
+    |> parse_error()
+    |> convert_buffer_to_comment()
+  end
+
+  # Processing instruction target state
+  defp step(%{state: :processing_instruction_target, input: <<c, _::binary>>} = state)
+       when c in ~c[\t\n\f ?>] do
+    finish_pi_target(state)
+  end
+
+  defp step(%{state: :processing_instruction_target, input: <<c, rest::binary>>} = state)
+       when is_ascii_alpha(c) or is_ascii_digit(c) or c in [?-, ?_] do
+    continue(state, buffer: state.buffer <> <<c>>, input: rest)
+  end
+
+  # eof-in-processing-instruction: emit EOF, not the current PI token.
+  defp step(%{state: :processing_instruction_target, input: ""} = state) do
+    {:eof_parse_error, parse_error(state)}
+  end
+
+  defp step(%{state: :processing_instruction_target, input: _} = state) do
+    # invalid-processing-instruction-target
+    state
+    |> parse_error()
+    |> convert_buffer_to_comment()
+  end
+
+  # After processing instruction target state
+  defp step(%{state: :after_processing_instruction_target, input: <<c, rest::binary>>} = state)
+       when c in ~c[\t\n\f ] do
+    continue(state, input: rest)
+  end
+
+  defp step(%{state: :after_processing_instruction_target, input: _} = state) do
+    continue(state, state: :processing_instruction_data)
+  end
+
+  # Processing instruction data state
+  defp step(%{state: :processing_instruction_data, input: <<??, rest::binary>>} = state) do
+    continue(state, state: :processing_instruction_questionable, input: rest)
+  end
+
+  defp step(%{state: :processing_instruction_data, input: <<?>, rest::binary>>} = state) do
+    emit(state, input: rest)
+  end
+
+  # eof-in-processing-instruction: emit EOF, not the current PI token.
+  defp step(%{state: :processing_instruction_data, input: ""} = state) do
+    {:eof_parse_error, parse_error(state)}
+  end
+
+  defp step(%{state: :processing_instruction_data, input: <<c::utf8, rest::binary>>} = state) do
+    state
+    |> append_to_pi_data(<<c::utf8>>)
+    |> continue(input: rest)
+  end
+
+  # Processing instruction questionable state
+  defp step(%{state: :processing_instruction_questionable, input: <<?>, rest::binary>>} = state) do
+    emit(state, input: rest)
+  end
+
+  # eof-in-processing-instruction: emit EOF, not the current PI token.
+  defp step(%{state: :processing_instruction_questionable, input: ""} = state) do
+    {:eof_parse_error, parse_error(state)}
+  end
+
+  defp step(%{state: :processing_instruction_questionable, input: _} = state) do
+    state
+    |> append_to_pi_data("?")
+    |> continue(state: :processing_instruction_data)
   end
 
   # End tag open state - saw '</'
@@ -2676,6 +2765,31 @@ defmodule PureHTML.Tokenizer do
 
   defp append_to_comment(%{token: {:comment, data}} = state, char) do
     %{state | token: {:comment, data <> char}}
+  end
+
+  defp append_to_pi_data(%{token: {:pi, target, data}} = state, chunk) do
+    %{state | token: {:pi, target, data <> chunk}}
+  end
+
+  # Comment data is "?" plus the temporary buffer; reconsume in bogus comment.
+  defp convert_buffer_to_comment(%{buffer: buffer} = state) do
+    continue(state, state: :bogus_comment, token: {:comment, "?" <> buffer}, buffer: "")
+  end
+
+  defp finish_pi_target(%{buffer: target} = state) do
+    down = String.downcase(target, :ascii)
+
+    if down == "xml" or down == "xml-stylesheet" do
+      state
+      |> parse_error()
+      |> convert_buffer_to_comment()
+    else
+      continue(state,
+        state: :after_processing_instruction_target,
+        token: {:pi, target, ""},
+        buffer: ""
+      )
+    end
   end
 
   defp maybe_update_last_start_tag(%{token: {:start_tag, name, _, _}} = state) do

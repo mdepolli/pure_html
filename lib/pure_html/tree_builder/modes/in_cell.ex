@@ -48,6 +48,10 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
     InBody.process(token, state)
   end
 
+  def process({:pi, _, _} = token, state) do
+    InBody.process(token, state)
+  end
+
   # DOCTYPE: parse error, ignore
   def process({:doctype, _, _, _, _}, state) do
     state

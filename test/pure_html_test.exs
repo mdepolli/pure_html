@@ -2454,6 +2454,45 @@ defmodule PureHTMLTest do
       # Assert
       assert [{"html", [], [{"head", [], []}, {"body", [], ["a\uFFFDb"]}]}] = nodes
     end
+
+    test "php processing instruction becomes a PI node, child of the Document" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<?php echo 1; ?>")
+
+      # Assert
+      assert [
+               {:pi, "php", "echo 1; "},
+               {"html", [], [{"head", [], []}, {"body", [], []}]}
+             ] = nodes
+
+      # eof-in-processing-instruction does not fire; the PI closed. Initial EOF
+      # is anything else: one missing-doctype error.
+      assert error_count == 1
+    end
+
+    test "xml processing instruction stays a comment" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<?xml version=\"1.0\"?>")
+
+      # Assert
+      assert [
+               {:comment, "?xml version=\"1.0\"?"},
+               {"html", [], [{"head", [], []}, {"body", [], []}]}
+             ] = nodes
+
+      # disallowed-processing-instruction-target, then initial EOF / missing-doctype.
+      assert error_count == 2
+    end
+
+    test "<? at EOF is not a comment" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<?")
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], []}]}] = nodes
+      # eof-in-processing-instruction plus initial EOF / missing-doctype.
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do
@@ -2645,6 +2684,7 @@ defmodule PureHTMLTest do
 
   defp valid_node?(text) when is_binary(text), do: true
   defp valid_node?({:comment, _}), do: true
+  defp valid_node?({:pi, target, data}) when is_binary(target) and is_binary(data), do: true
   defp valid_node?({:doctype, _, _, _}), do: true
   defp valid_node?(_), do: false
 

@@ -57,6 +57,10 @@ defmodule PureHTML.Serializer do
     ["<!--", text, "-->"]
   end
 
+  defp serialize_node({:pi, target, data}, _parent, _scripting) do
+    ["<?", target, " ", data, "?>"]
+  end
+
   defp serialize_node({:content, children}, parent, scripting) do
     Enum.map(children, &serialize_node(&1, parent, scripting))
   end

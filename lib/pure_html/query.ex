@@ -13,6 +13,7 @@ defmodule PureHTML.Query do
           {String.t(), [{String.t(), String.t()}], [html_node() | String.t()]}
           | String.t()
           | {:comment, String.t()}
+          | {:pi, String.t(), String.t()}
           | {:doctype, String.t(), String.t() | nil, String.t() | nil}
 
   @doc """

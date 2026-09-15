@@ -411,6 +411,10 @@ defmodule PureHTML.TreeBuilder do
     {doctype, state, [{:comment, text} | comments]}
   end
 
+  defp process_token({:pi, target, data}, {doctype, %State{stack: []} = state, comments}) do
+    {doctype, state, [{:pi, target, data} | comments]}
+  end
+
   defp process_token(token, {doctype, state, comments}) do
     {doctype, process_token_fully(token, state), comments}
   end

@@ -160,6 +160,10 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def add_child_to_stack(state, child), do: do_add_child_to_stack(state, child)
 
+  def insert_pi(state, target, data) do
+    add_child_to_stack(state, {:pi, target, data})
+  end
+
   defp do_add_child_to_stack(%{stack: [parent_ref | _], elements: elements} = state, child) do
     new_elements = add_child_to_elements(elements, parent_ref, child)
     %{state | elements: new_elements}

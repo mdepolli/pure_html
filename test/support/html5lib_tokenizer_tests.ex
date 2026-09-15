@@ -12,9 +12,26 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   """
 
   @test_dir Path.expand("../html5lib-tests/tokenizer", __DIR__)
+  @override_dir Path.expand("../html5lib-overrides/tokenizer", __DIR__)
 
   @doc "Returns the path to the tokenizer test directory."
   def test_dir, do: @test_dir
+
+  @doc """
+  Path to read for a fixture: `test/html5lib-overrides/tokenizer/`
+  when that file exists, otherwise the submodule file.
+  """
+  # Whole-file copy: an unrelated submodule edit of the same file would be shadowed, but the pin is 9329e64 forever.
+  def source_path(path) do
+    rel = Path.relative_to(path, @test_dir)
+    override = Path.join(@override_dir, rel)
+
+    if File.exists?(override) do
+      override
+    else
+      path
+    end
+  end
 
   @doc "Lists all .test files in the tokenizer test directory."
   def list_test_files do
@@ -33,6 +50,7 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   """
   def parse_file(path) do
     path
+    |> source_path()
     |> File.read!()
     |> Jason.decode!()
     |> extract_tests()
@@ -254,6 +272,10 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
 
   defp normalize_token(["Character", data], double_escaped?) do
     {:character, maybe_unescape(data, double_escaped?)}
+  end
+
+  defp normalize_token(["ProcessingInstruction", target, data], double_escaped?) do
+    {:pi, maybe_unescape(target, double_escaped?), maybe_unescape(data, double_escaped?)}
   end
 
   defp normalize_start_tag(name, attrs, self_closing) do

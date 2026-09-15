@@ -27,6 +27,10 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
     ok(%{state | post_html_nodes: [{:comment, text} | state.post_html_nodes]})
   end
 
+  def process({:pi, target, data}, state) do
+    ok(%{state | post_html_nodes: [{:pi, target, data} | state.post_html_nodes]})
+  end
+
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore
     state

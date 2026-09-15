@@ -101,6 +101,37 @@ defmodule PureHTML.TokenizerTest do
       assert {[{:start_tag, "a", [{"b", "1"}], false}], 1} =
                Tokenizer.tokenize_with_errors("<a b=1 b=2>")
     end
+
+    test "php markup is a processing instruction" do
+      assert {[{:pi, "php", "echo 1; "}], 0} =
+               Tokenizer.tokenize_with_errors("<?php echo 1; ?>")
+    end
+
+    test "a PI can end on > without a preceding ?" do
+      assert {[{:pi, "import", "foo"}], 0} = Tokenizer.tokenize_with_errors("<?import foo>")
+    end
+
+    test "xml is a disallowed PI target and becomes a comment" do
+      assert {[{:comment, "?xml version=\"1.0\"?"}], 1} =
+               Tokenizer.tokenize_with_errors("<?xml version=\"1.0\"?>")
+    end
+
+    test "xml-stylesheet is a disallowed PI target, ASCII case-insensitive" do
+      assert {[{:comment, "?XML-STYLESHEET href=\"x\"?"}], 1} =
+               Tokenizer.tokenize_with_errors("<?XML-STYLESHEET href=\"x\"?>")
+    end
+
+    test "<? at EOF is eof-in-processing-instruction and emits no token" do
+      assert {[], 1} = Tokenizer.tokenize_with_errors("<?")
+    end
+
+    test "an unclosed PI target emits no token" do
+      assert {[], 1} = Tokenizer.tokenize_with_errors("<?php")
+    end
+
+    test "an invalid first character of a PI target becomes a comment" do
+      assert {[{:comment, "?#"}], 1} = Tokenizer.tokenize_with_errors("<?#")
+    end
   end
 
   describe "tag names" do
