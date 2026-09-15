@@ -35,15 +35,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                      dl fieldset figcaption figure footer form header hgroup listing main
                      menu nav ol pre search section select summary ul)
 
-  # Note: option and optgroup are handled specially in maybe_close_same/2
-  # per HTML5 spec (they only close if current node matches, not stack search)
-  @implicit_closes %{
-    "button" => [],
-    "tr" => [],
-    "td" => ["th"],
-    "th" => ["td"]
-  }
-
   # Note: input is handled specially - only non-hidden inputs disable frameset
   # Start tags whose in-body entries set the frameset-ok flag to "not ok"
   # (input is handled by its own entry: only when its type is not hidden)
@@ -438,6 +429,17 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     parse_error(state)
   end
 
+  # Per spec: with a button in scope, parse error, generate implied end tags,
+  # and pop until a button has been popped; then reconstruct, insert, and set
+  # frameset-ok to "not ok".
+  defp start_tag({:start_tag, "button", attrs, _}, state) do
+    state
+    |> close_open_button()
+    |> reconstruct_active_formatting()
+    |> push_element("button", attrs)
+    |> set_frameset_not_ok()
+  end
+
   # Per spec: an a element in the active formatting list after the last marker
   # is a parse error; run the adoption agency algorithm, then remove that
   # element from the list and the stack if the algorithm didn't already.
@@ -604,7 +606,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> close_open_list_item(tag)
     |> maybe_close_p(tag)
-    |> maybe_close_same(tag)
     |> maybe_close_current_heading(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
@@ -613,7 +614,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp start_tag({:start_tag, tag, attrs, _self_closing}, state) do
     state
     |> reconstruct_active_formatting()
-    |> maybe_close_same(tag)
     |> push_element(tag, attrs)
     |> maybe_set_frameset_not_ok_for_element(tag)
   end
@@ -943,34 +943,16 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> close_tag_ref_forced("p")
   end
 
-  @implicit_close_boundaries ~w(table template body html)
-
-  defp maybe_close_same(state, tag) do
-    tag
-    |> get_implicit_close_config()
-    |> close_implicit(tag, state)
+  defp close_open_button(state) do
+    if in_scope?(state, "button", :default) do
+      state
+      |> parse_error()
+      |> generate_implied_end_tags()
+      |> pop_through("button")
+    else
+      state
+    end
   end
-
-  defp close_implicit(nil, _tag, state), do: state
-
-  defp close_implicit(closes, tag, %{stack: stack, elements: elements} = state) do
-    stack
-    |> pop_to_implicit_close_ref(elements, closes, @implicit_close_boundaries)
-    |> apply_implicit_close(tag, closes, state)
-  end
-
-  defp apply_implicit_close(:not_found, _tag, _closes, state), do: state
-
-  defp apply_implicit_close({:ok, new_stack, parent_ref}, tag, closes, state) do
-    state
-    |> implicit_close_parse_error(tag, closes)
-    |> replace_stack(new_stack, parent_ref)
-  end
-
-  # For button: "If the stack has a button in scope, this is a parse error."
-  defp implicit_close_parse_error(state, "button", _closes), do: parse_error(state)
-
-  defp implicit_close_parse_error(state, _tag, _closes), do: state
 
   # li, dd, dt start tags: walk the stack from the current node. An open item
   # of the same kind (li, or dd/dt) is closed with implied end tags except
@@ -1011,8 +993,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> close_tag_ref_forced(tag)
   end
 
-  defp replace_stack(state, stack, _parent_ref), do: %{state | stack: stack}
-
   defp close_ruby_parts(state, tag) when tag in ~w(rb rtc) do
     if in_scope?(state, "ruby", :default) do
       state
@@ -1050,24 +1030,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp mismatch_if_not_in(tag, closes, state) do
     if tag in closes, do: state, else: parse_error(state)
-  end
-
-  for {tag, also_closes} <- @implicit_closes do
-    defp get_implicit_close_config(unquote(tag)), do: unquote([tag | also_closes])
-  end
-
-  defp get_implicit_close_config(_), do: nil
-
-  defp pop_to_implicit_close_ref([], _elements, _closes, _boundaries), do: :not_found
-
-  defp pop_to_implicit_close_ref([ref | rest], elements, closes, boundaries) do
-    %{tag: tag, parent_ref: parent_ref} = elements[ref]
-
-    cond do
-      tag in boundaries -> :not_found
-      tag in closes -> {:ok, rest, parent_ref}
-      true -> pop_to_implicit_close_ref(rest, elements, closes, boundaries)
-    end
   end
 
   # --------------------------------------------------------------------------

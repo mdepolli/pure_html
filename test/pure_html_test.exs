@@ -34,6 +34,45 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "button start tag closes an open button in default scope with implied end tags" do
+      # Arrange
+      html = "<button><b><button>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [{"button", [], [{"b", [], []}]}, {"b", [], [{"button", [], ["x"]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
+    test "button start tag does not close a button beyond a default scope boundary" do
+      # Arrange
+      html = "<button><object><button>x"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"button", [], [{"object", [], [{"button", [], ["x"]}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
     test "table at an HTML integration point is inserted there, not fostered past it" do
       # Arrange
       html = "<table><tr><td><svg><foreignObject><table>x"
