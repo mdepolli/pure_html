@@ -264,7 +264,7 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
     "xlink:type" => {:xlink, "type"},
     "xml:lang" => {:xml, "lang"},
     "xml:space" => {:xml, "space"},
-    "xmlns" => {:xmlns, ""},
+    "xmlns" => {:xmlns, "xmlns"},
     "xmlns:xlink" => {:xmlns, "xlink"}
   }
 

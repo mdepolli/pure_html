@@ -1704,6 +1704,21 @@ defmodule PureHTMLTest do
       assert result =~ "xlink:href=foo"
     end
 
+    test "serializes an xmlns attribute on an SVG element by its local name" do
+      # Arrange
+      html = "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+
+      # Act
+      nodes = PureHTML.parse(html)
+      result = PureHTML.to_html(nodes)
+
+      # Assert
+      assert [{"html", [], [_head, {"body", [], [{{:svg, "svg"}, attrs, []}]}]}] = nodes
+      assert [{{:xmlns, "xmlns"}, "http://www.w3.org/2000/svg"}] = attrs
+      assert result =~ "<svg xmlns="
+      refute result =~ "xmlns:"
+    end
+
     test "serializes a SYSTEM about:legacy-compat doctype by name only" do
       # Arrange
       html = "<!DOCTYPE html SYSTEM \"about:legacy-compat\">"

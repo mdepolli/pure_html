@@ -148,7 +148,6 @@ defmodule PureHTML.Serializer do
 
   defp attr_name_to_string({:xlink, local}), do: "xlink:" <> local
   defp attr_name_to_string({:xml, local}), do: "xml:" <> local
-  defp attr_name_to_string({:xmlns, ""}), do: "xmlns"
   defp attr_name_to_string({:xmlns, "xmlns"}), do: "xmlns"
   defp attr_name_to_string({:xmlns, local}), do: "xmlns:" <> local
   defp attr_name_to_string(name) when is_binary(name), do: name

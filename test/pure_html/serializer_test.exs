@@ -196,6 +196,11 @@ defmodule PureHTML.SerializerTest do
       assert Serializer.serialize(nodes) == "<mrow></mrow>"
     end
 
+    test "serializes xmlns attributes with and without a prefix" do
+      nodes = [{{:svg, "svg"}, [{{:xmlns, "xmlns"}, "s"}, {{:xmlns, "xlink"}, "x"}], []}]
+      assert Serializer.serialize(nodes) == "<svg xmlns=s xmlns:xlink=x></svg>"
+    end
+
     test "serializes namespaced attribute tuples" do
       nodes = [{{:svg, "a"}, [{{:xlink, "href"}, "foo"}], []}]
       assert Serializer.serialize(nodes) == "<a xlink:href=foo></a>"
