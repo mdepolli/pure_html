@@ -3,6 +3,8 @@ defmodule PureHTML.SerializerTest do
 
   alias PureHTML.Serializer
 
+  doctest Serializer
+
   describe "basic element serialization" do
     test "simple element with text" do
       assert Serializer.serialize([{"p", [], ["Hello"]}]) == "<p>Hello</p>"
@@ -29,7 +31,7 @@ defmodule PureHTML.SerializerTest do
     end
 
     test "img has no closing tag" do
-      assert Serializer.serialize([{"img", [{"src", "a.png"}], []}]) == "<img src=a.png>"
+      assert Serializer.serialize([{"img", [{"src", "a.png"}], []}]) == "<img src=\"a.png\">"
     end
 
     test "hr has no closing tag" do
@@ -37,19 +39,29 @@ defmodule PureHTML.SerializerTest do
     end
 
     test "input has no closing tag" do
-      assert Serializer.serialize([{"input", [{"type", "text"}], []}]) == "<input type=text>"
+      assert Serializer.serialize([{"input", [{"type", "text"}], []}]) ==
+               "<input type=\"text\">"
     end
 
     test "meta has no closing tag" do
       assert Serializer.serialize([{"meta", [{"charset", "utf-8"}], []}]) ==
-               "<meta charset=utf-8>"
+               "<meta charset=\"utf-8\">"
+    end
+
+    test "frame is void and drops children" do
+      assert Serializer.serialize([{"frame", [], [{"p", [], ["x"]}]}]) == "<frame>"
+    end
+
+    test "SVG link is not void" do
+      nodes = [{{:svg, "link"}, [], ["x"]}]
+      assert Serializer.serialize(nodes) == "<link>x</link>"
     end
   end
 
   describe "attribute serialization" do
-    test "unquoted when safe" do
+    test "always double-quotes attribute values" do
       assert Serializer.serialize([{"span", [{"title", "foo"}], []}]) ==
-               "<span title=foo></span>"
+               "<span title=\"foo\"></span>"
     end
 
     test "double quoted with space" do
@@ -62,40 +74,39 @@ defmodule PureHTML.SerializerTest do
                "<span title=\"foo'bar\"></span>"
     end
 
-    test "single quoted with double quote" do
+    test "escapes double quotes in attribute values" do
       assert Serializer.serialize([{"span", [{"title", "foo\"bar"}], []}]) ==
-               "<span title='foo\"bar'></span>"
+               "<span title=\"foo&quot;bar\"></span>"
     end
 
-    test "double quoted with both quotes - escapes double" do
+    test "escapes double quotes when the value also has a single quote" do
       assert Serializer.serialize([{"span", [{"title", "foo'bar\"baz"}], []}]) ==
                "<span title=\"foo'bar&quot;baz\"></span>"
     end
 
-    test "ampersand in simple value is unquoted" do
-      # &b is not a valid entity ref, so unquoted is valid HTML
+    test "escapes ampersand in attribute values" do
       assert Serializer.serialize([{"span", [{"title", "a&b"}], []}]) ==
-               "<span title=a&b></span>"
+               "<span title=\"a&amp;b\"></span>"
     end
 
-    test "escapes ampersand when quoting is required" do
-      # Space forces quoting, then & must be escaped
+    test "escapes ampersand among other characters" do
       assert Serializer.serialize([{"span", [{"title", "a & b"}], []}]) ==
                "<span title=\"a &amp; b\"></span>"
     end
 
     test "escapes angle brackets in attribute values" do
-      # Per spec, escaping a string replaces < and > in attribute mode too
       assert Serializer.serialize([{"span", [{"title", "foo<bar"}], []}]) ==
-               "<span title=foo&lt;bar></span>"
-
-      assert Serializer.serialize([{"span", [{"title", "foo>bar"}], []}]) ==
-               "<span title=\"foo&gt;bar\"></span>"
+               "<span title=\"foo&lt;bar\"></span>"
     end
 
-    test "empty attribute value renders as bare name" do
+    test "attribute mode escapes greater-than" do
+      assert Serializer.serialize([{"span", [{"title", "a>b"}], []}]) ==
+               "<span title=\"a&gt;b\"></span>"
+    end
+
+    test "empty attribute value is quoted empty" do
       assert Serializer.serialize([{"button", [{"disabled", ""}], []}]) ==
-               "<button disabled></button>"
+               "<button disabled=\"\"></button>"
     end
 
     test "double quoted with equals sign" do
@@ -103,15 +114,14 @@ defmodule PureHTML.SerializerTest do
                "<span title=\"a=b\"></span>"
     end
 
-    test "double quoted with greater than, escaped" do
-      assert Serializer.serialize([{"span", [{"title", "a>b"}], []}]) ==
-               "<span title=\"a&gt;b\"></span>"
+    test "NBSP in an attribute is escaped as &nbsp;" do
+      assert Serializer.serialize([{"span", [{"title", "\u00A0"}], []}]) ==
+               "<span title=\"&nbsp;\"></span>"
     end
 
     test "multiple attributes" do
-      # Attributes are sorted alphabetically, so order is deterministic
       result = Serializer.serialize([{"div", [{"class", "y"}, {"id", "x"}], []}])
-      assert result == "<div class=y id=x></div>"
+      assert result == "<div class=\"y\" id=\"x\"></div>"
     end
   end
 
@@ -132,6 +142,10 @@ defmodule PureHTML.SerializerTest do
       assert Serializer.serialize([{"p", [], ["<script>alert('xss')</script>"]}]) ==
                "<p>&lt;script&gt;alert('xss')&lt;/script&gt;</p>"
     end
+
+    test "NBSP is escaped as &nbsp;" do
+      assert Serializer.serialize(["\u00A0"]) == "&nbsp;"
+    end
   end
 
   describe "raw text elements" do
@@ -143,6 +157,23 @@ defmodule PureHTML.SerializerTest do
     test "style content is not escaped" do
       assert Serializer.serialize([{"style", [], ["a<b{color:red}"]}]) ==
                "<style>a<b{color:red}</style>"
+    end
+
+    test "noscript text is not escaped when scripting is on" do
+      nodes = [{"noscript", [], ["<p>x</p>"]}]
+      assert Serializer.serialize(nodes) == "<noscript><p>x</p></noscript>"
+    end
+
+    test "noscript text is escaped when scripting is off" do
+      nodes = [{"noscript", [], ["<p>x</p>"]}]
+
+      assert Serializer.serialize(nodes, scripting: false) ==
+               "<noscript>&lt;p&gt;x&lt;/p&gt;</noscript>"
+    end
+
+    test "SVG script text is escaped" do
+      nodes = [{{:svg, "script"}, [], ["a<b>c&d"]}]
+      assert Serializer.serialize(nodes) == "<script>a&lt;b&gt;c&amp;d</script>"
     end
   end
 
@@ -188,7 +219,7 @@ defmodule PureHTML.SerializerTest do
   describe "foreign content" do
     test "svg element" do
       nodes = [{{:svg, "circle"}, [{"r", "5"}], []}]
-      assert Serializer.serialize(nodes) == "<circle r=5></circle>"
+      assert Serializer.serialize(nodes) == "<circle r=\"5\"></circle>"
     end
 
     test "mathml element" do
@@ -198,12 +229,18 @@ defmodule PureHTML.SerializerTest do
 
     test "serializes xmlns attributes with and without a prefix" do
       nodes = [{{:svg, "svg"}, [{{:xmlns, "xmlns"}, "s"}, {{:xmlns, "xlink"}, "x"}], []}]
-      assert Serializer.serialize(nodes) == "<svg xmlns=s xmlns:xlink=x></svg>"
+      assert Serializer.serialize(nodes) == "<svg xmlns=\"s\" xmlns:xlink=\"x\"></svg>"
     end
 
     test "serializes namespaced attribute tuples" do
       nodes = [{{:svg, "a"}, [{{:xlink, "href"}, "foo"}], []}]
-      assert Serializer.serialize(nodes) == "<a xlink:href=foo></a>"
+      assert Serializer.serialize(nodes) == "<a xlink:href=\"foo\"></a>"
+    end
+  end
+
+  describe "pre" do
+    test "a leading LF in a pre text node is emitted" do
+      assert Serializer.serialize([{"pre", [], ["\nx"]}]) == "<pre>\nx</pre>"
     end
   end
 

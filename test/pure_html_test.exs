@@ -2595,7 +2595,7 @@ defmodule PureHTMLTest do
         |> PureHTML.to_html()
 
       # Assert
-      assert result =~ "xlink:href=foo"
+      assert result =~ "xlink:href=\"foo\""
     end
 
     test "serializes an xmlns attribute on an SVG element by its local name" do

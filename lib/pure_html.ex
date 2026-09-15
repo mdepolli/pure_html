@@ -120,13 +120,18 @@ defmodule PureHTML do
   @doc """
   Converts parsed HTML nodes back to an HTML string.
 
+  Follows the HTML fragment serialization algorithm.
+
   ## Options
 
-  - `:quote_char` - Force `"'"` or `"\""` for attribute quotes (default: smart quoting)
-  - `:minimize_boolean_attributes` - Output `disabled` vs `disabled=disabled` (default: true)
-  - `:use_trailing_solidus` - Output `<br />` vs `<br>` (default: false)
-  - `:escape_rcdata` - Escape content in script/style (default: false)
-  - `:strip_whitespace` - Collapse whitespace in text nodes (default: false)
+  - `:scripting` — whether scripting is enabled (default: `true`).
+
+    `to_html/2` is usually called on a tree `parse/2` built. Parse's scripting
+    flag decides whether noscript children are a text node or elements. With
+    the default parse (scripting on), noscript holds one text node that must
+    be emitted literally, so the serializer default is `true`. If the tree was
+    parsed with scripting off, noscript holds elements and this flag does not
+    affect them.
 
   ## Examples
 
@@ -134,10 +139,7 @@ defmodule PureHTML do
       "<html><head></head><body><p>Hello</p></body></html>"
 
       iex> PureHTML.to_html([{"div", [{"class", "foo"}], ["text"]}])
-      "<div class=foo>text</div>"
-
-      iex> PureHTML.to_html([{"br", [], []}], use_trailing_solidus: true)
-      "<br />"
+      "<div class=\\"foo\\">text</div>"
 
   """
   @spec to_html([term()], keyword()) :: String.t()
