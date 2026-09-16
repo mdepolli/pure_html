@@ -1,7 +1,7 @@
 #data
 <nobr><table><marquee></table><nobr>
 #spec
-walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+walk in WALKS.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
 #upstream-errors
 (1,6): expected-doctype-but-got-start-tag
 (1,22): unexpected-start-tag-implies-table-voodoo

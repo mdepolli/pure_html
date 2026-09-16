@@ -54,7 +54,7 @@ defmodule PureHTML.Html5libDatParserTest do
         assert length(corrected) == length(corrections), rel
 
         for correction <- corrections do
-          assert correction.spec =~ "walk in CLAUDE.md", inspect(correction.data)
+          assert correction.spec =~ "walk in WALKS.md", inspect(correction.data)
           assert correction.spec =~ "https://html.spec.whatwg.org/multipage/parsing.html#"
 
           assert Enum.all?(correction.errors, &String.starts_with?(&1, "text:")),
@@ -86,7 +86,7 @@ defmodule PureHTML.Html5libDatParserTest do
         assert length(corrected) == length(corrections), name
 
         for correction <- corrections do
-          assert correction["spec"] =~ "walk in CLAUDE.md", inspect(correction["input"])
+          assert correction["spec"] =~ "walk in WALKS.md", inspect(correction["input"])
           assert Map.has_key?(correction, "upstream"), inspect(correction["input"])
         end
       end

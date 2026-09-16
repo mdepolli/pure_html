@@ -18,7 +18,7 @@ For those cases the parser is right and the fixture is wrong, so the assertion f
 
 `test/fixtures/corrections/` mirrors this directory. A corrections file has the same name and format as the fixture it corrects and holds one block per corrected case:
 
-- Tree-construction blocks (`.dat`) are keyed by `#data`. `#spec` cites the section anchors and the walk in CLAUDE.md; `#upstream-errors` (and `#upstream-document` when the tree changes) snapshot what upstream lists; `#errors` (and `#document`) give the text's expectation, one `text:` line per error.
-- Tokenizer entries (`.json`, under `"corrections"`) are keyed by `description` and `input`. `spec` cites the walk; `upstream` snapshots upstream's `output` and `errors`; `output` and `errors` give the text's tokens, with processing instructions as `["ProcessingInstruction", target, data]`.
+- Tree-construction blocks (`.dat`) are keyed by `#data`. `#spec` cites the section anchors and the walk in `WALKS.md`; `#upstream-errors` (and `#upstream-document` when the tree changes) snapshot what upstream lists; `#errors` (and `#document`) give the text's expectation, one `text:` line per error.
+- Tokenizer entries (`.json`, under `"corrections"`) are keyed by `description` and `input`. `spec` cites the walk in `WALKS.md`; `upstream` snapshots upstream's `output` and `errors`; `output` and `errors` give the text's tokens, with processing instructions as `["ProcessingInstruction", target, data]`.
 
 The runners apply corrections when they parse a fixture. A block that matches no case, or more than one, or whose upstream snapshot no longer matches the fixture, raises with the case named: upstream moved, and the disagreement needs a fresh walk rather than blind reuse. `test/pure_html/html5lib_dat_parser_test.exs` pins that every corrections file names an existing fixture and that every block landed.
