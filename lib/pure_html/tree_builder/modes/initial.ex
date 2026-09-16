@@ -17,6 +17,8 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
 
   import PureHTML.TreeBuilder.Helpers
 
+  alias PureHTML.TreeBuilder.Quirks
+
   @impl true
   def process({:character, text}, state) do
     text
@@ -24,19 +26,26 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     |> initial_characters(state)
   end
 
-  def process({:comment, _text}, state) do
-    # Comments in initial mode are inserted as children of the Document
-    # This is handled at the document level in TreeBuilder.process_token
-    # The mode module just needs to not change mode
-    ok(state)
+  def process({:comment, text}, state) do
+    state
+    |> add_document_child({:comment, text})
+    |> ok()
   end
 
-  def process({:pi, _target, _data}, state), do: ok(state)
-
-  def process({:doctype, _name, _public, _system, _force_quirks}, state) do
-    # DOCTYPE handling is done at process_token level
-    # Valid DOCTYPE -> not quirks mode (quirks_mode stays false)
+  def process({:pi, target, data}, state) do
     state
+    |> add_document_child({:pi, target, data})
+    |> ok()
+  end
+
+  # "If the DOCTYPE token's name is not "html", or the token's public
+  # identifier is not missing, or the token's system identifier is neither
+  # missing nor "about:legacy-compat", then there is a parse error."
+  def process({:doctype, name, public_id, system_id, force_quirks}, state) do
+    state
+    |> doctype_parse_error(name, public_id, system_id, force_quirks)
+    |> set_doctype(name, public_id, system_id)
+    |> set_quirks_mode(Quirks.mode(name, public_id, system_id, force_quirks) == :quirks)
     |> set_mode(:before_html)
     |> ok()
   end
@@ -45,9 +54,18 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     # Any other token without DOCTYPE: parse error, set quirks mode
     state
     |> parse_error()
-    |> Map.put(:quirks_mode, true)
+    |> set_quirks_mode(true)
     |> set_mode(:before_html)
     |> reprocess()
+  end
+
+  defp doctype_parse_error(state, name, public_id, system_id, force_quirks) do
+    if name != "html" or is_binary(public_id) or
+         (is_binary(system_id) and system_id != "about:legacy-compat") or force_quirks do
+      parse_error(state)
+    else
+      state
+    end
   end
 
   # "A character token that is ASCII whitespace: Ignore the token."
@@ -58,7 +76,7 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
   defp initial_characters({_whitespace, rest}, state) do
     state
     |> parse_error()
-    |> Map.put(:quirks_mode, true)
+    |> set_quirks_mode(true)
     |> set_mode(:before_html)
     |> reprocess_with({:character, rest})
   end

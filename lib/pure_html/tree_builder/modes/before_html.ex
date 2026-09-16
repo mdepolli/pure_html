@@ -39,13 +39,17 @@ defmodule PureHTML.TreeBuilder.Modes.BeforeHtml do
     |> reprocess_with({:character, text})
   end
 
-  def process({:comment, _text}, state) do
-    # Comments are inserted as children of the Document
-    # This is handled at document level in TreeBuilder.process_token
-    ok(state)
+  def process({:comment, text}, state) do
+    state
+    |> add_document_child({:comment, text})
+    |> ok()
   end
 
-  def process({:pi, _target, _data}, state), do: ok(state)
+  def process({:pi, target, data}, state) do
+    state
+    |> add_document_child({:pi, target, data})
+    |> ok()
+  end
 
   def process({:doctype, _name, _public, _system, _force_quirks}, state) do
     # Parse error, ignore

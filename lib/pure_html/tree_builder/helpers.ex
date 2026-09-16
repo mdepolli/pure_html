@@ -329,6 +329,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def set_mode(state, mode), do: %{state | mode: mode}
 
+  @doc "Inserts a comment or PI as a child of the Document, before the html element."
+  def add_document_child(state, node) do
+    %{state | document_children: [node | state.document_children]}
+  end
+
+  @doc "Records the document's doctype; initial calls this once."
+  def set_doctype(state, name, public_id, system_id) do
+    %{state | doctype: {name, public_id, system_id}}
+  end
+
+  @doc "Sets the quirks mode flag, decided in initial from the doctype or its absence."
+  def set_quirks_mode(state, quirks?), do: %{state | quirks_mode: quirks?}
+
   @doc """
   Enables foster parenting for the token being processed. The tree builder
   disables it again once the token (and any reprocessing) is done.

@@ -29,7 +29,6 @@ defmodule PureHTML.TreeBuilder do
   alias PureHTML.TreeBuilder.ForeignContent
   alias PureHTML.TreeBuilder.Modes
   alias PureHTML.TreeBuilder.Modes.InBody
-  alias PureHTML.TreeBuilder.Quirks
   alias PureHTML.TreeBuilder.SelectedContent
 
   # --------------------------------------------------------------------------
@@ -147,8 +146,12 @@ defmodule PureHTML.TreeBuilder do
             head_element: element_ref() | nil,
             form_element: element_ref() | nil,
             scripting: boolean(),
+            quirks_mode: boolean(),
+            foster_parenting: boolean(),
+            context_element: {atom() | nil, String.t()} | nil,
             # DOM Structure
             elements: %{element_ref() => element()},
+            doctype: {String.t() | nil, String.t() | nil, String.t() | nil} | nil,
             document_children: [child()],
             post_html_nodes: [child()],
             error_count: non_neg_integer()
@@ -190,8 +193,9 @@ defmodule PureHTML.TreeBuilder do
       # === DOM Structure ===
       # Element storage: ref => %{ref, tag, attrs, parent_ref, children}
       elements: %{},
-      # Current parent element ref (for O(1) parent lookup during insertion)
-      # Top-level document children (comments before <html>)
+      # The document's doctype: {name, public_id, system_id}, or nil
+      doctype: nil,
+      # Document children before the html element (comments, PIs), newest first
       document_children: [],
       # Post-html nodes (comments after </html>)
       post_html_nodes: [],
@@ -255,24 +259,19 @@ defmodule PureHTML.TreeBuilder do
   end
 
   defp do_build(tokenizer, scripting) do
-    {doctype, state, pre_html_comments} =
-      build_loop(tokenizer, {nil, %State{scripting: scripting}, []})
-
-    html_node = finalize(state)
-    pre_comments = Enum.reverse(pre_html_comments)
-    post_nodes = Enum.reverse(state.post_html_nodes)
+    state = build_loop(tokenizer, %State{scripting: scripting})
 
     nodes =
-      case doctype do
-        nil ->
-          pre_comments ++ [html_node] ++ post_nodes
-
-        {name, public, system} ->
-          [{:doctype, name, public, system} | pre_comments] ++ [html_node] ++ post_nodes
-      end
+      doctype_nodes(state.doctype) ++
+        Enum.reverse(state.document_children) ++
+        [finalize(state)] ++
+        Enum.reverse(state.post_html_nodes)
 
     {nodes, state.error_count}
   end
+
+  defp doctype_nodes(nil), do: []
+  defp doctype_nodes({name, public, system}), do: [{:doctype, name, public, system}]
 
   @doc """
   Builds a fragment from a tokenizer using the given context element.
@@ -340,85 +339,52 @@ defmodule PureHTML.TreeBuilder do
         else: state
 
     # Step 6: Run the normal build loop
-    {_doctype, state, _comments} =
-      build_loop(tokenizer, {nil, state, []})
+    state = build_loop(tokenizer, state)
 
     # Step 7: Return children of the html element
     {finalize_fragment(state, html_ref), state.error_count}
   end
 
-  defp build_loop(tokenizer, acc) do
-    # Update tokenizer with current foreign content context
-    tokenizer = update_tokenizer_context(tokenizer, acc)
+  defp build_loop(tokenizer, state) do
+    tokenizer = update_tokenizer_context(tokenizer, state)
 
     case Tokenizer.next_token(tokenizer) do
       nil ->
-        merge_tokenizer_errors(acc, tokenizer)
+        merge_tokenizer_errors(state, tokenizer)
 
       {token, tokenizer} ->
-        {tokenizer, acc} =
+        {tokenizer, state} =
           token
-          |> process_token(acc)
+          |> process_token_fully(state)
           |> apply_tokenizer_switch(tokenizer)
 
-        build_loop(tokenizer, acc)
+        build_loop(tokenizer, state)
     end
   end
 
   # The insertion modes ask for a tokenizer state ("switch the tokenizer to
   # the RAWTEXT state"); it takes effect before the next token is read.
-  defp apply_tokenizer_switch({_, %State{tokenizer_state: nil}, _} = acc, tokenizer),
-    do: {tokenizer, acc}
+  defp apply_tokenizer_switch(%State{tokenizer_state: nil} = state, tokenizer),
+    do: {tokenizer, state}
 
-  defp apply_tokenizer_switch(
-         {doctype, %State{tokenizer_state: next} = state, comments},
-         tokenizer
-       ) do
-    {Tokenizer.set_state(tokenizer, next), {doctype, %{state | tokenizer_state: nil}, comments}}
+  defp apply_tokenizer_switch(%State{tokenizer_state: next} = state, tokenizer) do
+    {Tokenizer.set_state(tokenizer, next), %{state | tokenizer_state: nil}}
   end
 
-  defp merge_tokenizer_errors({doctype, state, comments}, %Tokenizer{error_count: n}) do
-    {doctype, %{state | error_count: state.error_count + n}, comments}
+  defp merge_tokenizer_errors(state, %Tokenizer{error_count: n}) do
+    %{state | error_count: state.error_count + n}
   end
 
-  defp update_tokenizer_context(tokenizer, {_, %State{} = state, _}) do
+  defp update_tokenizer_context(tokenizer, %State{} = state) do
     # Per spec: the adjusted current node is the context element if the parser
     # was created for fragment parsing and the stack has only one element.
     Tokenizer.set_foreign_content(tokenizer, ForeignContent.adjusted_current_node_foreign?(state))
   end
 
-  defp process_token(
-         {:doctype, name, public_id, system_id, force_quirks},
-         {_, %State{mode: :initial} = state, comments}
-       ) do
-    # Per spec: parse error if name != "html", public_id is not missing,
-    # or system_id is not missing and != "about:legacy-compat"
-    state =
-      if doctype_is_parse_error?(name, public_id, system_id, force_quirks),
-        do: parse_error(state),
-        else: state
-
-    quirks = Quirks.mode(name, public_id, system_id, force_quirks) == :quirks
-    {{name, public_id, system_id}, %{state | mode: :before_html, quirks_mode: quirks}, comments}
-  end
-
-  # DOCTYPE outside initial mode: parse error, ignore
-  defp process_token({:doctype, _, _, _, _}, {doctype, state, comments}) do
-    {doctype, parse_error(state), comments}
-  end
-
-  defp process_token({:comment, text}, {doctype, %State{stack: []} = state, comments}) do
-    {doctype, state, [{:comment, text} | comments]}
-  end
-
-  defp process_token({:pi, target, data}, {doctype, %State{stack: []} = state, comments}) do
-    {doctype, state, [{:pi, target, data} | comments]}
-  end
-
-  defp process_token(token, {doctype, state, comments}) do
-    {doctype, process_token_fully(token, state), comments}
-  end
-
+  # Every token goes through the dispatcher; the modes own the algorithm,
+  # including a doctype (initial stores it, every other mode ignores it with a
+  # parse error) and the comments and PIs that land on the Document.
+  #
   # Per spec, foster parenting is enabled by an insertion mode for one token
   # ("enable foster parenting, process the token ..., and then disable foster
   # parenting"). The flag stays on through any reprocessing of that token.
@@ -441,13 +407,6 @@ defmodule PureHTML.TreeBuilder do
 
   defp process_character_after_lf("", state), do: state
   defp process_character_after_lf(rest, state), do: process_token_fully({:character, rest}, state)
-
-  # Per WHATWG spec: DOCTYPE is a parse error if name != "html", public_id is not
-  # missing, or system_id is not missing and != "about:legacy-compat".
-  defp doctype_is_parse_error?(name, public, system, force_quirks) do
-    name != "html" or is_binary(public) or
-      (is_binary(system) and system != "about:legacy-compat") or force_quirks
-  end
 
   # Tree construction dispatcher per WHATWG spec.
   # Before routing to any insertion mode, checks the adjusted current node.

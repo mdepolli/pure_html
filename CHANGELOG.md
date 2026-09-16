@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A doctype right after `<pre>` or `<listing>` no longer consumes the line-feed slot: the LF that follows it is text. Doctypes, and the comments and processing instructions that land on the Document, go through the insertion modes instead of a tree-builder intercept
 - Numeric character references in RCDATA (`<title>&#65;</title>`) no longer raise
 - Invalid UTF-8 in the input is replaced with U+FFFD before tokenizing, so markup with stray bytes no longer raises
 - Foreign attributes with a namespace prefix (`xlink:href`, `xml:lang`, `xmlns:xlink`) serialize with their prefix instead of raising

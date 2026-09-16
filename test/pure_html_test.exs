@@ -67,6 +67,22 @@ defmodule PureHTMLTest do
   end
 
   describe "parse_with_errors/2" do
+    test "a doctype after pre is not the ignored line feed" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<!DOCTYPE html><pre><!DOCTYPE html>\nX</pre>")
+
+      # Assert: pre ignores only a next token that is a LF; the doctype is the
+      # next token, so the LF that follows it is text. One error: the doctype
+      # in body. (Without </pre>, EOF with pre open would add a second.)
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"pre", [], ["\nX"]}]}]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
     test "selectedcontent takes the last selected option when multiple is absent" do
       # Arrange
       html = "<select><button><selectedcontent></button><option selected>X<option selected>Y"
