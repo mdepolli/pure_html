@@ -3,32 +3,65 @@ defmodule PureHTMLTest do
   use ExUnitProperties
 
   describe "parse/2" do
-    property "never crashes on arbitrary strings" do
-      check all(html <- string(:printable, max_length: 1000)) do
-        nodes = PureHTML.parse(html)
-        assert is_list(nodes)
+    property "never crashes and always serializes on arbitrary bytes" do
+      check all(html <- binary(max_length: 1000)) do
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
       end
     end
 
     property "is deterministic" do
-      check all(html <- string(:printable, max_length: 500)) do
-        assert PureHTML.parse(html) == PureHTML.parse(html)
+      check all(html <- binary(max_length: 500)) do
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+        assert {nodes, error_count} == PureHTML.parse_with_errors(html)
       end
     end
 
     property "handles unicode strings" do
-      check all(text <- string(:printable, max_length: 500)) do
+      check all(text <- string(:utf8, max_length: 500)) do
         html = "<div>#{text}</div>"
-        nodes = PureHTML.parse(html)
-        assert is_list(nodes)
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
       end
     end
 
     property "returns a list of valid nodes" do
       check all(html <- html_fragment()) do
-        nodes = PureHTML.parse(html)
-        assert is_list(nodes)
-        assert Enum.all?(nodes, &valid_node?/1)
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+      end
+    end
+
+    @markup_templates [
+      "~<p>",
+      "<p ~>",
+      "<p a=~>",
+      "<p a=\"~\">",
+      "<!--~-->",
+      "<!DOCTYPE ~>",
+      "&#~;",
+      "<svg>~</svg>",
+      "<table>~</table>",
+      "<textarea>~",
+      "<script>~",
+      "<?~>",
+      "<~>",
+      "</~>",
+      "<p ~=1>",
+      "<!~",
+      "<title>~",
+      "<?a ~?>"
+    ]
+
+    property "never crashes on arbitrary code points in markup positions" do
+      check all(
+              cp <- one_of([integer(0..0xD7FF), integer(0xE000..0x10FFFF)]),
+              template <- member_of(@markup_templates)
+            ) do
+        html = String.replace(template, "~", <<cp::utf8>>)
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
       end
     end
   end
@@ -2703,15 +2736,52 @@ defmodule PureHTMLTest do
     end
   end
 
-  defp valid_node?({tag, attrs, children}) when is_binary(tag) and is_list(attrs) do
-    is_list(children) and Enum.all?(children, &valid_node?/1)
+  defp assert_parsed(nodes, error_count) do
+    assert is_list(nodes)
+    assert is_integer(error_count) and error_count >= 0
+    assert Enum.all?(nodes, &valid_node?/1)
+    html = PureHTML.to_html(nodes)
+    assert is_binary(html) and String.valid?(html)
+    text = PureHTML.text(nodes)
+    assert is_binary(text) and String.valid?(text)
+  end
+
+  defp valid_node?({tag, attrs, children}) when is_binary(tag) do
+    valid_attrs?(attrs) and is_list(children) and Enum.all?(children, &valid_node?/1)
+  end
+
+  defp valid_node?({{ns, tag}, attrs, children})
+       when ns in [:svg, :math] and is_binary(tag) do
+    valid_attrs?(attrs) and is_list(children) and Enum.all?(children, &valid_node?/1)
+  end
+
+  defp valid_node?({:content, children}) when is_list(children) do
+    Enum.all?(children, &valid_node?/1)
   end
 
   defp valid_node?(text) when is_binary(text), do: true
-  defp valid_node?({:comment, _}), do: true
+  defp valid_node?({:comment, text}) when is_binary(text), do: true
   defp valid_node?({:pi, target, data}) when is_binary(target) and is_binary(data), do: true
-  defp valid_node?({:doctype, _, _, _}), do: true
+
+  defp valid_node?({:doctype, name, public, system})
+       when (is_binary(name) or is_nil(name)) and (is_binary(public) or is_nil(public)) and
+              (is_binary(system) or is_nil(system)),
+       do: true
+
   defp valid_node?(_), do: false
+
+  defp valid_attrs?(attrs) when is_list(attrs), do: Enum.all?(attrs, &valid_attr?/1)
+  defp valid_attrs?(_), do: false
+
+  defp valid_attr?({name, value}) when is_binary(value), do: valid_attr_name?(name)
+  defp valid_attr?(_), do: false
+
+  defp valid_attr_name?(name) when is_binary(name), do: true
+
+  defp valid_attr_name?({ns, local}) when ns in [:xlink, :xml, :xmlns] and is_binary(local),
+    do: true
+
+  defp valid_attr_name?(_), do: false
 
   defp html_fragment do
     gen all(parts <- list_of(html_part(), max_length: 10)) do
@@ -2722,9 +2792,18 @@ defmodule PureHTMLTest do
   defp html_part do
     one_of([
       string(:alphanumeric, max_length: 20),
+      string(:utf8, max_length: 8),
       gen_tag(),
       constant(" "),
-      constant("\n")
+      constant("\n"),
+      constant(<<0>>),
+      constant("\u00A0"),
+      constant("&#x0;"),
+      constant("<![CDATA[x]]>"),
+      constant("<?php x?>"),
+      constant("<svg></svg>"),
+      constant("<math></math>"),
+      constant("<template><p>x</p></template>")
     ])
   end
 

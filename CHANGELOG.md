@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Parse properties generate raw bytes, UTF-8, NUL, NBSP, PIs, foreign elements, and template contents instead of printable strings, and assert node shape, `to_html/2` UTF-8, and `text/2` on every run
 - The html5lib fixtures are vendored byte for byte under `test/fixtures/html5lib/` from html5lib-tests `9329e64` instead of a git submodule. Cases that contradict the living standard are corrected by the runners from keyed blocks in `test/fixtures/corrections/`, each with a citation and a snapshot of the upstream expectation so a case upstream changes fails by name. `mix html5lib.sync` lists every file that differs from upstream at the per-directory pins in `UPSTREAM`; `mix html5lib.sync <commit>` moves the pin of each directory the commit still has and leaves the others where they are, so tree-construction stays at `9329e64`
 - `PureHTML.to_html/2` serializes a doctype as `<!DOCTYPE name>` per the HTML fragment serialization algorithm; public and system identifiers are no longer written, and a missing name keeps the space (`<!DOCTYPE >`)
 - Query results come in document order: a selector list such as `"p, span"` returns matches in the order they appear in the tree, `query_one/2` returns the first of them, identical sibling elements are distinct matches, and elements inside `<template>` content are found. `query_one/2` stops at the first match
