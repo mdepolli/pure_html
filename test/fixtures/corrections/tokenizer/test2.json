@@ -1,0 +1,5 @@
+{"corrections": [
+{"description": "Simili processing instruction", "input": "<?namespace>", "spec": "walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state #processing-instruction-target-state — fixture expected unexpected-question-mark-instead-of-tag-name; output and errors below are the text's", "upstream": {"output": [["Comment", "?namespace"]], "errors": [{"code": "unexpected-question-mark-instead-of-tag-name", "line": 1, "col": 2}]}, "output": [["ProcessingInstruction", "namespace", ""]], "errors": []},
+
+{"description": "A bogus comment stops at >, even if preceded by two dashes", "input": "<?foo-->", "spec": "walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state #processing-instruction-target-state — fixture expected unexpected-question-mark-instead-of-tag-name; output and errors below are the text's", "upstream": {"output": [["Comment", "?foo--"]], "errors": [{"code": "unexpected-question-mark-instead-of-tag-name", "line": 1, "col": 2}]}, "output": [["ProcessingInstruction", "foo--", ""]], "errors": []}
+]}

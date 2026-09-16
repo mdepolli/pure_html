@@ -7,7 +7,7 @@ defmodule PureHTML.Test.Html5libEncodingTests do
   - #encoding: expected encoding name (e.g., "windows-1252", "utf-8")
   """
 
-  @test_dir Path.expand("../html5lib-tests/encoding", __DIR__)
+  @test_dir Path.expand("../fixtures/html5lib/encoding", __DIR__)
 
   def test_dir, do: @test_dir
 

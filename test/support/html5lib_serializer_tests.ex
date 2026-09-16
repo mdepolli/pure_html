@@ -14,7 +14,7 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   alias PureHTML.Serializer
 
-  @test_dir Path.expand("../html5lib-tests/serializer", __DIR__)
+  @test_dir Path.expand("../fixtures/html5lib/serializer", __DIR__)
   @html_ns "http://www.w3.org/1999/xhtml"
 
   def test_dir, do: @test_dir

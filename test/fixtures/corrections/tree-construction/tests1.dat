@@ -1,0 +1,59 @@
+#data
+<?
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state #the-initial-insertion-mode — fixture treated <? as a comment; tree and errors below are the text's
+#upstream-errors
+(1,1): expected-tag-name-but-got-question-mark
+(1,2): expected-doctype-but-got-eof
+#errors
+text: eof-in-processing-instruction
+text: missing-doctype (initial EOF)
+#upstream-document
+| <!-- ? -->
+| <html>
+|   <head>
+|   <body>
+#document
+| <html>
+|   <head>
+|   <body>
+
+#data
+<?COMMENT?>
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state #the-initial-insertion-mode — fixture treated <? as a comment; tree and errors below are the text's
+#upstream-errors
+(1,1): expected-tag-name-but-got-question-mark
+(1,11): expected-doctype-but-got-eof
+#errors
+text: missing-doctype (initial EOF)
+#upstream-document
+| <!-- ?COMMENT? -->
+| <html>
+|   <head>
+|   <body>
+#document
+| <?COMMENT >
+| <html>
+|   <head>
+|   <body>
+
+#data
+<?COM--MENT?>
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state #the-initial-insertion-mode — fixture treated <? as a comment; tree and errors below are the text's
+#upstream-errors
+(1,1): expected-tag-name-but-got-question-mark
+(1,13): expected-doctype-but-got-eof
+#errors
+text: missing-doctype (initial EOF)
+#upstream-document
+| <!-- ?COM--MENT? -->
+| <html>
+|   <head>
+|   <body>
+#document
+| <?COM--MENT >
+| <html>
+|   <head>
+|   <body>

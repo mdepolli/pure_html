@@ -8,28 +8,22 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   - #document: expected tree as indented text
   - Optional #document-fragment: context element for fragment parsing
   - Optional #script-off/#script-on: scripting mode
+
+  A fixture may have a corrections file of the same name under
+  `test/fixtures/corrections/tree-construction/`, in the same format, one
+  block per case whose expectation contradicts the WHATWG text. A block is
+  keyed by `#data`, cites the walk in `#spec`, snapshots what upstream lists
+  in `#upstream-errors` (and `#upstream-document` when the tree changes), and
+  gives the text's `#errors` (and `#document`). `parse_file/1` applies them;
+  a block that matches no case, or whose snapshot no longer matches upstream,
+  raises so the disagreement is re-walked rather than carried blindly.
   """
 
-  @test_dir Path.expand("../html5lib-tests/tree-construction", __DIR__)
-  @override_dir Path.expand("../html5lib-overrides/tree-construction", __DIR__)
+  @test_dir Path.expand("../fixtures/html5lib/tree-construction", __DIR__)
+  @corrections_dir Path.expand("../fixtures/corrections/tree-construction", __DIR__)
 
   def test_dir, do: @test_dir
-
-  @doc """
-  Path to read for a fixture: `test/html5lib-overrides/tree-construction/`
-  when that file exists, otherwise the submodule file.
-  """
-  # Whole-file copy: an unrelated submodule edit of the same file would be shadowed, but the pin is 9329e64 forever.
-  def source_path(path) do
-    rel = Path.relative_to(path, @test_dir)
-    override = Path.join(@override_dir, rel)
-
-    if File.exists?(override) do
-      override
-    else
-      path
-    end
-  end
+  def corrections_dir, do: @corrections_dir
 
   def list_test_files do
     @test_dir
@@ -59,13 +53,61 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
 
   def parse_file(path) do
     path
-    |> source_path()
+    |> parse_cases()
+    |> apply_corrections(Path.join(@corrections_dir, Path.relative_to(path, @test_dir)))
+  end
+
+  @doc "The cases of a corrections file, in the shape `parse_file/1` returns."
+  def parse_corrections(path), do: parse_cases(path)
+
+  defp parse_cases(path) do
+    path
     |> File.read!()
     # Split on blank lines followed by #data to properly separate tests
     # (handles empty data sections that have blank lines within the test)
     |> String.split(~r/\n\n(?=#data\n)/)
     |> Enum.map(&parse_test/1)
     |> Enum.reject(&is_nil/1)
+  end
+
+  defp apply_corrections(tests, corrections_path) do
+    if File.exists?(corrections_path) do
+      corrections_path
+      |> parse_cases()
+      |> Enum.reduce(tests, &apply_correction(&2, &1, corrections_path))
+    else
+      tests
+    end
+  end
+
+  defp apply_correction(tests, correction, source) do
+    matches = for {test, index} <- Enum.with_index(tests), test.data == correction.data, do: index
+
+    case matches do
+      [index] -> List.update_at(tests, index, &correct(&1, correction, source))
+      [] -> raise "#{source}: no case has #data #{inspect(correction.data)}"
+      _many -> raise "#{source}: #data #{inspect(correction.data)} matches more than one case"
+    end
+  end
+
+  # The snapshot must still match upstream: a changed case means upstream
+  # moved, and the correction needs a fresh walk, not blind reuse.
+  defp correct(test, correction, source) do
+    if test.errors != correction.upstream_errors do
+      raise "#{source}: #data #{inspect(test.data)} lists #{inspect(test.errors)} upstream, " <>
+              "the correction expected #{inspect(correction.upstream_errors)}; re-walk it"
+    end
+
+    if correction.upstream_document != nil and test.document != correction.upstream_document do
+      raise "#{source}: #data #{inspect(test.data)} has a different upstream #document now; re-walk it"
+    end
+
+    %{
+      test
+      | errors: correction.errors,
+        document: correction.document || test.document,
+        spec: correction.spec
+    }
   end
 
   defp parse_test(text) do
@@ -79,8 +121,11 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
     %{
       data: Map.get(sections, "data", ""),
       errors: Map.get(sections, "errors", []),
-      document: Map.get(sections, "document", ""),
+      document: Map.get(sections, "document"),
       document_fragment: Map.get(sections, "document-fragment"),
+      spec: Map.get(sections, "spec"),
+      upstream_errors: Map.get(sections, "upstream-errors"),
+      upstream_document: Map.get(sections, "upstream-document"),
       script_off: Map.has_key?(sections, "script-off"),
       script_on: Map.has_key?(sections, "script-on")
     }
@@ -109,6 +154,12 @@ defmodule PureHTML.Test.Html5libTreeConstructionTests do
   defp parse_section_content("new-errors", content) do
     content |> String.split("\n", trim: true)
   end
+
+  defp parse_section_content("upstream-errors", content) do
+    content |> String.split("\n", trim: true)
+  end
+
+  defp parse_section_content("spec", content), do: String.trim(content)
 
   # For #data section: preserve internal newlines but trim the final section-separator newline
   # The test format uses blank lines between sections, so content ends with \n\n

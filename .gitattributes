@@ -1,0 +1,2 @@
+# Upstream fixtures are vendored byte for byte; never convert line endings.
+test/fixtures/html5lib/** -text

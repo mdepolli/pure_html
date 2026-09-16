@@ -1,0 +1,50 @@
+#data
+<select><button><selectedcontent></button><option>X
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+#upstream-errors
+#errors
+text: missing-doctype
+text: generic-end-tag (</button> with selectedcontent as current node)
+text: eof (select still open)
+
+#data
+<select><button><selectedcontent></button><option>x<i>i<b>ib</i>b
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+#upstream-errors
+#errors
+text: missing-doctype
+text: generic-end-tag (</button> with selectedcontent as current node)
+text: adoption-agency (</i> with b as current node)
+text: eof (select still open)
+
+#data
+<select><button><selectedcontent></button><option>X<option>Y
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+#upstream-errors
+#errors
+text: missing-doctype
+text: generic-end-tag (</button> with selectedcontent as current node)
+text: eof (select still open)
+
+#data
+<select><button><selectedcontent></button><option>X<option selected>Y
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+#upstream-errors
+#errors
+text: missing-doctype
+text: generic-end-tag (</button> with selectedcontent as current node)
+text: eof (select still open)
+
+#data
+<font><select><option>a</option></font></select>
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+#upstream-errors
+#errors
+text: missing-doctype
+text: adoption-agency (</font> not in scope; select is a scope boundary)
+text: eof (font still open)

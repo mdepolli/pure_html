@@ -1,0 +1,15 @@
+#data
+<nobr><table><marquee></table><nobr>
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody #parsing-main-intable #adoption-agency-algorithm — fixture #errors contradicted the text; lines below are the text's count
+#upstream-errors
+(1,6): expected-doctype-but-got-start-tag
+(1,22): unexpected-start-tag-implies-table-voodoo
+(1,30): end-tag-too-early-named
+(1,36): unexpected-start-tag-implies-end-tag
+(1,36): expected-closing-tag-but-got-eof
+#errors
+text: missing-doctype
+text: foster-parent (marquee in table)
+text: start-tag-implies-end-tag (second nobr)
+text: eof (nobr still open)

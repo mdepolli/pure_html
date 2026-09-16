@@ -1,0 +1,19 @@
+#data
+<?import namespace="foo" implementation="#bar">
+#spec
+walk in CLAUDE.md; https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state #the-initial-insertion-mode — fixture treated <? as a comment; tree and errors below are the text's
+#upstream-errors
+(1,1): expected-tag-name-but-got-question-mark
+(1,47): expected-doctype-but-got-eof
+#errors
+text: missing-doctype (initial EOF)
+#upstream-document
+| <!-- ?import namespace="foo" implementation="#bar" -->
+| <html>
+|   <head>
+|   <body>
+#document
+| <?import namespace="foo" implementation="#bar">
+| <html>
+|   <head>
+|   <body>

@@ -9,29 +9,24 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   - "initialStates": optional list of tokenizer states to test
   - "lastStartTag": for some states, the last start tag name
   - "doubleEscaped": if true, input has \\uXXXX sequences to unescape
+
+  A fixture may have a corrections file of the same name under
+  `test/fixtures/corrections/tokenizer/` (`<name>.json`, entries under
+  `"corrections"`), one entry per case whose expectation contradicts the
+  WHATWG text. An entry is keyed by `description` and `input`, cites the walk
+  in `spec`, snapshots upstream's `output` and `errors` under `upstream`, and
+  gives the text's `output` and `errors`. `parse_file/1` applies them; an
+  entry that matches no case, or more than one, or whose snapshot no longer
+  matches upstream, raises so the disagreement is re-walked rather than
+  carried blindly.
   """
 
-  @test_dir Path.expand("../html5lib-tests/tokenizer", __DIR__)
-  @override_dir Path.expand("../html5lib-overrides/tokenizer", __DIR__)
+  @test_dir Path.expand("../fixtures/html5lib/tokenizer", __DIR__)
+  @corrections_dir Path.expand("../fixtures/corrections/tokenizer", __DIR__)
 
   @doc "Returns the path to the tokenizer test directory."
   def test_dir, do: @test_dir
-
-  @doc """
-  Path to read for a fixture: `test/html5lib-overrides/tokenizer/`
-  when that file exists, otherwise the submodule file.
-  """
-  # Whole-file copy: an unrelated submodule edit of the same file would be shadowed, but the pin is 9329e64 forever.
-  def source_path(path) do
-    rel = Path.relative_to(path, @test_dir)
-    override = Path.join(@override_dir, rel)
-
-    if File.exists?(override) do
-      override
-    else
-      path
-    end
-  end
+  def corrections_dir, do: @corrections_dir
 
   @doc "Lists all .test files in the tokenizer test directory."
   def list_test_files do
@@ -49,11 +44,59 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   key instead of "tests", indicating XML infoset coercion should be applied.
   """
   def parse_file(path) do
+    {tests, xml_violation_mode} =
+      path
+      |> File.read!()
+      |> Jason.decode!()
+      |> extract_tests()
+
+    corrections_path = Path.join(@corrections_dir, Path.basename(path, ".test") <> ".json")
+    {apply_corrections(tests, corrections_path), xml_violation_mode}
+  end
+
+  @doc "The entries of a corrections file: `description`, `input`, `spec`, `upstream`, `output`, `errors`."
+  def parse_corrections(path) do
     path
-    |> source_path()
     |> File.read!()
     |> Jason.decode!()
-    |> extract_tests()
+    |> Map.fetch!("corrections")
+  end
+
+  defp apply_corrections(tests, corrections_path) do
+    if File.exists?(corrections_path) do
+      corrections_path
+      |> parse_corrections()
+      |> Enum.reduce(tests, &apply_correction(&2, &1, corrections_path))
+    else
+      tests
+    end
+  end
+
+  defp apply_correction(tests, correction, source) do
+    key = {correction["description"], correction["input"]}
+
+    matches =
+      for {test, index} <- Enum.with_index(tests),
+          {test["description"], test["input"]} == key,
+          do: index
+
+    case matches do
+      [index] -> List.update_at(tests, index, &correct(&1, correction, source))
+      [] -> raise "#{source}: no case has description and input #{inspect(key)}"
+      _many -> raise "#{source}: #{inspect(key)} matches more than one case"
+    end
+  end
+
+  # The snapshot must still match upstream: a changed case means upstream
+  # moved, and the correction needs a fresh walk, not blind reuse.
+  defp correct(test, correction, source) do
+    upstream = %{"output" => test["output"], "errors" => test["errors"] || []}
+
+    if upstream != correction["upstream"] do
+      raise "#{source}: #{inspect(test["input"])} changed upstream (#{inspect(upstream)}); re-walk it"
+    end
+
+    Map.merge(test, Map.take(correction, ["output", "errors", "spec"]))
   end
 
   defp extract_tests(%{"tests" => tests}), do: {tests, false}
@@ -88,14 +131,15 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   end
 
   @doc """
-  Cases of a fixture file that need a script API, as `{index, description}`.
+  Cases of a fixture file whose input holds a lone surrogate, as
+  `{index, description}`. They are deferred to a later release.
 
-  "Surrogates can only find their way into the input stream via script APIs
-  such as document.write()" (parse error surrogate-in-input-stream). The
-  library has no script API: parse/2 takes decoded text, and the Encoding
-  Standard's decoders replace a lone surrogate before the stream exists. A
-  case whose input holds a lone surrogate is therefore outside the parser's
-  domain; the test file reports it as skipped instead of running it.
+  Their input and expected character token both hold a code point UTF-8
+  cannot encode, and this library's strings are UTF-8 binaries; supporting
+  them needs a different text representation for input and tree. The text
+  notes they never arise from bytes ("Surrogates can only find their way
+  into the input stream via script APIs such as document.write()"). The
+  test file reports each as skipped instead of running it.
   """
   def script_api_cases(path) do
     {tests, _xml_violation_mode} = parse_file(path)
