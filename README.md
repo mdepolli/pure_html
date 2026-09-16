@@ -98,6 +98,10 @@ Supported selectors: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=val]`, `[attr
 
 See the [Querying Guide](guides/querying.md) for complete documentation.
 
+## Roadmap
+
+Work deferred past the current release, with what each item entails, is in [ROADMAP.md](ROADMAP.md).
+
 ## License
 
 Copyright 2026 (c) Marcelo De Polli.

@@ -347,10 +347,7 @@ html
 
 ## Selectors Not Yet Supported
 
-The following CSS selectors are planned for future versions:
-
-- **Pseudo-classes**: `:first-child`, `:last-child`, `:nth-child(n)`, `:not(selector)`
-- **Pseudo-elements**: `::before`, `::after` (not applicable to static HTML)
+Pseudo-classes such as `:first-child`, `:last-child`, `:nth-child(n)`, and `:not(selector)` are on the [roadmap](../ROADMAP.md). A selector using one is invalid today and matches nothing. Pseudo-elements (`::before`, `::after`) do not apply to a static tree.
 
 ## API Reference
 
