@@ -98,6 +98,18 @@ Supported selectors: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=val]`, `[attr
 
 See the [Querying Guide](guides/querying.md) for complete documentation.
 
+## Development
+
+The test suite runs the [html5lib-tests](https://github.com/html5lib/html5lib-tests) fixtures, vendored byte for byte under `test/fixtures/html5lib/` at the commits pinned in its `UPSTREAM` file. Cases that contradict the WHATWG living standard are corrected from `test/fixtures/corrections/`, never by editing the fixtures; `test/fixtures/html5lib/README.md` explains why and how.
+
+```bash
+mix test                      # the suite, html5lib fixtures included
+mix html5lib.sync             # check the vendored fixtures against upstream; fails on any difference
+mix html5lib.sync <commit>    # move the pins to an upstream commit
+```
+
+The sync task keeps a clone of upstream under `_build`. Pins are per directory: a move updates each directory the target commit still has and leaves the others at their current pin. Upstream deleted the tree-construction fixtures after `9329e64`, so that directory stays at `9329e64` whatever commit the rest moves to.
+
 ## Roadmap
 
 Work deferred past the current release, with what each item entails, is in [ROADMAP.md](ROADMAP.md).

@@ -51,7 +51,8 @@ defmodule PureHTML.MixProject do
         "GitHub" => @source_url,
         "Changelog" => "#{@source_url}/blob/master/CHANGELOG.md"
       },
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md),
+      files:
+        ~w(lib/pure_html lib/pure_html.ex .formatter.exs mix.exs README.md LICENSE CHANGELOG.md),
       maintainers: ["Marcelo De Polli"]
     ]
   end
