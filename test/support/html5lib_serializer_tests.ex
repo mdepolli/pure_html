@@ -37,13 +37,10 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   @doc """
   Why a case is not evidence for the fragment serialization algorithm, or nil
-  when it is. `encoding` is the one option that changes nothing here.
+  when it is, decided from the case itself. `encoding` is the one option that
+  changes nothing here.
   """
-  def skip_reason("optionaltags", _test) do
-    "tests html5lib's optional tag omission; the fragment algorithm never omits a tag"
-  end
-
-  def skip_reason(_name, test) do
+  def skip_reason(test) do
     cond do
       Map.keys(test["options"] || %{}) -- ["encoding"] != [] ->
         "uses html5lib serializer options the fragment algorithm does not have"
@@ -51,21 +48,48 @@ defmodule PureHTML.Test.Html5libSerializerTests do
       Enum.any?(test["input"], &match?(["Doctype", _, _ | _], &1)) ->
         "expects a PUBLIC/SYSTEM doctype; the fragment algorithm writes the name only"
 
-      match?({:error, {:unclosed, _}}, build_tree(test["input"])) ->
-        "expects an unclosed start tag; the fragment algorithm closes every non-void element"
-
       true ->
-        nil
+        test["input"]
+        |> build_tree()
+        |> tree_skip_reason(test)
     end
+  end
+
+  defp tree_skip_reason({:error, {:stray_end_tag, _tag}}, _test) do
+    "has an end tag with no open element; the fragment algorithm serializes a tree"
+  end
+
+  defp tree_skip_reason({:error, {:unclosed, _tag}}, _test) do
+    "expects an unclosed start tag; the fragment algorithm closes every non-void element"
+  end
+
+  defp tree_skip_reason({:ok, _nodes}, test) do
+    if omits_end_tag?(test) do
+      "expects an omitted end tag; the fragment algorithm closes every non-void element"
+    end
+  end
+
+  # True when the expected output lacks the end tag of a non-void element the
+  # input opens: html5lib's optional tag omission.
+  defp omits_end_tag?(test) do
+    opened =
+      for ["StartTag", @html_ns, tag, _attrs] <- test["input"],
+          not Serializer.void_element?(tag),
+          do: tag
+
+    Enum.any?(opened, fn tag ->
+      Enum.all?(test["expected"], &(not String.contains?(&1, "</" <> tag <> ">")))
+    end)
   end
 
   @doc """
   Builds the library's node list from an html5lib token stream, or returns
-  `{:error, {:unclosed, tag}}` when a non-void element is never closed.
+  `{:error, {:unclosed, tag}}` when a non-void element is never closed and
+  `{:error, {:stray_end_tag, tag}}` when an end tag has no open element.
   """
   def build_tree(tokens) do
     tokens
-    |> Enum.reduce([{:root, [], []}], &push_token/2)
+    |> Enum.reduce_while([{:root, [], []}], &push_token/2)
     |> finish_tree()
   end
 
@@ -73,7 +97,7 @@ defmodule PureHTML.Test.Html5libSerializerTests do
     if Serializer.void_element?(tag) do
       append_node({tag, decode_attrs(attrs), []}, stack)
     else
-      [{tag, decode_attrs(attrs), []} | stack]
+      {:cont, [{tag, decode_attrs(attrs), []} | stack]}
     end
   end
 
@@ -84,6 +108,8 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   defp push_token(["EndTag", @html_ns, tag], [{tag, attrs, children} | stack]) do
     append_node({tag, attrs, Enum.reverse(children)}, stack)
   end
+
+  defp push_token(["EndTag", @html_ns, tag], _stack), do: {:halt, {:stray_end_tag, tag}}
 
   defp push_token(["Characters", text], stack), do: append_node(text, stack)
   defp push_token(["Comment", text], stack), do: append_node({:comment, text}, stack)
@@ -101,9 +127,10 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   end
 
   defp append_node(node, [{tag, attrs, children} | stack]) do
-    [{tag, attrs, [node | children]} | stack]
+    {:cont, [{tag, attrs, [node | children]} | stack]}
   end
 
+  defp finish_tree({:stray_end_tag, tag}), do: {:error, {:stray_end_tag, tag}}
   defp finish_tree([{:root, [], children}]), do: {:ok, Enum.reverse(children)}
   defp finish_tree([{tag, _attrs, _children} | _stack]), do: {:error, {:unclosed, tag}}
 

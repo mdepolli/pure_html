@@ -14,7 +14,7 @@ defmodule PureHTML.Html5libSerializerTest do
       for {test, index} <- Enum.with_index(H5.parse_file(path)) do
         description = test["description"] || "test #{index}"
 
-        case H5.skip_reason(name, test) do
+        case H5.skip_reason(test) do
           nil ->
             @tag :html5lib
             @tag :serializer
