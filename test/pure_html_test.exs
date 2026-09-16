@@ -2455,6 +2455,31 @@ defmodule PureHTMLTest do
       assert [{"html", [], [{"head", [], []}, {"body", [], ["a\uFFFDb"]}]}] = nodes
     end
 
+    test "a PI after a character is a child of body" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("x<?php y?>")
+
+      # Assert
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], ["x", {:pi, "php", "y"}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "a PI in a fragment is a child of the context element" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<?php y?>", context: "div")
+
+      # Assert
+      assert [{:pi, "php", "y"}] = nodes
+      assert error_count == 0
+    end
+
     test "php processing instruction becomes a PI node, child of the Document" do
       # Arrange / Act
       {nodes, error_count} = PureHTML.parse_with_errors("<?php echo 1; ?>")

@@ -523,6 +523,7 @@ defmodule PureHTML.TreeBuilder do
 
   defp finalize_fragment_child(text, _elements) when is_binary(text), do: text
   defp finalize_fragment_child({:comment, _} = comment, _elements), do: comment
+  defp finalize_fragment_child({:pi, _, _} = pi, _elements), do: pi
 
   defp finalize_fragment_child({tag, attrs, kids}, _elements)
        when is_binary(tag) or is_tuple(tag) do
@@ -569,6 +570,9 @@ defmodule PureHTML.TreeBuilder do
         {:comment, _} = comment ->
           comment
 
+        {:pi, _, _} = pi ->
+          pi
+
         {tag, attrs, kids} when is_binary(tag) or is_tuple(tag) ->
           # Already a tuple (foreign elements, void elements)
           {tag, attrs, Enum.reverse(kids)}
@@ -583,6 +587,7 @@ defmodule PureHTML.TreeBuilder do
 
   defp convert_to_tuples(nil), do: nil
   defp convert_to_tuples({:comment, text}), do: {:comment, text}
+  defp convert_to_tuples({:pi, _, _} = pi), do: pi
   defp convert_to_tuples(text) when is_binary(text), do: text
 
   # Template elements wrap children in :content tuple
