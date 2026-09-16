@@ -253,6 +253,34 @@ defmodule PureHTMLTest do
       assert error_count == 2
     end
 
+    test "attributes stay in source order" do
+      # Arrange / Act
+      {nodes, _} = PureHTML.parse_with_errors("<p title=t class=c id=i>")
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", [], [{"p", attrs, []}]}]}] = nodes
+      assert attrs == [{"title", "t"}, {"class", "c"}, {"id", "i"}]
+      assert PureHTML.to_html(nodes) =~ ~s(<p title="t" class="c" id="i"></p>)
+    end
+
+    test "a second html start tag appends missing attributes" do
+      # Arrange / Act
+      {nodes, _} = PureHTML.parse_with_errors("<html a=1><html b=2 a=3>")
+
+      # Assert
+      assert [{"html", attrs, [{"head", [], []}, {"body", [], []}]}] = nodes
+      assert attrs == [{"a", "1"}, {"b", "2"}]
+    end
+
+    test "a second body start tag appends missing attributes" do
+      # Arrange / Act
+      {nodes, _} = PureHTML.parse_with_errors("<body a=1><body b=2 a=3>")
+
+      # Assert
+      assert [{"html", [], [{"head", [], []}, {"body", attrs, []}]}] = nodes
+      assert attrs == [{"a", "1"}, {"b", "2"}]
+    end
+
     test "CDATA in an HTML fragment context is a bogus comment" do
       # Arrange / Act
       {nodes, error_count} = PureHTML.parse_with_errors("<![CDATA[x]]>", context: "div")

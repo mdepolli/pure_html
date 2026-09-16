@@ -935,7 +935,7 @@ defmodule PureHTML.TreeBuilder.Helpers do
   """
   def merge_attr_lists(new_attrs, existing_attrs) do
     Enum.reduce(new_attrs, existing_attrs, fn {k, v}, acc ->
-      if List.keymember?(acc, k, 0), do: acc, else: [{k, v} | acc]
+      if List.keymember?(acc, k, 0), do: acc, else: acc ++ [{k, v}]
     end)
   end
 

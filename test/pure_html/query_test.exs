@@ -286,7 +286,7 @@ defmodule PureHTML.QueryTest do
         """)
 
       assert Query.find(html, "nav > a.active") == [
-               {"a", [{"class", "active"}, {"href", "/"}], ["Home"]}
+               {"a", [{"href", "/"}, {"class", "active"}], ["Home"]}
              ]
     end
 
@@ -378,7 +378,7 @@ defmodule PureHTML.QueryTest do
         PureHTML.parse("<div><a href='/one'>One</a><a href='/two' class='special'>Two</a></div>")
 
       assert Query.find_one(html, "a.special") ==
-               {"a", [{"class", "special"}, {"href", "/two"}], ["Two"]}
+               {"a", [{"href", "/two"}, {"class", "special"}], ["Two"]}
     end
 
     test "works with attribute selector" do

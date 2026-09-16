@@ -31,7 +31,8 @@ defmodule PureHTML do
   - `{:pi, target, data}` - Processing instruction
   - `"text"` - Text content (binary string)
 
-  Attributes are lists of `{name, value}` tuples, sorted alphabetically.
+  Attributes are lists of `{name, value}` tuples in source order. A duplicate
+  name keeps the first value.
   """
 
   alias PureHTML.{Query, Serializer, Tokenizer, TreeBuilder}
@@ -46,7 +47,8 @@ defmodule PureHTML do
   - `{tag, attrs, children}` - Element with tag name, attributes list, and child nodes
   - `text` - Text content (binary)
 
-  Attributes are represented as a list of `{name, value}` tuples, sorted alphabetically.
+  Attributes are represented as a list of `{name, value}` tuples in source
+  order. A duplicate name keeps the first value.
 
   ## Options
 

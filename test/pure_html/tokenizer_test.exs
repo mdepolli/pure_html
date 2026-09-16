@@ -17,12 +17,8 @@ defmodule PureHTML.TokenizerTest do
     end
 
     test "attributes" do
-      [{:start_tag, "div", attrs, false}] =
-        Tokenizer.tokenize("<div class=\"foo\" id=bar>") |> Enum.to_list()
-
-      # Attributes are returned as a list of tuples (order may vary due to prepending)
-      assert {"class", "foo"} in attrs
-      assert {"id", "bar"} in attrs
+      assert [{:start_tag, "div", [{"class", "foo"}, {"id", "bar"}], false}] =
+               Tokenizer.tokenize(~s(<div class="foo" id=bar>)) |> Enum.to_list()
     end
 
     test "self-closing tag" do
@@ -163,13 +159,9 @@ defmodule PureHTML.TokenizerTest do
     end
 
     test "multiple attributes" do
-      [{:start_tag, "input", attrs, false}] =
-        Tokenizer.tokenize("<input type=text name=foo disabled>") |> Enum.to_list()
-
-      # Verify all expected attributes are present
-      assert {"type", "text"} in attrs
-      assert {"name", "foo"} in attrs
-      assert {"disabled", ""} in attrs
+      assert [
+               {:start_tag, "input", [{"type", "text"}, {"name", "foo"}, {"disabled", ""}], false}
+             ] = Tokenizer.tokenize("<input type=text name=foo disabled>") |> Enum.to_list()
     end
   end
 end

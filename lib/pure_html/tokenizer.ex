@@ -256,6 +256,8 @@ defmodule PureHTML.Tokenizer do
         next_token(%{new_state | pending_chars: [chars | new_state.pending_chars]})
 
       {:emit, token, new_state} ->
+        token = reverse_start_tag_attrs(token)
+
         # Flush pending chars before emitting non-char token
         case new_state.pending_chars do
           [] ->
@@ -2736,6 +2738,12 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp set_self_closing(state), do: state
+
+  defp reverse_start_tag_attrs({:start_tag, name, attrs, sc}) do
+    {:start_tag, name, Enum.reverse(attrs), sc}
+  end
+
+  defp reverse_start_tag_attrs(token), do: token
 
   defp append_to_doctype_name(%{token: {:doctype, name, pub, sys, quirks}} = state, char) do
     %{state | token: {:doctype, (name || "") <> char, pub, sys, quirks}}

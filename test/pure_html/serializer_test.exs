@@ -120,8 +120,8 @@ defmodule PureHTML.SerializerTest do
     end
 
     test "multiple attributes" do
-      result = Serializer.serialize([{"div", [{"class", "y"}, {"id", "x"}], []}])
-      assert result == "<div class=\"y\" id=\"x\"></div>"
+      assert Serializer.serialize([{"p", [{"title", "t"}, {"class", "c"}], []}]) ==
+               ~s(<p title="t" class="c"></p>)
     end
   end
 

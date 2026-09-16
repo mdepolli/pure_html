@@ -527,7 +527,7 @@ defmodule PureHTML.TreeBuilder do
 
   defp finalize_fragment_child({tag, attrs, kids}, _elements)
        when is_binary(tag) or is_tuple(tag) do
-    {tag, Enum.sort(attrs), Enum.reverse(kids)}
+    {tag, attrs, Enum.reverse(kids)}
   end
 
   # Find the html element ref
@@ -592,21 +592,18 @@ defmodule PureHTML.TreeBuilder do
 
   # Template elements wrap children in :content tuple
   defp convert_to_tuples(%{tag: "template", attrs: attrs, children: children}) do
-    {"template", sort_attrs(attrs), [{:content, convert_children(children)}]}
+    {"template", attrs, [{:content, convert_children(children)}]}
   end
 
   # Map elements convert to tuples, preserving namespace if present
   defp convert_to_tuples(%{tag: tag, attrs: attrs, children: children}) do
-    {tag, sort_attrs(attrs), convert_children(children)}
+    {tag, attrs, convert_children(children)}
   end
 
   # Already-converted tuples just need children converted
   defp convert_to_tuples({tag, attrs, children}) do
-    {tag, sort_attrs(attrs), convert_children(children)}
+    {tag, attrs, convert_children(children)}
   end
 
   defp convert_children(children), do: Enum.map(children, &convert_to_tuples/1)
-
-  # Sort attributes alphabetically for deterministic output
-  defp sort_attrs(attrs), do: Enum.sort(attrs)
 end
