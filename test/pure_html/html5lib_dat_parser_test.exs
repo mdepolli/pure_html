@@ -19,6 +19,11 @@ defmodule PureHTML.Html5libDatParserTest do
       assert "tests1" in names
       assert "scripted/tests1" in names
     end
+
+    test "every scripted fixture is listed and classified as needing script execution" do
+      assert_scripted_classified(H5)
+      assert_scripted_classified(Encoding)
+    end
   end
 
   describe "parse_file/1 expected errors" do
@@ -91,5 +96,24 @@ defmodule PureHTML.Html5libDatParserTest do
         end
       end
     end
+  end
+
+  defp assert_scripted_classified(mod) do
+    # Arrange
+    listed = mod.list_test_files()
+
+    on_disk =
+      mod.test_dir()
+      |> Path.join("scripted/**/*.dat")
+      |> Path.wildcard()
+      |> Enum.sort()
+
+    # Act
+    {scripted, rest} = Enum.split_with(listed, &mod.needs_script_execution?/1)
+
+    # Assert
+    assert on_disk != []
+    assert Enum.sort(scripted) == on_disk
+    refute Enum.any?(rest, &mod.needs_script_execution?/1)
   end
 end
