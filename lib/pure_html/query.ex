@@ -305,6 +305,8 @@ defmodule PureHTML.Query do
   defp extract_text_from_node(text, _opts) when is_binary(text), do: [text]
   defp extract_text_from_node({:comment, _}, _opts), do: []
   defp extract_text_from_node({:doctype, _, _, _}, _opts), do: []
+  defp extract_text_from_node({:pi, _, _}, _opts), do: []
+  defp extract_text_from_node({:content, _}, _opts), do: []
 
   defp extract_text_from_node({"script", _, _}, %{include_script: false}), do: []
   defp extract_text_from_node({{_ns, "script"}, _, _}, %{include_script: false}), do: []
@@ -329,8 +331,6 @@ defmodule PureHTML.Query do
   defp extract_text_from_node({_tag, _attrs, children}, %{deep: false}) do
     Enum.filter(children, &is_binary/1)
   end
-
-  defp extract_text_from_node(_, _opts), do: []
 
   @doc """
   Extracts an attribute value from a single node.

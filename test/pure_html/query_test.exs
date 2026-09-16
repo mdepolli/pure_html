@@ -500,6 +500,20 @@ defmodule PureHTML.QueryTest do
       assert Query.text(html) == "HelloWorld"
     end
 
+    test "ignores processing instructions" do
+      html = [{:pi, "php", "echo 1; "}, {"p", [], ["Hello"]}]
+      assert Query.text(html) == "Hello"
+    end
+
+    test "ignores template content wrappers" do
+      html = [{"template", [], [{:content, [{"p", [], ["x"]}]}]}]
+      assert Query.text(html) == ""
+    end
+
+    test "does not swallow unknown node shapes" do
+      assert_raise FunctionClauseError, fn -> Query.text([{:unknown, "x"}]) end
+    end
+
     test "ignores doctype" do
       html = [{:doctype, "html", nil, nil}, {"html", [], [{"body", [], ["Hello"]}]}]
       assert Query.text(html) == "Hello"
