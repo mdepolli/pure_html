@@ -32,16 +32,16 @@ defmodule PureHTML.Html5libTokenizerTest do
       end
     end
 
-    # Cases whose input holds a lone surrogate are outside the parser's domain
-    # (see H5.script_api_cases/1). One skipped test each keeps them in the
-    # result line instead of inside a green count.
+    # Cases whose input holds a lone surrogate are deferred to a later release:
+    # UTF-8 strings cannot hold one (see H5.script_api_cases/1). One skipped
+    # test each keeps them in the result line instead of inside a green count.
     for {index, description} <- H5.script_api_cases(path) do
       @tag :html5lib
       @tag :tokenizer
       @tag test_file: filename
-      @tag skip: "only a script API can put a lone surrogate in the input stream"
+      @tag skip: "deferred: a lone surrogate needs a text representation other than UTF-8"
       test "#{filename}:#{index} #{description}" do
-        flunk("only a script API can put a lone surrogate in the input stream")
+        flunk("deferred: a lone surrogate needs a text representation other than UTF-8")
       end
     end
   end
