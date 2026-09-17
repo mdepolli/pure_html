@@ -36,7 +36,7 @@ defmodule PureHTML.Serializer do
       "<span title=\\"foo\\"></span>"
 
   """
-  @spec serialize([term()], keyword()) :: String.t()
+  @spec serialize([PureHTML.html_node()], keyword()) :: String.t()
   def serialize(nodes, opts \\ []) when is_list(nodes) do
     scripting = Keyword.get(opts, :scripting, true)
 

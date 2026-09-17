@@ -23,32 +23,49 @@ defmodule PureHTML do
 
   ## Node Format
 
-  Nodes are represented as tuples compatible with [Floki](https://hex.pm/packages/floki):
+  HTML elements are `{tag, attrs, children}` tuples, the same shape
+  [Floki](https://hex.pm/packages/floki) uses. Foreign elements, namespaced
+  attributes, template content, and processing instructions are this parser's.
 
-  - `{tag, attrs, children}` - Element with tag name, attribute list, and children
-  - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration
-  - `{:comment, text}` - HTML comment
-  - `{:pi, target, data}` - Processing instruction
-  - `"text"` - Text content (binary string)
+  - `{tag, attrs, children}` — HTML element
+  - `{{:svg | :math, local}, attrs, children}` — foreign element
+  - `{:content, children}` — sole child of `template`
+  - `{:doctype, name, public_id, system_id}` — `name` is `nil` when missing
+  - `{:comment, text}`
+  - `{:pi, target, data}`
+  - `"text"`
 
-  Attributes are lists of `{name, value}` tuples in source order. A duplicate
-  name keeps the first value.
+  Attributes are `{name, value}` tuples in source order. `name` is a string or
+  `{:xlink | :xml | :xmlns, local}`. A duplicate name keeps the first value.
   """
 
   alias PureHTML.{Query, Serializer, Tokenizer, TreeBuilder}
 
+  @typedoc """
+  Attribute name: a local name, or a namespaced name from the adjust-foreign-attributes table.
+  """
+  @type attr_name :: String.t() | {:xlink | :xml | :xmlns, String.t()}
+
+  @typedoc "One attribute: name and value, in source order on the element."
+  @type attr :: {attr_name(), String.t()}
+
+  @typedoc """
+  A node `parse/2` returns. The runtime check of this type is `valid_node?/1`
+  in `test/pure_html_test.exs`.
+  """
+  @type html_node ::
+          {String.t(), [attr()], [html_node()]}
+          | {{:svg | :math, String.t()}, [attr()], [html_node()]}
+          | {:content, [html_node()]}
+          | {:doctype, String.t() | nil, String.t() | nil, String.t() | nil}
+          | {:comment, String.t()}
+          | {:pi, String.t(), String.t()}
+          | String.t()
+
   @doc """
   Parses an HTML string into a list of nodes.
 
-  Returns a list of nodes where each node is one of:
-  - `{:doctype, name, public_id, system_id}` - DOCTYPE declaration (if present, always first)
-  - `{:comment, text}` - HTML comment
-  - `{:pi, target, data}` - Processing instruction
-  - `{tag, attrs, children}` - Element with tag name, attributes list, and child nodes
-  - `text` - Text content (binary)
-
-  Attributes are represented as a list of `{name, value}` tuples in source
-  order. A duplicate name keeps the first value.
+  Returns a list of `t:html_node/0`. A doctype, if present, is first.
 
   ## Options
 
@@ -64,8 +81,12 @@ defmodule PureHTML do
       iex> PureHTML.parse("<!DOCTYPE html><html></html>")
       [{:doctype, "html", nil, nil}, {"html", [], [{"head", [], []}, {"body", [], []}]}]
 
+      iex> [{"html", [], [{"head", [], []}, {"body", [], [svg]}]}] = PureHTML.parse("<svg></svg>")
+      iex> svg
+      {{:svg, "svg"}, [], []}
+
   """
-  @spec parse(String.t(), keyword()) :: [term()]
+  @spec parse(String.t(), keyword()) :: [html_node()]
   def parse(html, opts \\ []) when is_binary(html) do
     scripting = Keyword.get(opts, :scripting, true)
 
@@ -102,7 +123,7 @@ defmodule PureHTML do
       1
 
   """
-  @spec parse_with_errors(String.t(), keyword()) :: {[term()], non_neg_integer()}
+  @spec parse_with_errors(String.t(), keyword()) :: {[html_node()], non_neg_integer()}
   def parse_with_errors(html, opts \\ []) when is_binary(html) do
     scripting = Keyword.get(opts, :scripting, true)
 
@@ -146,7 +167,7 @@ defmodule PureHTML do
       "<div class=\\"foo\\">text</div>"
 
   """
-  @spec to_html([term()], keyword()) :: String.t()
+  @spec to_html([html_node()], keyword()) :: String.t()
   def to_html(nodes, opts \\ []) when is_list(nodes) do
     Serializer.serialize(nodes, opts)
   end

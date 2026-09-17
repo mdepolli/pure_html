@@ -9,12 +9,7 @@ defmodule PureHTML.Query do
   alias PureHTML.Query.Selector.Parser
 
   @type html_tree :: [html_node()]
-  @type html_node ::
-          {String.t(), [{String.t(), String.t()}], [html_node() | String.t()]}
-          | String.t()
-          | {:comment, String.t()}
-          | {:pi, String.t(), String.t()}
-          | {:doctype, String.t(), String.t() | nil, String.t() | nil}
+  @type html_node :: PureHTML.html_node()
 
   @doc """
   Finds all nodes matching the CSS selector.

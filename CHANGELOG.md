@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The parse node contract is documented as `t:PureHTML.html_node/0`: HTML elements stay Floki-shaped; foreign elements, namespaced attributes, template `{:content, _}`, and processing instructions are this parser's
 - Element attributes are in source order. "Create an element for a token" appends each attribute on the token; a later `<html>` or `<body>` start tag appends names the element does not already have. The first value wins on a duplicate name.
 - Parse properties generate raw bytes, UTF-8, NUL, NBSP, PIs, foreign elements, and template contents instead of printable strings, and assert node shape, `to_html/2` UTF-8, and `text/2` on every run
 - The html5lib fixtures are vendored byte for byte under `test/fixtures/html5lib/` from html5lib-tests `9329e64` instead of a git submodule. Cases that contradict the living standard are corrected by the runners from keyed blocks in `test/fixtures/corrections/`, each with a citation and a snapshot of the upstream expectation so a case upstream changes fails by name. `mix html5lib.sync` lists every file that differs from upstream at the per-directory pins in `UPSTREAM`; `mix html5lib.sync <commit>` moves the pin of each directory the commit still has and leaves the others where they are, so tree-construction stays at `9329e64`

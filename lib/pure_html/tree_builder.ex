@@ -35,15 +35,8 @@ defmodule PureHTML.TreeBuilder do
   # Type Definitions
   # --------------------------------------------------------------------------
 
-  @typedoc "DOCTYPE information: {name, public_id, system_id} or nil if absent."
-  @type doctype :: {String.t() | nil, String.t() | nil, String.t() | nil} | nil
-
-  @typedoc "Document node: element tuple, comment, or text."
-  @type document_node ::
-          {State.tag_name(), [{String.t(), String.t()}], [document_node()]}
-          | {:comment, String.t()}
-          | {:content, [document_node()]}
-          | String.t()
+  @typedoc "A node `build/2` returns. Same as `t:PureHTML.html_node/0`."
+  @type document_node :: PureHTML.html_node()
 
   # --------------------------------------------------------------------------
   # State and Element structures
@@ -83,16 +76,16 @@ defmodule PureHTML.TreeBuilder do
     @type element :: %{
             ref: element_ref(),
             tag: tag_name(),
-            attrs: [{String.t(), String.t()}],
+            attrs: [PureHTML.attr()],
             children: [child()],
             parent_ref: element_ref() | nil
           }
 
-    @typedoc "Child content: element ref, text, comment, or pre-built tuple."
-    @type child :: element_ref() | String.t() | {:comment, String.t()} | output_node()
+    @typedoc "Child on an in-progress element: a stack ref or a finished node."
+    @type child :: element_ref() | PureHTML.html_node()
 
-    @typedoc "Output node format: {tag, attrs, children} tuple."
-    @type output_node :: {tag_name(), [{String.t(), String.t()}], [output_node() | String.t()]}
+    @typedoc "A finished node, same as `t:PureHTML.html_node/0`."
+    @type output_node :: PureHTML.html_node()
 
     @typedoc """
     HTML5 insertion mode.

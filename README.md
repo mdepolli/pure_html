@@ -13,7 +13,7 @@ PureHTML has **zero dependencies**. It's pure Elixir code all the way down.
 
 - **Just install**: No C extensions or system libraries required. Works anywhere Elixir runs.
 - **Debuggable**: Step through the parser with IEx to understand exactly how your HTML is being parsed.
-- **Floki-compatible output**: Returns `{tag, attrs, children}` tuples with attributes as lists, matching [Floki](https://hex.pm/packages/floki)'s format.
+- **Floki-compatible HTML elements**: `{tag, attrs, children}` with attributes as lists, matching [Floki](https://hex.pm/packages/floki) for HTML. SVG and MathML are `{{:svg, local}, attrs, children}` and `{{:math, local}, attrs, children}`; `template` wraps its children in `{:content, children}`; processing instructions are `{:pi, target, data}`.
 
 ### Correct
 

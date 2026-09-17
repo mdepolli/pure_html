@@ -2,6 +2,8 @@ defmodule PureHTMLTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
+  doctest PureHTML
+
   describe "parse/2" do
     property "never crashes and always serializes on arbitrary bytes" do
       check all(html <- binary(max_length: 1000)) do
