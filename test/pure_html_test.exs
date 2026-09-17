@@ -1312,6 +1312,23 @@ defmodule PureHTMLTest do
       assert error_count == 3
     end
 
+    test "a li end tag inside select does not close the li outside" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<li><select></li>x")
+
+      # Assert: select is a list-item scope boundary, so </li> is a parse
+      # error and is ignored; x lands in the select.
+      assert [
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"li", [], [{"select", [], ["x"]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 3
+    end
+
     test "ignores a select end tag in a select fragment with no select in scope" do
       # Arrange
       html = "</select><option>"

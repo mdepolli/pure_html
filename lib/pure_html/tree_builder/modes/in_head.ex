@@ -210,15 +210,6 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
     |> reprocess_with({:character, rest})
   end
 
-  defp parse_error_unless_current(state, tag) do
-    state
-    |> current_tag()
-    |> mismatch_if_not(tag, state)
-  end
-
-  defp mismatch_if_not(tag, tag, state), do: state
-  defp mismatch_if_not(_current, _tag, state), do: parse_error(state)
-
   defp switch_to_text_mode(state, tag, attrs, tokenizer_state) do
     state
     |> push_element(tag, attrs)

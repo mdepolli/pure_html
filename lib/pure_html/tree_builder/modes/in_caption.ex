@@ -126,18 +126,9 @@ defmodule PureHTML.TreeBuilder.Modes.InCaption do
   defp close_caption(state) do
     state
     |> generate_implied_end_tags()
-    |> parse_error_unless_current_caption()
+    |> parse_error_unless_current("caption")
     |> pop_caption()
   end
-
-  defp parse_error_unless_current_caption(state) do
-    state
-    |> current_tag()
-    |> mismatch_if_not_caption(state)
-  end
-
-  defp mismatch_if_not_caption("caption", state), do: state
-  defp mismatch_if_not_caption(_tag, state), do: parse_error(state)
 
   defp pop_caption(state) do
     state

@@ -1692,7 +1692,8 @@ defmodule PureHTML.Tokenizer do
     # eof-in-doctype parse error
     state
     |> parse_error()
-    |> then(&emit(%{&1 | token: {:doctype, nil, nil, nil, true}}, []))
+    |> with_force_quirks_doctype()
+    |> emit()
   end
 
   defp step(%{state: :doctype, input: _} = state) do
@@ -1732,14 +1733,16 @@ defmodule PureHTML.Tokenizer do
     # missing-doctype-name parse error
     state
     |> parse_error()
-    |> then(&emit(%{&1 | token: {:doctype, nil, nil, nil, true}}, input: rest))
+    |> with_force_quirks_doctype()
+    |> emit(input: rest)
   end
 
   defp step(%{state: :before_doctype_name, input: ""} = state) do
     # eof-in-doctype parse error
     state
     |> parse_error()
-    |> then(&emit(%{&1 | token: {:doctype, nil, nil, nil, true}}, []))
+    |> with_force_quirks_doctype()
+    |> emit()
   end
 
   defp step(%{state: :before_doctype_name, input: <<c::utf8, rest::binary>>} = state) do
@@ -2744,6 +2747,10 @@ defmodule PureHTML.Tokenizer do
   end
 
   defp reverse_start_tag_attrs(token), do: token
+
+  defp with_force_quirks_doctype(state) do
+    %{state | token: {:doctype, nil, nil, nil, true}}
+  end
 
   defp append_to_doctype_name(%{token: {:doctype, name, pub, sys, quirks}} = state, char) do
     %{state | token: {:doctype, (name || "") <> char, pub, sys, quirks}}

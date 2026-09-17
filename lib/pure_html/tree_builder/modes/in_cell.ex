@@ -148,15 +148,6 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
     |> pop_cell(tag)
   end
 
-  defp parse_error_unless_current(state, tag) do
-    state
-    |> current_tag()
-    |> mismatch_if_not(tag, state)
-  end
-
-  defp mismatch_if_not(tag, tag, state), do: state
-  defp mismatch_if_not(_current, _tag, state), do: parse_error(state)
-
   defp pop_cell(state, tag) do
     state
     |> pop_until_tag(tag)

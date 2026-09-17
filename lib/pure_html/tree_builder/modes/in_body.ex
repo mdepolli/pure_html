@@ -130,7 +130,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       state
       |> generate_implied_end_tags()
       |> parse_error_unless_current(tag)
-      |> close_tag_ref_forced(tag)
+      |> pop_through(tag)
       |> clear_af_to_marker()
       |> ok()
     else
@@ -179,7 +179,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       state
       |> generate_implied_end_tags_except("li")
       |> parse_error_unless_current("li")
-      |> close_li_in_list_scope()
+      |> pop_through("li")
       |> ok()
     else
       state
@@ -197,7 +197,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       state
       |> generate_implied_end_tags_except(tag)
       |> parse_error_unless_current(tag)
-      |> close_dd_dt_in_scope(tag)
+      |> pop_through(tag)
       |> ok()
     else
       state
@@ -586,7 +586,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     if in_scope?(state, "select", :default) do
       state
       |> parse_error()
-      |> close_tag_ref_forced("select")
+      |> pop_through("select")
     else
       state
       |> reconstruct_active_formatting()
@@ -697,7 +697,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     if in_scope?(state, "select", :default) do
       state
       |> parse_error()
-      |> close_tag_ref_forced("select")
+      |> pop_through("select")
     else
       state
     end
@@ -934,7 +934,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> generate_implied_end_tags_except("p")
     |> parse_error_unless_current("p")
-    |> close_tag_ref_forced("p")
+    |> pop_through("p")
   end
 
   defp close_open_button(state) do
@@ -984,7 +984,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> generate_implied_end_tags_except(tag)
     |> parse_error_unless_current(tag)
-    |> close_tag_ref_forced(tag)
+    |> pop_through(tag)
   end
 
   defp close_ruby_parts(state, tag) when tag in ~w(rb rtc) do
@@ -1013,15 +1013,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> mismatch_if_not_in(tags, state)
   end
 
-  defp parse_error_unless_current(state, tag) do
-    state
-    |> current_tag()
-    |> mismatch_if_not(tag, state)
-  end
-
-  defp mismatch_if_not(tag, tag, state), do: state
-  defp mismatch_if_not(_current, _tag, state), do: parse_error(state)
-
   defp mismatch_if_not_in(tag, closes, state) do
     if tag in closes, do: state, else: parse_error(state)
   end
@@ -1029,11 +1020,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # --------------------------------------------------------------------------
   # Close tag
   # --------------------------------------------------------------------------
-
-  # Close tag using ref-only stack architecture (respects special element stops)
-  defp close_tag_ref(%{stack: stack, elements: elements} = state, tag) do
-    apply_pop_result(state, pop_until_tag_ref(stack, elements, tag))
-  end
 
   # "Any other end tag" per spec — walk the stack with parse error detection.
   # If node matches tag and node is not the current node: parse error.
@@ -1054,12 +1040,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Close tag for specifically-handled end tags (template, table, select, frameset)
-  # Does NOT respect special element stops - only template is a barrier
-  defp close_tag_ref_forced(%{stack: stack, elements: elements} = state, tag) do
-    apply_pop_result(state, pop_until_tag_ref_block(stack, elements, tag))
-  end
-
   # Close block-level end tag: per spec check scope, generate implied end tags,
   # check current node, then pop.
   defp close_block_end_tag(state, tag) do
@@ -1068,15 +1048,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       state
       |> generate_implied_end_tags()
       |> parse_error_unless_current(tag)
-      |> do_close_block_end_tag(tag)
+      |> pop_through(tag)
     else
       # Per spec: parse error; ignore the token
       parse_error(state)
     end
-  end
-
-  defp do_close_block_end_tag(%{stack: stack, elements: elements} = state, tag) do
-    apply_pop_result(state, pop_until_tag_ref_block(stack, elements, tag))
   end
 
   # Special </form> handling when no template on stack
@@ -1114,7 +1090,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       state
       |> generate_implied_end_tags()
       |> parse_error_unless_current("form")
-      |> close_tag_ref("form")
+      |> pop_through("form")
     else
       parse_error(state)
     end
@@ -1135,54 +1111,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp pop_until_any_heading([ref | rest], elements) when is_map_key(elements, ref) do
     %{tag: tag, parent_ref: parent_ref} = elements[ref]
 
-    cond do
-      tag in @headings -> {:found, rest, parent_ref}
-      tag == "template" -> :not_found
-      true -> pop_until_any_heading(rest, elements)
+    if tag in @headings do
+      {:found, rest, parent_ref}
+    else
+      pop_until_any_heading(rest, elements)
     end
   end
-
-  # Close li only if li is in list item scope (ul/ol are barriers)
-  # List item scope barriers: ol, ul, plus standard scope barriers
-  @list_item_scope_barriers ~w(ol ul applet caption html table td th marquee object template)
-  defp close_li_in_list_scope(%{stack: stack, elements: elements} = state) do
-    apply_pop_result(state, find_li_in_list_scope(stack, elements))
-  end
-
-  defp find_li_in_list_scope([], _elements), do: :not_found
-
-  defp find_li_in_list_scope([ref | rest], elements) when is_map_key(elements, ref) do
-    %{tag: tag, parent_ref: parent_ref} = elements[ref]
-
-    cond do
-      tag == "li" -> {:found, rest, parent_ref}
-      tag in @list_item_scope_barriers -> :not_found
-      true -> find_li_in_list_scope(rest, elements)
-    end
-  end
-
-  defp find_li_in_list_scope([_ | rest], elements), do: find_li_in_list_scope(rest, elements)
-
-  # Close dd/dt only if in scope (dl is not a barrier for dd/dt unlike ul/ol for li)
-  defp close_dd_dt_in_scope(%{stack: stack, elements: elements} = state, target) do
-    apply_pop_result(state, find_dd_dt_in_scope(stack, elements, target))
-  end
-
-  @scope_barriers ~w(applet caption html table td th marquee object template)
-  defp find_dd_dt_in_scope([], _elements, _target), do: :not_found
-
-  defp find_dd_dt_in_scope([ref | rest], elements, target) when is_map_key(elements, ref) do
-    %{tag: tag, parent_ref: parent_ref} = elements[ref]
-
-    cond do
-      tag == target -> {:found, rest, parent_ref}
-      tag in @scope_barriers -> :not_found
-      true -> find_dd_dt_in_scope(rest, elements, target)
-    end
-  end
-
-  defp find_dd_dt_in_scope([_ | rest], elements, target),
-    do: find_dd_dt_in_scope(rest, elements, target)
 
   defp pop_until_tag_ref([], _elements, _target), do: :not_found
 
@@ -1200,26 +1134,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     pop_until_tag_ref(rest, elements, target)
   end
 
-  # Pop until tag for block-level end tags - only template is a barrier
-  defp pop_until_tag_ref_block([], _elements, _target), do: :not_found
-
-  defp pop_until_tag_ref_block([ref | rest], elements, target)
-       when is_map_key(elements, ref) do
-    %{tag: tag, parent_ref: parent_ref} = elements[ref]
-
-    cond do
-      tag_matches?(tag, target) -> {:found, rest, parent_ref}
-      tag == "template" -> :not_found
-      true -> pop_until_tag_ref_block(rest, elements, target)
-    end
-  end
-
-  defp pop_until_tag_ref_block([_ref | rest], elements, target) do
-    pop_until_tag_ref_block(rest, elements, target)
-  end
-
-  # Apply the result of a pop_until_* function to the state.
-  # Shared by close_tag_ref, close_tag_ref_forced, and do_close_block_end_tag.
   defp apply_pop_result(state, {:found, new_stack, _parent_ref}), do: %{state | stack: new_stack}
 
   defp apply_pop_result(state, :not_found), do: state
@@ -1228,8 +1142,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # a foreign element never matches.
   defp tag_matches?(tag, target) when is_binary(tag), do: tag == target
   defp tag_matches?(_foreign, _target), do: false
-
-  # Check if tag is a special element that acts as a barrier
 
   # --------------------------------------------------------------------------
   # Active formatting elements

@@ -52,6 +52,18 @@ defmodule PureHTML.TreeBuilder.Helpers do
     %{state | error_count: n + count}
   end
 
+  @doc """
+  Parse error unless the current node is an HTML element with this tag name.
+  """
+  def parse_error_unless_current(state, tag) when is_binary(tag) do
+    state
+    |> current_tag()
+    |> parse_error_unless_tag(tag, state)
+  end
+
+  defp parse_error_unless_tag(tag, tag, state), do: state
+  defp parse_error_unless_tag(_current, _tag, state), do: parse_error(state)
+
   @doc false
   def ok(state), do: {:ok, state}
 

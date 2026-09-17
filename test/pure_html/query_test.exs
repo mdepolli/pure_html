@@ -592,11 +592,7 @@ defmodule PureHTML.QueryTest do
     test "deep: false only extracts direct text children" do
       html = PureHTML.parse("<div>Direct<p>Nested</p>Text</div>")
 
-      html
-      |> Query.find("div")
-      |> hd()
-      |> Query.text(deep: false)
-      |> then(&assert &1 == "DirectText")
+      assert Query.text(hd(Query.find(html, "div")), deep: false) == "DirectText"
     end
 
     test "strip: true removes leading/trailing whitespace from segments" do

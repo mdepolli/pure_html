@@ -53,8 +53,8 @@ defmodule PureHTML.TreeBuilder do
     @moduledoc """
     Parser state for the HTML5 tree construction algorithm.
 
-    Architecture: Stack tracks "open elements" for parsing context, while DOM
-    structure is built via explicit parent_ref relationships in the elements map.
+    The stack of open elements is the insertion parent. Each element's
+    `parent_ref` is its tree parent (`nil` for `html`).
     """
 
     # --------------------------------------------------------------------------

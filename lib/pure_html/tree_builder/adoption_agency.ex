@@ -69,15 +69,15 @@ defmodule PureHTML.TreeBuilder.AdoptionAgency do
 
       true ->
         state
-        |> parse_error_unless_current(fe_ref)
+        |> parse_error_unless_current_ref(fe_ref)
         |> adopt_in_scope(entry, subject, any, counter)
     end
   end
 
   # Step 4.6: "If formattingElement is not the current node, this is a parse
   # error. (But do not return.)"
-  defp parse_error_unless_current(%{stack: [ref | _]} = state, ref), do: state
-  defp parse_error_unless_current(state, _fe_ref), do: parse_error(state)
+  defp parse_error_unless_current_ref(%{stack: [ref | _]} = state, ref), do: state
+  defp parse_error_unless_current_ref(state, _fe_ref), do: parse_error(state)
 
   defp adopt_in_scope(state, {fe_ref, _tag, _attrs} = entry, subject, any_other_end_tag, counter) do
     state
