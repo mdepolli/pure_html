@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-17
+
 ### Added
 
+- `query!/2` and `query_one!/2`, which raise `ArgumentError` on an invalid selector
+- `:scripting` on `to_html/2` (default `true`), so noscript text from a scripting-on parse is emitted as raw text
 - `PureHTML.Serializer.void_element?/1`
 - The html5lib runners list fixtures recursively under relative names (`scripted/webkit01`), run the three `unsafe` tree-construction files, and report fixtures they cannot pass as skipped tests with the reason: `scripted/` fixtures need script execution, the four `unicodeCharsProblematic` tokenizer cases hold a lone surrogate that only a script API can put in the input stream, and the html5lib serializer cases test html5lib's token serializer rather than the fragment algorithm, each classified from the case itself (options, PUBLIC/SYSTEM doctype, an end tag with no open element, an unclosed start tag, or an omitted end tag), with no file skipped by name
 - The html5lib serializer suite builds a tree from each token stream and serializes it through `PureHTML.Serializer` instead of a copy of the serializer
@@ -17,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Elixir requirement is `>= 1.20.0`
+- `query/2` and `query_one/2` treat an invalid selector as a match of nothing (`[]` / `nil`); they no longer raise
+- `Encoding.sniff/2` takes a BOM over a supported transport encoding, then the prescan
 - The parse node contract is documented as `t:PureHTML.html_node/0`: HTML elements stay Floki-shaped; foreign elements, namespaced attributes, template `{:content, _}`, and processing instructions are this parser's
 - Element attributes are in source order. "Create an element for a token" appends each attribute on the token; a later `<html>` or `<body>` start tag appends names the element does not already have. The first value wins on a duplicate name.
 - Parse properties generate raw bytes, UTF-8, NUL, NBSP, PIs, foreign elements, and template contents instead of printable strings, and assert node shape, `to_html/2` UTF-8, and `text/2` on every run
@@ -251,7 +258,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Active formatting reconstruction for void elements in table context
 - Row mode foster parenting with in_body rules delegation
 
-[Unreleased]: https://github.com/mdepolli/pure_html/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/mdepolli/pure_html/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/mdepolli/pure_html/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mdepolli/pure_html/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mdepolli/pure_html/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mdepolli/pure_html/compare/v0.1.0...v0.2.0
