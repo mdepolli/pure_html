@@ -8,7 +8,7 @@ defmodule PureHTML.MixProject do
     [
       app: :pure_html,
       version: @version,
-      elixir: ">= 1.20.0-rc.1",
+      elixir: ">= 1.20.0",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
