@@ -2,6 +2,7 @@ defmodule PureHTML.Html5libDatParserTest do
   use ExUnit.Case, async: true
 
   alias PureHTML.Test.Html5libEncodingTests, as: Encoding
+  alias PureHTML.Test.Html5libSerializerTests, as: Ser
   alias PureHTML.Test.Html5libTokenizerTests, as: Tok
   alias PureHTML.Test.Html5libTreeConstructionTests, as: H5
 
@@ -23,6 +24,16 @@ defmodule PureHTML.Html5libDatParserTest do
     test "every scripted fixture is listed and classified as needing script execution" do
       assert_scripted_classified(H5)
       assert_scripted_classified(Encoding)
+    end
+
+    test "lists every regular file under each suite dir except known non-fixtures" do
+      # README.md is the html5lib suite readme, not a fixture.
+      # encoding/chardet/test_big5.txt is a Big5 sample for upstream's chardet
+      # tests, not a sniffing fixture.
+      assert_lists_every_regular_file(H5, ~w(README.md))
+      assert_lists_every_regular_file(Encoding, ~w(chardet/test_big5.txt))
+      assert_lists_every_regular_file(Tok, ~w(README.md))
+      assert_lists_every_regular_file(Ser, [])
     end
   end
 
@@ -74,11 +85,12 @@ defmodule PureHTML.Html5libDatParserTest do
 
     test "every tokenizer correction names an existing fixture and lands on exactly one case" do
       # Arrange
-      files = Path.wildcard(Path.join(Tok.corrections_dir(), "*.json"))
+      files = Path.wildcard(Path.join(Tok.corrections_dir(), "**/*.json"))
       assert files != []
 
       for corrections_path <- files do
-        name = Path.basename(corrections_path, ".json")
+        rel = Path.relative_to(corrections_path, Tok.corrections_dir())
+        name = Path.rootname(rel, ".json")
         fixture_path = Path.join(Tok.test_dir(), name <> ".test")
         assert File.exists?(fixture_path), "#{name} corrects a fixture that does not exist"
 
@@ -96,6 +108,30 @@ defmodule PureHTML.Html5libDatParserTest do
         end
       end
     end
+  end
+
+  defp assert_lists_every_regular_file(mod, non_fixtures) do
+    # Arrange
+    listed = Enum.sort(mod.list_test_files())
+
+    skipped =
+      Enum.map(non_fixtures, fn rel ->
+        path = Path.join(mod.test_dir(), rel)
+        assert File.regular?(path), "#{rel} is on the non-fixture list but is not a file"
+        path
+      end)
+
+    on_disk =
+      mod.test_dir()
+      |> Path.join("**/*")
+      |> Path.wildcard()
+      |> Enum.filter(&File.regular?/1)
+      |> Enum.reject(&(&1 in skipped))
+      |> Enum.sort()
+
+    # Assert
+    assert on_disk != []
+    assert listed == on_disk
   end
 
   defp assert_scripted_classified(mod) do

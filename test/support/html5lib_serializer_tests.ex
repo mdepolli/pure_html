@@ -21,12 +21,17 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   def list_test_files do
     @test_dir
-    |> Path.join("*.test")
+    |> Path.join("**/*.test")
     |> Path.wildcard()
     |> Enum.sort()
   end
 
-  def fixture_name(path), do: Path.basename(path, ".test")
+  @doc "Fixture name relative to the serializer directory: `core`, `scripted/core`."
+  def fixture_name(path) do
+    path
+    |> Path.relative_to(@test_dir)
+    |> Path.rootname(".test")
+  end
 
   def parse_file(path) do
     path

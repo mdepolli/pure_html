@@ -7,7 +7,7 @@ defmodule PureHTML.Html5libTokenizerTest do
   # at run time. Generating a test function per case made compiling this file
   # the slowest part of the suite.
   for path <- H5.list_test_files() do
-    filename = Path.basename(path, ".test")
+    filename = H5.fixture_name(path)
 
     @tag :html5lib
     @tag :tokenizer

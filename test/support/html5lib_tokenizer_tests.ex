@@ -10,13 +10,14 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   - "lastStartTag": for some states, the last start tag name
   - "doubleEscaped": if true, input has \\uXXXX sequences to unescape
 
-  A fixture may have a corrections file of the same name under
-  `test/fixtures/corrections/tokenizer/` (`<name>.json`, entries under
-  `"corrections"`), one entry per case whose expectation contradicts the
-  WHATWG text. An entry is keyed by `description` and `input`, cites the walk
-  in `spec`, snapshots upstream's `output` and `errors` under `upstream`, and
-  gives the text's `output` and `errors`. `parse_file/1` applies them; an
-  entry that matches no case, or more than one, or whose snapshot no longer
+  A fixture may have a corrections file under
+  `test/fixtures/corrections/tokenizer/` at the same relative path with a
+  `.json` suffix (`<relative-name>.json`, entries under `"corrections"`),
+  one entry per case whose expectation contradicts the WHATWG text. An
+  entry is keyed by `description` and `input`, cites the walk in `spec`,
+  snapshots upstream's `output` and `errors` under `upstream`, and gives
+  the text's `output` and `errors`. `parse_file/1` applies them; an entry
+  that matches no case, or more than one, or whose snapshot no longer
   matches upstream, raises so the disagreement is re-walked rather than
   carried blindly.
   """
@@ -28,13 +29,19 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   def test_dir, do: @test_dir
   def corrections_dir, do: @corrections_dir
 
-  @doc "Lists all .test files in the tokenizer test directory."
+  @doc "Lists all .test files under the tokenizer test directory, recursively."
   def list_test_files do
     @test_dir
-    |> File.ls!()
-    |> Enum.filter(&String.ends_with?(&1, ".test"))
+    |> Path.join("**/*.test")
+    |> Path.wildcard()
     |> Enum.sort()
-    |> Enum.map(&Path.join(@test_dir, &1))
+  end
+
+  @doc "Fixture name relative to the tokenizer directory: `test1`, `scripted/test1`."
+  def fixture_name(path) do
+    path
+    |> Path.relative_to(@test_dir)
+    |> Path.rootname(".test")
   end
 
   @doc """
@@ -50,7 +57,7 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
       |> Jason.decode!()
       |> extract_tests()
 
-    corrections_path = Path.join(@corrections_dir, Path.basename(path, ".test") <> ".json")
+    corrections_path = Path.join(@corrections_dir, fixture_name(path) <> ".json")
     {apply_corrections(tests, corrections_path), xml_violation_mode}
   end
 
@@ -118,7 +125,7 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   `test1:41`) to run a single case.
   """
   def failures(path) do
-    filename = Path.basename(path, ".test")
+    filename = fixture_name(path)
     {tests, xml_violation_mode} = parse_file(path)
 
     tests
