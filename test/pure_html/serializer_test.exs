@@ -252,6 +252,10 @@ defmodule PureHTML.SerializerTest do
     test "a leading LF in a pre text node is emitted" do
       assert Serializer.serialize([{"pre", [], ["\nx"]}]) == "<pre>\nx</pre>"
     end
+
+    test "interior tab is emitted" do
+      assert Serializer.serialize([{"pre", [], ["foo\tbar"]}]) == "<pre>foo\tbar</pre>"
+    end
   end
 
   describe "template content" do

@@ -110,6 +110,57 @@ defmodule PureHTML.Html5libDatParserTest do
     end
   end
 
+  describe "skip_reason/1" do
+    @options_reason "uses html5lib serializer options the fragment algorithm does not have"
+
+    test "runs whitespace cases whose text is only under html5lib space-preserve elements" do
+      # Arrange
+      cases = whitespace_cases()
+
+      # Act + Assert
+      for desc <- [
+            "text within <pre>",
+            "text within <pre>, with inner markup",
+            "text within <textarea>",
+            "text within <script>",
+            "text within <style>"
+          ] do
+        assert Ser.skip_reason(case_named(cases, desc)) == nil, desc
+      end
+    end
+
+    test "skips whitespace cases whose strip_whitespace option would change the text" do
+      # Arrange
+      cases = whitespace_cases()
+
+      # Act + Assert
+      for desc <- [
+            "bare text with leading spaces",
+            "bare text with trailing spaces",
+            "bare text with inner spaces"
+          ] do
+        assert Ser.skip_reason(case_named(cases, desc)) == @options_reason, desc
+      end
+    end
+
+    test "still skips injectmeta cases that use html5lib serializer options" do
+      # Arrange
+      [test | _] = Ser.parse_file(Path.join(Ser.test_dir(), "injectmeta.test"))
+
+      # Act + Assert
+      assert Ser.skip_reason(test) == @options_reason
+    end
+  end
+
+  defp whitespace_cases do
+    Ser.parse_file(Path.join(Ser.test_dir(), "whitespace.test"))
+  end
+
+  defp case_named(cases, description) do
+    Enum.find(cases, &(&1["description"] == description)) ||
+      flunk("no serializer case #{inspect(description)}")
+  end
+
   defp assert_lists_every_regular_file(mod, non_fixtures) do
     # Arrange
     listed = Enum.sort(mod.list_test_files())

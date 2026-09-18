@@ -7,7 +7,7 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   comes, with html5lib's attribute quoting, boolean minimization, optional tag
   omission, meta injection, and PUBLIC/SYSTEM doctypes. `PureHTML.Serializer`
   implements the HTML fragment serialization algorithm, which serializes a
-  tree. `skip_reason/2` names why a case cannot be evidence for that
+  tree. `skip_reason/1` names why a case cannot be evidence for that
   algorithm; the test file reports such cases as skipped and runs the rest
   through `build_tree/1` and `PureHTML.Serializer.serialize/2`.
   """
@@ -16,6 +16,8 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   @test_dir Path.expand("../fixtures/html5lib/serializer", __DIR__)
   @html_ns "http://www.w3.org/1999/xhtml"
+  # html5lib.filters.whitespace spacePreserveElements: pre, textarea, plus rcdataElements.
+  @space_preserve ~w(pre textarea style script xmp iframe noembed noframes noscript)
 
   def test_dir, do: @test_dir
 
@@ -42,12 +44,18 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   @doc """
   Why a case is not evidence for the fragment serialization algorithm, or nil
-  when it is, decided from the case itself. `encoding` is the one option that
-  changes nothing here.
+  when it is, decided from the case itself. `encoding` changes nothing here.
+  `strip_whitespace` is ignored when every `Characters` token sits under
+  html5lib's space-preserve elements (`pre`, `textarea`, and the rcdata set).
   """
   def skip_reason(test) do
+    extra = Map.keys(test["options"] || %{}) -- ["encoding"]
+
     cond do
-      Map.keys(test["options"] || %{}) -- ["encoding"] != [] ->
+      extra -- ["strip_whitespace"] != [] ->
+        "uses html5lib serializer options the fragment algorithm does not have"
+
+      extra == ["strip_whitespace"] and strip_would_change?(test["input"]) ->
         "uses html5lib serializer options the fragment algorithm does not have"
 
       Enum.any?(test["input"], &match?(["Doctype", _, _ | _], &1)) ->
@@ -59,6 +67,26 @@ defmodule PureHTML.Test.Html5libSerializerTests do
         |> tree_skip_reason(test)
     end
   end
+
+  # html5lib.filters.whitespace: collapse runs of spaceCharacters in Characters
+  # tokens while the preserve counter is 0.
+  defp strip_would_change?(tokens) do
+    Enum.reduce_while(tokens, 0, fn
+      ["StartTag", _ns, tag, _attrs], preserve when preserve > 0 or tag in @space_preserve ->
+        {:cont, preserve + 1}
+
+      ["EndTag", _ns, _tag], preserve when preserve > 0 ->
+        {:cont, preserve - 1}
+
+      ["Characters", data], 0 ->
+        if collapse_spaces(data) != data, do: {:halt, true}, else: {:cont, 0}
+
+      _token, preserve ->
+        {:cont, preserve}
+    end) == true
+  end
+
+  defp collapse_spaces(data), do: Regex.replace(~r/[\t\n\f \r]+/, data, " ")
 
   defp tree_skip_reason({:error, {:stray_end_tag, _tag}}, _test) do
     "has an end tag with no open element; the fragment algorithm serializes a tree"
