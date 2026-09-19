@@ -51,14 +51,16 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   key instead of "tests", indicating XML infoset coercion should be applied.
   """
   def parse_file(path) do
-    {tests, xml_violation_mode} =
-      path
-      |> File.read!()
-      |> Jason.decode!()
-      |> extract_tests()
-
+    {tests, xml_violation_mode} = decode_fixture(path)
     corrections_path = Path.join(@corrections_dir, fixture_name(path) <> ".json")
     {apply_corrections(tests, corrections_path), xml_violation_mode}
+  end
+
+  defp decode_fixture(path) do
+    path
+    |> File.read!()
+    |> Jason.decode!()
+    |> extract_tests(path)
   end
 
   @doc "The entries of a corrections file: `description`, `input`, `spec`, `upstream`, `output`, `errors`."
@@ -106,9 +108,20 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
     Map.merge(test, Map.take(correction, ["output", "errors", "spec"]))
   end
 
-  defp extract_tests(%{"tests" => tests}), do: {tests, false}
-  defp extract_tests(%{"xmlViolationTests" => tests}), do: {tests, true}
-  defp extract_tests(_), do: {[], false}
+  defp extract_tests(%{"tests" => tests}, _path), do: {tests, false}
+  defp extract_tests(%{"xmlViolationTests" => tests}, _path), do: {tests, true}
+
+  defp extract_tests(map, path) when is_map(map) do
+    keys = Enum.sort(Map.keys(map))
+
+    raise ArgumentError,
+          "#{path}: #{inspect(keys)} is not a tokenizer fixture (want \"tests\" or \"xmlViolationTests\")"
+  end
+
+  defp extract_tests(other, path) do
+    raise ArgumentError,
+          "#{path}: a #{inspect(other, limit: 3)} is not a tokenizer fixture (want an object with \"tests\" or \"xmlViolationTests\")"
+  end
 
   @state_map %{
     "Data state" => :data,
@@ -224,12 +237,36 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   defp case_runs({test, index}, xml_violation_mode, filename) do
     normalized = normalize_test(test)
 
-    for state <- normalized.initial_states, state_atom = @state_map[state], state_atom != nil do
-      opts =
-        [initial_state: state_atom, xml_violation_mode: xml_violation_mode]
-        |> put_last_start_tag(normalized.last_start_tag)
+    states_to_runs(
+      normalized.initial_states,
+      index,
+      normalized,
+      xml_violation_mode,
+      filename
+    )
+  end
 
-      {index, state, normalized, opts, filename}
+  defp states_to_runs([], index, _normalized, _xml_violation_mode, filename) do
+    [{:no_states, index, filename}]
+  end
+
+  defp states_to_runs(states, index, normalized, xml_violation_mode, filename) do
+    Enum.map(states, &state_run(&1, index, normalized, xml_violation_mode, filename))
+  end
+
+  defp state_run(state, index, normalized, xml_violation_mode, filename) do
+    case Map.fetch(@state_map, state) do
+      :error ->
+        {:unknown_state, index, state, filename}
+
+      {:ok, state_atom} ->
+        opts =
+          put_last_start_tag(
+            [initial_state: state_atom, xml_violation_mode: xml_violation_mode],
+            normalized.last_start_tag
+          )
+
+        {index, state, normalized, opts, filename}
     end
   end
 
@@ -239,6 +276,9 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   # Tokens always, and the count against the fixture's list plus the input
   # stream errors it omits (see uncounted_input_stream_error_cases/1), so a
   # classified case still catches any other surplus error.
+  defp passes?({:unknown_state, _index, _state, _filename}), do: false
+  defp passes?({:no_states, _index, _filename}), do: false
+
   defp passes?({_index, _state, normalized, opts, _filename}) do
     {tokens, error_count} = actual(normalized, opts)
 
@@ -257,6 +297,14 @@ defmodule PureHTML.Test.Html5libTokenizerTests do
   end
 
   defp sort_start_tag_attrs(token), do: token
+
+  defp failure_report({:unknown_state, index, state, filename}) do
+    "#{filename}:#{index} unknown initialState #{inspect(state)}"
+  end
+
+  defp failure_report({:no_states, index, filename}) do
+    "#{filename}:#{index} has no initial states"
+  end
 
   defp failure_report({index, state, normalized, opts, filename}) do
     {tokens, error_count} = actual(normalized, opts)

@@ -35,6 +35,13 @@ defmodule PureHTML.Html5libDatParserTest do
       assert_lists_every_regular_file(Tok, ~w(README.md))
       assert_lists_every_regular_file(Ser, [])
     end
+
+    test "every listed tokenizer file has at least one case" do
+      for path <- Tok.list_test_files() do
+        {tests, _xml?} = Tok.parse_file(path)
+        assert tests != [], Tok.fixture_name(path)
+      end
+    end
   end
 
   describe "parse_file/1 expected errors" do
