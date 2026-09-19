@@ -18,12 +18,13 @@ defmodule PureHTML.Html5libEncodingTest do
           test = unquote(Macro.escape(test))
 
           actual = Encoding.sniff(test.data)
+          preview = binary_part(test.data, 0, min(100, byte_size(test.data)))
 
-          assert String.downcase(actual) == test.encoding,
+          assert actual == test.encoding,
                  """
                  Expected encoding: #{test.encoding}
                  Got: #{actual}
-                 Data (first 100 bytes): #{inspect(String.slice(test.data, 0, 100))}
+                 Data (first 100 bytes): #{inspect(preview)}
                  """
         end
       end

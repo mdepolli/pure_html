@@ -77,7 +77,9 @@ defmodule PureHTML.Test.Html5libEncodingTests do
     end
   end
 
-  # Normalize expected encoding names to lowercase for consistent comparison
+  # Fixture #encoding values are Encoding Standard names modulo ASCII case
+  # (utf-8, windows-1252, iso-8859-2, euc-jp). A label that maps to a
+  # different name (latin1, ISO-8859-1) must not be folded here.
   defp normalize_expected_encoding(encoding) do
     encoding
     |> String.downcase()
