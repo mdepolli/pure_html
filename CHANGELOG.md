@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The html5lib serializer runner treats `strip_whitespace` as a no-op when every character token sits under html5lib's space-preserve elements, so the `pre` / `textarea` / `script` / `style` cases run through `PureHTML.Serializer`
+- The html5lib serializer runner reports one test per fixture file for the fragment-algorithm cases, and one skipped test per file (with counts) for the rest, instead of one skipped test per inapplicable case
 
 ## [0.5.0] - 2026-09-17
 

@@ -114,6 +114,31 @@ defmodule PureHTML.SerializerTest do
                "<span title=\"a=b\"></span>"
     end
 
+    test "tab in an attribute is emitted inside quotes" do
+      assert Serializer.serialize([{"span", [{"title", "foo\tbar"}], []}]) ==
+               "<span title=\"foo\tbar\"></span>"
+    end
+
+    test "LF in an attribute is emitted inside quotes" do
+      assert Serializer.serialize([{"span", [{"title", "foo\nbar"}], []}]) ==
+               "<span title=\"foo\nbar\"></span>"
+    end
+
+    test "CR in an attribute is emitted inside quotes" do
+      assert Serializer.serialize([{"span", [{"title", "foo\rbar"}], []}]) ==
+               "<span title=\"foo\rbar\"></span>"
+    end
+
+    test "form feed in an attribute is emitted inside quotes" do
+      assert Serializer.serialize([{"span", [{"title", "foo\fbar"}], []}]) ==
+               "<span title=\"foo\fbar\"></span>"
+    end
+
+    test "vertical tab in an attribute is emitted inside quotes" do
+      assert Serializer.serialize([{"span", [{"title", "foo\vbar"}], []}]) ==
+               "<span title=\"foo\vbar\"></span>"
+    end
+
     test "NBSP in an attribute is escaped as &nbsp;" do
       assert Serializer.serialize([{"span", [{"title", "\u00A0"}], []}]) ==
                "<span title=\"&nbsp;\"></span>"

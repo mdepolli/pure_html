@@ -150,6 +150,56 @@ defmodule PureHTML.Html5libDatParserTest do
       # Act + Assert
       assert Ser.skip_reason(test) == @options_reason
     end
+
+    @running_keys [
+      {"core", "void element (as EmptyTag token)"},
+      {"core", "void element (as StartTag token)"},
+      {"core", "doctype in error"},
+      {"core", "character data"},
+      {"core", "doctype"},
+      {"whitespace", "text within <pre>"},
+      {"whitespace", "text within <pre>, with inner markup"},
+      {"whitespace", "text within <textarea>"},
+      {"whitespace", "text within <script>"},
+      {"whitespace", "text within <style>"}
+    ]
+
+    @skip_totals %{
+      "uses html5lib serializer options the fragment algorithm does not have" => 21,
+      "expects an unclosed start tag; the fragment algorithm closes every non-void element" => 44,
+      "has an end tag with no open element; the fragment algorithm serializes a tree" => 151,
+      "expects a PUBLIC/SYSTEM doctype; the fragment algorithm writes the name only" => 3,
+      "expects an omitted end tag; the fragment algorithm closes every non-void element" => 1
+    }
+
+    test "the fragment-algorithm cases are exactly the ten keyed by file and description" do
+      # Arrange / Act
+      running =
+        for path <- Ser.list_test_files(),
+            test <- Ser.parse_file(path),
+            Ser.skip_reason(test) == nil do
+          {Ser.fixture_name(path), test["description"]}
+        end
+
+      # Assert
+      assert Enum.sort(running) == Enum.sort(@running_keys)
+    end
+
+    test "skip totals by reason" do
+      # Arrange / Act
+      totals =
+        for path <- Ser.list_test_files(),
+            test <- Ser.parse_file(path),
+            reason = Ser.skip_reason(test),
+            reason != nil,
+            reduce: %{} do
+          acc -> Map.update(acc, reason, 1, &(&1 + 1))
+        end
+
+      # Assert
+      assert totals == @skip_totals
+      assert Enum.sum(Map.values(totals)) == 220
+    end
   end
 
   defp whitespace_cases do

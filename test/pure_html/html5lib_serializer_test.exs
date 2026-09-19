@@ -1,49 +1,38 @@
 defmodule PureHTML.Html5libSerializerTest do
   use ExUnit.Case, async: true
 
-  alias PureHTML.Serializer
   alias PureHTML.Test.Html5libSerializerTests, as: H5
 
-  # Cases that test html5lib's token serializer rather than the fragment
-  # serialization algorithm (see H5.skip_reason/2) get one skipped test each,
-  # so they stay in the result line instead of inside a green count.
+  # One running test per file that has fragment-algorithm evidence; the cases
+  # loop at run time. Cases that test html5lib's token serializer rather than
+  # the fragment algorithm (see H5.skip_reason/1) get one skipped test per
+  # file, with counts, so they stay in the result line instead of inside a
+  # green count.
   for path <- H5.list_test_files() do
     name = H5.fixture_name(path)
+    {running, skip_counts} = H5.classify(path)
 
-    describe name do
-      for {test, index} <- Enum.with_index(H5.parse_file(path)) do
-        description = test["description"] || "test #{index}"
+    if running != [] do
+      @tag :html5lib
+      @tag :serializer
+      @tag test_file: name
+      test name do
+        failures = H5.failures(unquote(path))
 
-        case H5.skip_reason(test) do
-          nil ->
-            @tag :html5lib
-            @tag :serializer
-            @tag test_file: name
-            @tag test_id: "#{name}:#{index}"
-            test "##{index}: #{description}" do
-              test = unquote(Macro.escape(test))
-              {:ok, nodes} = H5.build_tree(test["input"])
+        assert failures == [],
+               "#{length(failures)} failing case(s):\n\n" <> Enum.join(failures, "\n")
+      end
+    end
 
-              actual = Serializer.serialize(nodes)
+    if skip_counts != [] do
+      summary = H5.skip_summary(skip_counts)
 
-              assert actual in test["expected"],
-                     """
-                     Expected one of: #{inspect(test["expected"])}
-                     Got: #{inspect(actual)}
-                     Nodes: #{inspect(nodes)}
-                     """
-            end
-
-          reason ->
-            @tag :html5lib
-            @tag :serializer
-            @tag test_file: name
-            @tag test_id: "#{name}:#{index}"
-            @tag skip: reason
-            test "##{index}: #{description}" do
-              flunk(unquote(reason))
-            end
-        end
+      @tag :html5lib
+      @tag :serializer
+      @tag test_file: name
+      @tag skip: summary
+      test "#{name} (not fragment-algorithm evidence)" do
+        flunk(unquote(summary))
       end
     end
   end

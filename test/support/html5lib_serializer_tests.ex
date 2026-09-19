@@ -68,6 +68,82 @@ defmodule PureHTML.Test.Html5libSerializerTests do
     end
   end
 
+  @doc """
+  Splits a fixture file into fragment-algorithm cases and skip counts
+  `{reason, n}`, sorted by count descending.
+  """
+  def classify(path) do
+    {running, skipped} =
+      path
+      |> parse_file()
+      |> Enum.split_with(&(skip_reason(&1) == nil))
+
+    skip_counts =
+      skipped
+      |> Enum.map(&skip_reason/1)
+      |> Enum.frequencies()
+      |> Enum.sort_by(fn {reason, n} -> {-n, reason} end)
+
+    {running, skip_counts}
+  end
+
+  @doc "Failure reports for the fragment-algorithm cases in `path`."
+  def failures(path) do
+    name = fixture_name(path)
+
+    path
+    |> parse_file()
+    |> Enum.filter(&(skip_reason(&1) == nil))
+    |> Enum.flat_map(&failure_report(name, &1))
+  end
+
+  defp failure_report(name, test) do
+    {:ok, nodes} = build_tree(test["input"])
+    actual = Serializer.serialize(nodes)
+
+    if actual in test["expected"] do
+      []
+    else
+      [
+        """
+        #{name}: #{test["description"]}
+        Expected one of: #{inspect(test["expected"])}
+        Got: #{inspect(actual)}
+        Nodes: #{inspect(nodes)}
+        """
+      ]
+    end
+  end
+
+  @doc "One skip reason for a file: total and per-reason counts."
+  def skip_summary(skip_counts) do
+    total = Enum.reduce(skip_counts, 0, fn {_reason, n}, acc -> acc + n end)
+
+    parts =
+      Enum.map_join(skip_counts, ", ", fn {reason, n} ->
+        "#{short_skip_reason(reason)} (#{n})"
+      end)
+
+    "#{total} cases: #{parts}"
+  end
+
+  defp short_skip_reason("uses html5lib serializer options" <> _),
+    do: "html5lib serializer options"
+
+  defp short_skip_reason("expects a PUBLIC/SYSTEM doctype" <> _),
+    do: "PUBLIC/SYSTEM doctype"
+
+  defp short_skip_reason("has an end tag with no open element" <> _),
+    do: "stray end tag"
+
+  defp short_skip_reason("expects an unclosed start tag" <> _),
+    do: "unclosed start tag"
+
+  defp short_skip_reason("expects an omitted end tag" <> _),
+    do: "omitted end tag"
+
+  defp short_skip_reason(reason), do: reason
+
   # html5lib.filters.whitespace: collapse runs of spaceCharacters in Characters
   # tokens while the preserve counter is 0.
   defp strip_would_change?(tokens) do
