@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - html5lib encoding tests compare `Encoding.sniff/2` to the Encoding Standard name with no case fold on the actual
 - The html5lib tokenizer runner fails on an unknown `initialStates` name, on a case with no initial states, and on a fixture JSON that is not `"tests"` / `"xmlViolationTests"`, instead of passing with zero runs
 
+### Fixed
+
+- Text mixing whitespace with other characters after `</html>` goes to body instead of raising `FunctionClauseError`
+
 ## [0.5.0] - 2026-09-17
 
 ### Added

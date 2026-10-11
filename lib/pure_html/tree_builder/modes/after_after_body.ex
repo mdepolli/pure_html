@@ -59,14 +59,16 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
     |> reprocess()
   end
 
-  defp handle_characters("", _text, state) do
+  # Whitespace: "Process the token using the rules for the in body insertion
+  # mode", which reconstructs the active formatting elements before inserting.
+  defp handle_characters(text, text, state), do: process_in_body(state, {:character, text})
+
+  # Anything else: parse error, switch to in body, reprocess. In body inserts
+  # any leading whitespace exactly as the whitespace entry would.
+  defp handle_characters(_whitespace, _text, state) do
     state
     |> parse_error()
     |> set_mode(:in_body)
     |> reprocess()
   end
-
-  # Whitespace: "Process the token using the rules for the in body insertion
-  # mode", which reconstructs the active formatting elements before inserting.
-  defp handle_characters(text, text, state), do: process_in_body(state, {:character, text})
 end

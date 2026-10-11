@@ -2614,6 +2614,21 @@ defmodule PureHTMLTest do
       # eof-in-processing-instruction plus initial EOF / missing-doctype.
       assert error_count == 2
     end
+
+    test "whitespace then text after </html> goes to body" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<!DOCTYPE html><html><body></body></html> a")
+
+      # Assert: after after body sends the space to in body; "a" is anything
+      # else, a parse error that switches to in body and reprocesses.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [" a"]}]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
