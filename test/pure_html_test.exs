@@ -2850,6 +2850,43 @@ defmodule PureHTMLTest do
       assert [{"div", [], []}] = nodes
       assert error_count == 1
     end
+
+    test "an svg xmlns attribute that is not the SVG namespace is a parse error" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors(~s(<!DOCTYPE html><svg xmlns="http://example.com/"></svg>))
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [],
+                   [{{:svg, "svg"}, [{{:xmlns, "xmlns"}, "http://example.com/"}], []}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "a math xmlns:xlink attribute that is not the XLink namespace is a parse error" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors(~s(<!DOCTYPE html><math xmlns:xlink="x"></math>))
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{{:math, "math"}, [{{:xmlns, "xlink"}, "x"}], []}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

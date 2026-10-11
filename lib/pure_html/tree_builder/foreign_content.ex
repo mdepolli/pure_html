@@ -264,16 +264,42 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
   attribute adjustments applied. A self-closing tag is inserted and popped
   (its flag acknowledged); otherwise the element is pushed.
   """
-  def insert_element(state, ns, tag, attrs, true = _self_closing) do
-    add_child_to_stack(
-      state,
-      {{ns, adjust_svg_tag(ns, tag)}, adjust_foreign_attributes(ns, attrs), []}
-    )
+  def insert_element(state, ns, tag, attrs, self_closing) do
+    adjusted_attrs = adjust_foreign_attributes(ns, attrs)
+
+    state
+    |> parse_error_for_xmlns(ns, adjusted_attrs)
+    |> insert_adjusted_element(ns, adjust_svg_tag(ns, tag), adjusted_attrs, self_closing)
   end
 
-  def insert_element(state, ns, tag, attrs, _self_closing) do
-    push_foreign_element(state, ns, adjust_svg_tag(ns, tag), adjust_foreign_attributes(ns, attrs))
+  defp insert_adjusted_element(state, ns, tag, attrs, true = _self_closing) do
+    add_child_to_stack(state, {{ns, tag}, attrs, []})
   end
+
+  defp insert_adjusted_element(state, ns, tag, attrs, _self_closing) do
+    push_foreign_element(state, ns, tag, attrs)
+  end
+
+  @namespace_urls %{svg: "http://www.w3.org/2000/svg", math: "http://www.w3.org/1998/Math/MathML"}
+  @xlink_namespace "http://www.w3.org/1999/xlink"
+
+  # "Create an element for a token": "If element has an xmlns attribute in the
+  # XMLNS namespace whose value is not exactly the same as the element's
+  # namespace, that is a parse error. Similarly, if element has an xmlns:xlink
+  # attribute in the XMLNS namespace whose value is not the XLink Namespace,
+  # that is a parse error."
+  defp parse_error_for_xmlns(state, ns, attrs) do
+    xmlns = List.keyfind(attrs, {:xmlns, "xmlns"}, 0)
+    xmlns_xlink = List.keyfind(attrs, {:xmlns, "xlink"}, 0)
+
+    state
+    |> parse_error_unless_namespace(xmlns, @namespace_urls[ns])
+    |> parse_error_unless_namespace(xmlns_xlink, @xlink_namespace)
+  end
+
+  defp parse_error_unless_namespace(state, nil, _url), do: state
+  defp parse_error_unless_namespace(state, {_name, url}, url), do: state
+  defp parse_error_unless_namespace(state, _attr, _url), do: parse_error(state)
 
   @foreign_attr_adjustments %{
     "xlink:actuate" => {:xlink, "actuate"},
