@@ -2665,6 +2665,27 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "Noah's Ark matches attributes in any order" do
+      # Arrange
+      html = "<!DOCTYPE html><p><b x=1 y=2><b y=2 x=1><b x=1 y=2><b y=2 x=1><p>t"
+      xy = [{"x", "1"}, {"y", "2"}]
+      yx = [{"y", "2"}, {"x", "1"}]
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert: the fourth b pushes out the first, so the second p reconstructs
+      # three. Errors: the second p closes a p whose current node is b; b is
+      # open at EOF.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [_first_p, second_p]}]}
+             ] = nodes
+
+      assert {"p", [], [{"b", ^yx, [{"b", ^xy, [{"b", ^yx, ["t"]}]}]}]} = second_p
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do

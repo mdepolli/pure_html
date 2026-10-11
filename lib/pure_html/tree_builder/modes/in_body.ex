@@ -1226,18 +1226,22 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   end
 
   # Noah's Ark clause: if there are already 3 formatting elements with same tag/attrs
-  # in the current scope (before any marker), remove the oldest one.
+  # in the current scope (before any marker), remove the oldest one. "The order
+  # of the attributes does not matter", so families compare sorted attributes.
   defp apply_noahs_ark(af, tag, attrs) do
+    family = Enum.sort(attrs)
+
     # Only consider entries before the first marker (current scope)
     in_scope = Enum.take_while(af, &(&1 != :marker))
 
     matching_indices =
       in_scope
       |> Enum.with_index()
-      |> Enum.flat_map(fn
-        {{_ref, ^tag, ^attrs}, idx} -> [idx]
-        _ -> []
+      |> Enum.filter(fn
+        {{_ref, ^tag, entry_attrs}, _idx} -> Enum.sort(entry_attrs) == family
+        _entry -> false
       end)
+      |> Enum.map(fn {_entry, idx} -> idx end)
 
     if length(matching_indices) > 3 do
       List.delete_at(af, Enum.max(matching_indices))
