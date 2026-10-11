@@ -3027,6 +3027,30 @@ defmodule PureHTMLTest do
       assert error_count == 0
     end
 
+    test "a select size with a leading non-ASCII space has display size 1" do
+      # Arrange
+      html = """
+      <!DOCTYPE html><select size="\u00A05"><button><selectedcontent></selectedcontent>\
+      </button><option>A</option></select>\
+      """
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert: the rules for parsing non-negative integers skip only ASCII
+      # whitespace, so parsing fails, the display size is 1, and the first
+      # option is selected.
+      assert [_doctype, {"html", [], [_head, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [{"size", "\u00A05"}],
+              [
+                {"button", [], [{"selectedcontent", [], ["A"]}]},
+                {"option", [], ["A"]}
+              ]} = select
+
+      assert error_count == 0
+    end
+
     test "a selectedcontent in template contents is not a descendant of the select" do
       # Arrange
       html = """

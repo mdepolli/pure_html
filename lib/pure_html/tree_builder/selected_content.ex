@@ -159,12 +159,19 @@ defmodule PureHTML.TreeBuilder.SelectedContent do
     end
   end
 
+  # "Rules for parsing non-negative integers": skip ASCII whitespace, an
+  # optional sign, then digits; a negative value is an error.
   defp parse_non_negative_integer(value) do
-    case Integer.parse(String.trim_leading(value)) do
+    case Integer.parse(skip_ascii_whitespace(value)) do
       {n, _rest} when n >= 0 -> n
       _ -> nil
     end
   end
+
+  defp skip_ascii_whitespace(<<c, rest::binary>>) when c in ~c[\t\n\f\r ],
+    do: skip_ascii_whitespace(rest)
+
+  defp skip_ascii_whitespace(value), do: value
 
   defp attr(%{attrs: attrs}, name) do
     case List.keyfind(attrs, name, 0) do
