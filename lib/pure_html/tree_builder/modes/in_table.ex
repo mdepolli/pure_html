@@ -172,15 +172,6 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     |> insert_table_form(attrs)
   end
 
-  # Frameset/frame: per spec "Parse error." then in-body rules, which parse
-  # error again and ignore the token (nothing is inserted, so no foster parenting).
-  defp do_process({:start_tag, tag, _, _} = token, state)
-       when tag in ["frameset", "frame"] do
-    state
-    |> parse_error()
-    |> process_in_body(token)
-  end
-
   # Other start tags: per spec "Parse error. Enable foster parenting, process
   # the token using the rules for the 'in body' insertion mode."
   defp do_process({:start_tag, _, _, _} = token, state), do: foster_in_body(state, token)

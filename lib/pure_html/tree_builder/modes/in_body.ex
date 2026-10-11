@@ -251,20 +251,19 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Start tags
   # --------------------------------------------------------------------------
 
-  # Per spec: "Parse error. If there is a template element on the stack of open elements,
-  # then ignore the token."
-  def process({:start_tag, "html", _attrs, _}, %{template_mode_stack: [_ | _]} = state) do
-    state
-    |> parse_error()
-    |> ok()
-  end
-
-  # Per spec: "Parse error." Then merge attributes.
+  # Per spec: "Parse error. If there is a template element on the stack of open
+  # elements, then ignore the token." Otherwise merge the attributes.
   def process({:start_tag, "html", attrs, _}, state) do
-    state
-    |> parse_error()
-    |> merge_html_attrs(attrs)
-    |> ok()
+    if has_template_on_stack?(state) do
+      state
+      |> parse_error()
+      |> ok()
+    else
+      state
+      |> parse_error()
+      |> merge_html_attrs(attrs)
+      |> ok()
+    end
   end
 
   def process({:start_tag, "head", _attrs, _}, state) do
@@ -834,11 +833,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Parse error helpers
   # --------------------------------------------------------------------------
 
-  # Per spec: </body> and </html> should parse error if there are unclosed elements
-  # that shouldn't be open. The spec lists: dd, dt, li, optgroup, option, p, rb, rp,
-  # rt, rtc, tbody, td, tfoot, th, thead, tr, body, html, template as OK.
+  # Per spec: </body>, </html>, and EOF are a parse error if an element is open
+  # that is not one of: dd, dt, li, optgroup, option, p, rb, rp, rt, rtc, tbody,
+  # td, tfoot, th, thead, tr, body, html.
   @allowed_open_at_body_close ~w(dd dt li optgroup option p rb rp rt rtc
-    tbody td tfoot th thead tr body html template)
+    tbody td tfoot th thead tr body html)
   defp maybe_parse_error_for_unclosed_body(%{stack: stack, elements: elements} = state) do
     if Enum.any?(stack, &unexpected_open_at_body_close?(elements[&1].tag)) do
       parse_error(state)

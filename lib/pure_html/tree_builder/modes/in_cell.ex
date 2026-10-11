@@ -59,12 +59,12 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
     |> ok()
   end
 
-  # Cell-closing start tags: close cell, reprocess
-  # Per spec: "If not in table scope, parse error; ignore."
+  # Cell-closing start tags: "Assert: the stack of open elements has a td or
+  # th element in table scope. Close the cell and reprocess the token."
   def process({:start_tag, tag, _, _}, state) when tag in @cell_closing_start_tags do
     @cell_tags
     |> Enum.find(&in_scope?(state, &1, :table))
-    |> close_cell_or_error(state)
+    |> close_the_cell(state)
   end
 
   # Other start tags: process using in_body rules
@@ -93,13 +93,15 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
     |> ok()
   end
 
-  # Cell-closing end tags: close cell if TARGET tag is in table scope, reprocess
+  # Cell-closing end tags: close the cell if the end tag's target is in table
+  # scope, then reprocess. In cell, a td or th is always in table scope ("The
+  # stack of open elements cannot have ... neither when the close the cell
+  # algorithm is invoked").
   def process({:end_tag, tag}, state) when tag in @cell_closing_end_tags do
-    # Per spec: only close cell if the end tag's target is in table scope
     if in_scope?(state, tag, :table) do
       @cell_tags
       |> Enum.find(&in_scope?(state, &1, :table))
-      |> close_cell_or_ignore(state)
+      |> close_the_cell(state)
     else
       # Per spec: "parse error; ignore."
       state
@@ -120,21 +122,9 @@ defmodule PureHTML.TreeBuilder.Modes.InCell do
   # Helpers
   # --------------------------------------------------------------------------
 
-  defp close_cell_or_error(nil, state) do
-    state
-    |> parse_error()
-    |> ok()
-  end
-
-  defp close_cell_or_error(tag, state) do
-    state
-    |> close_cell(tag)
-    |> reprocess()
-  end
-
-  defp close_cell_or_ignore(nil, state), do: ok(state)
-
-  defp close_cell_or_ignore(tag, state) do
+  # "Close the cell" and reprocess the token. `tag` is the td or th in table
+  # scope; with neither, the text's assertion fails and so does this clause.
+  defp close_the_cell(tag, state) when tag in @cell_tags do
     state
     |> close_cell(tag)
     |> reprocess()

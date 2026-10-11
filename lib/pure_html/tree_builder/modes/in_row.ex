@@ -118,13 +118,12 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
     end
   end
 
-  # Table body end tags: close row if in scope, reprocess
-  # Per spec: "If not in table scope, parse error; ignore."
+  # Table body end tags: without the tag in table scope, parse error and
+  # ignore; without a tr in table scope, ignore (no parse error); otherwise
+  # close the row and reprocess.
   def process({:end_tag, tag}, state) when tag in @table_body_end_tags do
-    if in_scope?(state, tag, :table) and in_scope?(state, "tr", :table) do
-      state
-      |> close_row()
-      |> reprocess()
+    if in_scope?(state, tag, :table) do
+      close_row_for_table_body_end(state)
     else
       state
       |> parse_error()
@@ -158,6 +157,16 @@ defmodule PureHTML.TreeBuilder.Modes.InRow do
   end
 
   # Close the current row (tr). Caller guarantees a tr is in table scope.
+  defp close_row_for_table_body_end(state) do
+    if in_scope?(state, "tr", :table) do
+      state
+      |> close_row()
+      |> reprocess()
+    else
+      ok(state)
+    end
+  end
+
   defp close_row(state) do
     state
     |> pop_until_tag("tr")

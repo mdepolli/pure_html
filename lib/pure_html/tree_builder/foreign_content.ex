@@ -88,10 +88,15 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
 
   defp insertion_mode_exception?(_, _, _), do: false
 
+  # The adjusted current node: in the fragment case the context element, which
+  # carries no attributes here, so it has no encoding attribute.
+  defp annotation_xml_is_html_integration_point?(%{stack: [_single], context_element: {_, _}}),
+    do: false
+
   defp annotation_xml_is_html_integration_point?(%{stack: [ref | _], elements: elements}) do
     case get_attr(elements[ref].attrs || [], "encoding") do
       nil -> false
-      enc -> String.downcase(enc) in ["text/html", "application/xhtml+xml"]
+      enc -> String.downcase(enc, :ascii) in ["text/html", "application/xhtml+xml"]
     end
   end
 

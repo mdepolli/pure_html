@@ -22,10 +22,13 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   @impl true
   def process({:character, text}, state), do: insert_text(text, state)
 
-  def process({:end_tag, tag}, state) do
+  # "An end tag whose tag name is "script"" and "Any other end tag": pop the
+  # current node and switch to the original insertion mode. The script entry's
+  # remaining steps run scripts, which this parser does not.
+  def process({:end_tag, _tag}, state) do
     state
-    |> current_tag()
-    |> close_if_matching_end_tag(tag, state)
+    |> close_current_element()
+    |> ok()
   end
 
   def process(:eof, state) do
@@ -46,19 +49,6 @@ defmodule PureHTML.TreeBuilder.Modes.Text do
   defp insert_text(text, state) do
     state
     |> add_text_to_stack(text)
-    |> ok()
-  end
-
-  # Close current element and restore original mode
-  defp close_if_matching_end_tag(tag, tag, state) do
-    state
-    |> close_current_element()
-    |> ok()
-  end
-
-  defp close_if_matching_end_tag(_current, _tag, state) do
-    state
-    |> parse_error()
     |> ok()
   end
 
