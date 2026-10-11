@@ -2938,6 +2938,141 @@ defmodule PureHTMLTest do
         assert {html, error_count} == {html, expected}
       end
     end
+
+    test "every enabled selectedcontent in a select takes the selected option" do
+      # Arrange
+      html = """
+      <!DOCTYPE html><select><button><selectedcontent></selectedcontent>\
+      <selectedcontent></selectedcontent></button><option>A</option></select>\
+      """
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [_doctype, {"html", [], [_head, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"selectedcontent", [], ["A"]}, {"selectedcontent", [], ["A"]}]},
+                {"option", [], ["A"]}
+              ]} = select
+
+      assert error_count == 0
+    end
+
+    test "a disabled selectedcontent does not stop a later one from updating" do
+      # Arrange
+      html = """
+      <!DOCTYPE html><select><option>A<selectedcontent></selectedcontent></option>\
+      <button><selectedcontent></selectedcontent></button></select>\
+      """
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert: the first is inside an option, so disabled. The second clones
+      # the option's children, the disabled selectedcontent among them.
+      assert [_doctype, {"html", [], [_head, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"option", [], ["A", {"selectedcontent", [], []}]},
+                {"button", [], [{"selectedcontent", [], ["A", {"selectedcontent", [], []}]}]}
+              ]} = select
+
+      assert error_count == 0
+    end
+
+    test "an option above the select disables its selectedcontent" do
+      # Arrange
+      html = """
+      <!DOCTYPE html><option><select><button><selectedcontent></selectedcontent>\
+      </button><option>A</option></select>\
+      """
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert: disabledness walks every ancestor, not only those below the
+      # nearest select.
+      assert [_doctype, {"html", [], [_head, {"body", [], [{"option", [], [select]}]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"selectedcontent", [], []}]},
+                {"option", [], ["A"]}
+              ]} = select
+
+      assert error_count == 0
+    end
+
+    test "a fragment parse mirrors the selected option into selectedcontent" do
+      # Arrange
+      html =
+        "<select><button><selectedcontent></selectedcontent></button><option>A</option></select>"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html, context: "body")
+
+      # Assert
+      assert [
+               {"select", [],
+                [
+                  {"button", [], [{"selectedcontent", [], ["A"]}]},
+                  {"option", [], ["A"]}
+                ]}
+             ] = nodes
+
+      assert error_count == 0
+    end
+
+    test "a selectedcontent in template contents is not a descendant of the select" do
+      # Arrange
+      html = """
+      <!DOCTYPE html><select><button><template><selectedcontent></selectedcontent>\
+      </template></button><option>A</option></select>\
+      """
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert: the template's children are its contents, a separate
+      # fragment, so the selectedcontent has no select ancestor.
+      assert [_doctype, {"html", [], [_head, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"template", [], [{:content, [{"selectedcontent", [], []}]}]}]},
+                {"option", [], ["A"]}
+              ]} = select
+
+      assert error_count == 0
+    end
+
+    test "an option in template contents is not in the select's list of options" do
+      # Arrange
+      html = """
+      <!DOCTYPE html><select><button><selectedcontent></selectedcontent></button>\
+      <template><option>T</option></template><option>A</option></select>\
+      """
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert: with display size 1 and nothing selected, the first option in
+      # the list is A; T sits in a separate fragment.
+      assert [_doctype, {"html", [], [_head, {"body", [], [select]}]}] = nodes
+
+      assert {"select", [],
+              [
+                {"button", [], [{"selectedcontent", [], ["A"]}]},
+                {"template", [], [{:content, [{"option", [], ["T"]}]}]},
+                {"option", [], ["A"]}
+              ]} = select
+
+      assert error_count == 0
+    end
   end
 
   describe "query/2" do

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A foreign fragment context (`"svg tr"`, `"svg template"`) resets the insertion mode to in body and seeds no template insertion mode; only HTML context elements match the reset steps
 - An `xmlns` attribute on a foreign element that is not its namespace, or an `xmlns:xlink` that is not the XLink namespace, is a parse error
 - A start tag with an unacknowledged self-closing flag is a parse error in every insertion mode, not only in body; the void element entries and foreign elements acknowledge it
+- Every enabled `selectedcontent` in a select mirrors the selected option, disabledness walks every ancestor, and fragment parsing mirrors too
 
 ## [0.5.0] - 2026-09-17
 

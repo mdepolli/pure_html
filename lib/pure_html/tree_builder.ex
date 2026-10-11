@@ -493,9 +493,12 @@ defmodule PureHTML.TreeBuilder do
     Enum.map(children, &finalize_fragment_child(&1, elements))
   end
 
+  # The fragment parser is an HTML parser too: popping an option updates the
+  # selectedcontent elements, so fragment children get the same replay.
   defp finalize_fragment_child(child_ref, elements) when is_reference(child_ref) do
     elements
     |> build_tree_from_elements(child_ref)
+    |> SelectedContent.populate()
     |> convert_to_tuples()
   end
 
