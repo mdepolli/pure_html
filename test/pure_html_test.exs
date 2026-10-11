@@ -2827,6 +2827,29 @@ defmodule PureHTMLTest do
 
       assert error_count == 2
     end
+
+    test "an SVG tr fragment context resets the insertion mode to in body" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<div><td>y", context: "svg tr")
+
+      # Assert: the reset steps name HTML elements, so an SVG tr is none of
+      # them and the last step is in body. Errors: div breaks out of foreign
+      # content, in body ignores td, div is open at EOF.
+      assert [{"div", [], ["y"]}] = nodes
+      assert error_count == 3
+    end
+
+    test "an SVG template fragment context pushes no template insertion mode" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<div></div>", context: "svg template")
+
+      # Assert: only an HTML template context seeds in template, so the reset
+      # ends in body. One error: div breaks out of foreign content once. In
+      # template would have reprocessed it through the dispatcher, breaking out
+      # a second time.
+      assert [{"div", [], []}] = nodes
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

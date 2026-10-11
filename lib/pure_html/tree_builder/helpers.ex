@@ -1015,9 +1015,13 @@ defmodule PureHTML.TreeBuilder.Helpers do
     mode_for_node(elements[ref].tag, true, state) || :in_body
   end
 
-  defp mode_from_stack([_ref], %{context_element: {_ns, tag}} = state) do
+  # The steps name HTML elements; a foreign context element matches none of
+  # them, so "if last is true, then switch the insertion mode to in body".
+  defp mode_from_stack([_ref], %{context_element: {nil, tag}} = state) do
     mode_for_node(tag, true, state) || :in_body
   end
+
+  defp mode_from_stack([_ref], %{context_element: {_ns, _tag}}), do: :in_body
 
   defp mode_from_stack([ref | rest], %{elements: elements} = state) do
     elements[ref].tag

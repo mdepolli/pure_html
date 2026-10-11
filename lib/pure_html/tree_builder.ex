@@ -312,13 +312,11 @@ defmodule PureHTML.TreeBuilder do
     stack = [html_ref]
 
     # Step 3: Set up initial state with context element
-    template_mode_stack = if tag == "template", do: [:in_template], else: []
-
     state = %State{
       stack: stack,
       elements: elements,
       context_element: context,
-      template_mode_stack: template_mode_stack,
+      template_mode_stack: initial_template_modes(context),
       scripting: scripting
     }
 
@@ -337,6 +335,11 @@ defmodule PureHTML.TreeBuilder do
     # Step 7: Return children of the html element
     {finalize_fragment(state, html_ref), state.error_count}
   end
+
+  # "If the context element is a template element, push "in template" onto the
+  # stack of template insertion modes": an HTML template only.
+  defp initial_template_modes({nil, "template"}), do: [:in_template]
+  defp initial_template_modes(_context), do: []
 
   defp build_loop(tokenizer, state) do
     tokenizer = update_tokenizer_context(tokenizer, state)

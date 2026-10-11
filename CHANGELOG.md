@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A duplicate attribute whose name ends at EOF (`<a b b`) is a duplicate-attribute parse error before eof-in-tag
 - Tokenizing is linear in the number of tags: the tag open and end tag open states reconsume without copying the rest of the input
 - Parse errors counted per character token count code points, not grapheme clusters, in the table, column group, and frameset modes
+- A foreign fragment context (`"svg tr"`, `"svg template"`) resets the insertion mode to in body and seeds no template insertion mode; only HTML context elements match the reset steps
 
 ## [0.5.0] - 2026-09-17
 
