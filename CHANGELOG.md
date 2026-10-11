@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text mixing whitespace with other characters after `</html>` goes to body instead of raising `FunctionClauseError`
 - `dialog` is no longer a special element, so the adoption agency, the `li` / `dd` / `dt` walks, and "any other end tag" pass over it
 - The Noah's Ark clause compares formatting elements' attributes in any order
+- A `template` fragment context counts as parsing template contents, so a form there does not set the form element pointer
 
 ## [0.5.0] - 2026-09-17
 

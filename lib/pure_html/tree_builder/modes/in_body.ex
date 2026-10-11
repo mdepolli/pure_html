@@ -206,12 +206,11 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # </form> has special handling when no template is on the stack of open elements
-  # Per HTML5 spec: only REMOVE form from stack, don't pop until it
+  # </form> with a form element pointer: unless the parser is parsing template
+  # contents, the pointer's node is removed from the stack rather than popped to.
   def process({:end_tag, "form"}, %{form_element: form_ref} = state)
       when not is_nil(form_ref) do
-    if has_template_on_stack?(state) do
-      # Template case: use standard "in scope" handling
+    if parsing_template_contents?(state) do
       state
       |> close_form_with_template()
       |> ok()
@@ -557,12 +556,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> set_frameset_not_ok()
   end
 
-  # Form - Per spec: "If the form element pointer is not null, and there is no
-  # template element on the stack of open elements, then this is a parse error; ignore the token."
+  # Form - Per spec: "If the form element pointer is not null, and the parser
+  # is not parsing template contents, then this is a parse error; ignore the token."
   defp start_tag({:start_tag, "form", attrs, _}, %{form_element: f} = state)
        when not is_nil(f) do
-    if has_template_on_stack?(state) do
-      # With template, process normally (form_element won't be set again)
+    if parsing_template_contents?(state) do
+      # Parsing template contents: insert as usual (form_element won't be set again)
       insert_form(attrs, state)
     else
       # Parse error, ignore the form tag
@@ -651,7 +650,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp maybe_parse_error_unacknowledged_self_closing(state, _tag, _self_closing), do: state
 
-  # form: the form element pointer must be null unless a template is open
+  # form: the pointer is set to the new form unless parsing template contents
   defp insert_form(attrs, state) do
     state
     |> maybe_close_p("form")

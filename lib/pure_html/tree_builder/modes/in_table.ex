@@ -19,8 +19,9 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
       insertion mode, reprocess
     - style/script/template: process using in_head rules
     - input type=hidden: parse error, insert and pop
-    - form: parse error; with no template on the stack and a null form pointer,
-      insert the form, point to it, and pop it
+    - form: parse error; ignored when the form element pointer is set and the
+      parser is not parsing template contents; otherwise insert the form, point
+      to it unless parsing template contents, and pop it
     - Anything else: parse error, enable foster parenting, process using in_body rules
   - End tags:
     - table: with a table in table scope, pop through it and reset the insertion mode
@@ -287,7 +288,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
     do: insert_and_pop_form(state, attrs)
 
   defp insert_table_form(state, attrs) do
-    if has_template_on_stack?(state) do
+    if parsing_template_contents?(state) do
       insert_and_pop_form(state, attrs)
     else
       ok(state)

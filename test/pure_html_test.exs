@@ -2686,6 +2686,28 @@ defmodule PureHTMLTest do
       assert {"p", [], [{"b", ^yx, [{"b", ^xy, [{"b", ^yx, ["t"]}]}]}]} = second_p
       assert error_count == 2
     end
+
+    test "a form in a template fragment does not set the form element pointer" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<form><form>", context: "template")
+
+      # Assert: a template context means the parser is parsing template
+      # contents, so neither form sets the pointer and the second is inserted.
+      assert [{"form", [], [{"form", [], []}]}] = nodes
+      assert error_count == 0
+    end
+
+    test "a form end tag in a template fragment pops through the form" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<form><div></form>x", context: "template")
+
+      # Assert: parsing template contents, </form> pops elements until a form
+      # has been popped, so "x" lands after it. One error: the current node is
+      # div.
+      assert [{"form", [], [{"div", [], []}]}, "x"] = nodes
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

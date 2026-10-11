@@ -1040,12 +1040,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def has_template_on_stack?(state), do: find_ref(state, "template") != nil
 
   @doc """
+  True when the parser is parsing template contents: "there is a template
+  element on the stack of open elements, or the parser's fragment context
+  element is a template element".
+  """
+  def parsing_template_contents?(%{context_element: {nil, "template"}}), do: true
+  def parsing_template_contents?(state), do: has_template_on_stack?(state)
+
+  @doc """
   Points the form element pointer at the current node, the form element just
-  inserted, unless the parser is parsing template contents (a template is on
-  the stack of open elements).
+  inserted, unless the parser is parsing template contents.
   """
   def point_form_element(%{stack: [form_ref | _]} = state) do
-    if has_template_on_stack?(state), do: state, else: %{state | form_element: form_ref}
+    if parsing_template_contents?(state), do: state, else: %{state | form_element: form_ref}
   end
 
   @doc """
