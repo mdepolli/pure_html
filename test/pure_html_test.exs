@@ -2629,6 +2629,42 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "dialog is not a furthest block for the adoption agency" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html><a><dialog>x</a>y")
+
+      # Assert: dialog is not special, so </a> has no furthest block and pops
+      # through a. One error: a is not the current node.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"a", [], [{"dialog", [], ["x"]}]}, "y"]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "an li start tag walks past an open dialog to close the li" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html><li><dialog><li>z")
+
+      # Assert: dialog is not special, so the walk reaches the li and closes it.
+      # One error: the current node is dialog, not li.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"li", [], [{"dialog", [], []}]}, {"li", [], ["z"]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do
