@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Noah's Ark clause compares formatting elements' attributes in any order
 - A `template` fragment context counts as parsing template contents, so a form there does not set the form element pointer
 - `</form>` with a null form element pointer is a parse error and is ignored, instead of closing an open form
+- Initial mode no longer counts a second parse error for a force-quirks doctype named `html` with no identifiers; the tokenizer already reported it
 
 ## [0.5.0] - 2026-09-17
 

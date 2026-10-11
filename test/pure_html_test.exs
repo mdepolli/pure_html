@@ -2729,6 +2729,20 @@ defmodule PureHTMLTest do
 
       assert error_count == 4
     end
+
+    test "a force-quirks doctype named html counts only the tokenizer's error" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html PUBLIC><p>")
+
+      # Assert: missing-doctype-public-identifier from the tokenizer. Initial
+      # mode's condition is the name, the public id, and the system id only.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], [{"p", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 1
+    end
   end
 
   describe "query/2" do

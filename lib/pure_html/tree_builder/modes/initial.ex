@@ -41,9 +41,11 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
   # "If the DOCTYPE token's name is not "html", or the token's public
   # identifier is not missing, or the token's system identifier is neither
   # missing nor "about:legacy-compat", then there is a parse error."
+  # The force-quirks flag is not part of the condition: a token that has it
+  # set already got its error from the tokenizer.
   def process({:doctype, name, public_id, system_id, force_quirks}, state) do
     state
-    |> doctype_parse_error(name, public_id, system_id, force_quirks)
+    |> doctype_parse_error(name, public_id, system_id)
     |> set_doctype(name, public_id, system_id)
     |> set_quirks_mode(Quirks.mode(name, public_id, system_id, force_quirks) == :quirks)
     |> set_mode(:before_html)
@@ -59,14 +61,9 @@ defmodule PureHTML.TreeBuilder.Modes.Initial do
     |> reprocess()
   end
 
-  defp doctype_parse_error(state, name, public_id, system_id, force_quirks) do
-    if name != "html" or is_binary(public_id) or
-         (is_binary(system_id) and system_id != "about:legacy-compat") or force_quirks do
-      parse_error(state)
-    else
-      state
-    end
-  end
+  defp doctype_parse_error(state, "html", nil, nil), do: state
+  defp doctype_parse_error(state, "html", nil, "about:legacy-compat"), do: state
+  defp doctype_parse_error(state, _name, _public_id, _system_id), do: parse_error(state)
 
   # "A character token that is ASCII whitespace: Ignore the token."
   defp initial_characters({_whitespace, ""}, state), do: ok(state)
