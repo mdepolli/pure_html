@@ -71,6 +71,12 @@ defmodule PureHTML.TokenizerTest do
                Tokenizer.tokenize_with_errors("<p>x")
     end
 
+    test "a duplicate attribute name ended by EOF is still a duplicate-attribute error" do
+      # Leaving the attribute name state on EOF compares the name; then
+      # after attribute name reports eof-in-tag.
+      assert {[], 2} = Tokenizer.tokenize_with_errors("<a b b")
+    end
+
     test "unquoted equals in an attribute value is a parse error" do
       assert {[{:start_tag, "z", [{"z", "z=z"}], false}], 1} =
                Tokenizer.tokenize_with_errors("<z z=z=z>")

@@ -1178,9 +1178,12 @@ defmodule PureHTML.Tokenizer do
     |> continue(state: :after_attribute_name)
   end
 
+  # EOF: "Reconsume in the after attribute name state". Leaving the attribute
+  # name state compares the name, then after attribute name reports eof-in-tag.
   defp step(%{state: :attribute_name, input: ""} = state) do
-    # EOF in tag - discard (parse error)
-    {:eof_parse_error, parse_error(state)}
+    state
+    |> finalize_attribute_name()
+    |> continue(state: :after_attribute_name)
   end
 
   defp step(%{state: :attribute_name, input: <<?=, rest::binary>>} = state) do
