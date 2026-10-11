@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A start tag with an unacknowledged self-closing flag is a parse error in every insertion mode, not only in body; the void element entries and foreign elements acknowledge it
 - Every enabled `selectedcontent` in a select mirrors the selected option, disabledness walks every ancestor, and fragment parsing mirrors too
 - A select's `size` skips only ASCII whitespace when parsed, so a leading U+00A0 leaves the display size at 1
+- An SVG or MathML `select` fragment context no longer makes in body ignore `select` and `input` start tags; only an HTML select context does
 
 ## [0.5.0] - 2026-09-17
 

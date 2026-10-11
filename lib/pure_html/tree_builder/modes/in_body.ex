@@ -382,8 +382,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   defp start_tag({:start_tag, "frameset", _, _}, state), do: parse_error(state)
 
-  # Per spec: in a select fragment, "Parse error. Ignore the token."
-  defp start_tag({:start_tag, "input", _attrs, _}, %{context_element: {_ns, "select"}} = state) do
+  # Per spec: when "the parser's fragment context element is a select element"
+  # (an HTML select), "Parse error. Ignore the token."
+  defp start_tag({:start_tag, "input", _, _}, %{context_element: {nil, "select"}} = state) do
     parse_error(state)
   end
 
@@ -567,8 +568,9 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     insert_form(attrs, state)
   end
 
-  # Per spec: in a select fragment, "Parse error. Ignore the token."
-  defp start_tag({:start_tag, "select", _attrs, _}, %{context_element: {_ns, "select"}} = state) do
+  # Per spec: when "the parser's fragment context element is a select element"
+  # (an HTML select), "Parse error. Ignore the token."
+  defp start_tag({:start_tag, "select", _, _}, %{context_element: {nil, "select"}} = state) do
     parse_error(state)
   end
 

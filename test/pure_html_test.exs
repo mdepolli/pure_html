@@ -3097,6 +3097,26 @@ defmodule PureHTMLTest do
 
       assert error_count == 0
     end
+
+    test "an SVG select fragment context does not ignore a select start tag" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<div><select>", context: "svg select")
+
+      # Assert: "the parser's fragment context element is a select element"
+      # means an HTML select. Errors: div breaks out of foreign content; div
+      # and select are open at EOF.
+      assert [{"div", [], [{"select", [], []}]}] = nodes
+      assert error_count == 2
+    end
+
+    test "an SVG select fragment context does not ignore an input start tag" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<div><input>", context: "svg select")
+
+      # Assert: errors: div breaks out of foreign content; div is open at EOF.
+      assert [{"div", [], [{"input", [], []}]}] = nodes
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do
