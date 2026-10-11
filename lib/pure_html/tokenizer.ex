@@ -390,13 +390,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :rawtext)
   end
 
-  defp step(%{state: :rawtext_end_tag_open, input: <<c, rest::binary>>} = state)
+  defp step(%{state: :rawtext_end_tag_open, input: <<c, _::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :rawtext_end_tag_name,
       token: {:end_tag, ""},
-      attr_names: [],
-      input: <<c, rest::binary>>
+      attr_names: []
     )
   end
 
@@ -481,13 +480,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :rcdata)
   end
 
-  defp step(%{state: :rcdata_end_tag_open, input: <<c, rest::binary>>} = state)
+  defp step(%{state: :rcdata_end_tag_open, input: <<c, _::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :rcdata_end_tag_name,
       token: {:end_tag, ""},
-      attr_names: [],
-      input: <<c, rest::binary>>
+      attr_names: []
     )
   end
 
@@ -572,13 +570,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :script_data)
   end
 
-  defp step(%{state: :script_data_end_tag_open, input: <<c, rest::binary>>} = state)
+  defp step(%{state: :script_data_end_tag_open, input: <<c, _::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :script_data_end_tag_name,
       token: {:end_tag, ""},
-      attr_names: [],
-      input: <<c, rest::binary>>
+      attr_names: []
     )
   end
 
@@ -748,13 +745,12 @@ defmodule PureHTML.Tokenizer do
     emit_char(state, "<", state: :script_data_escaped)
   end
 
-  defp step(%{state: :script_data_escaped_end_tag_open, input: <<c, rest::binary>>} = state)
+  defp step(%{state: :script_data_escaped_end_tag_open, input: <<c, _::binary>>} = state)
        when is_ascii_alpha(c) do
     continue(state,
       state: :script_data_escaped_end_tag_name,
       token: {:end_tag, ""},
-      attr_names: [],
-      input: <<c, rest::binary>>
+      attr_names: []
     )
   end
 
@@ -950,10 +946,9 @@ defmodule PureHTML.Tokenizer do
     continue(state, state: :end_tag_open, input: rest)
   end
 
-  defp step(%{state: :tag_open, input: <<c, rest::binary>>} = state) when is_ascii_alpha(c) do
+  defp step(%{state: :tag_open, input: <<c, _::binary>>} = state) when is_ascii_alpha(c) do
     continue(state,
       state: :tag_name,
-      input: <<c, rest::binary>>,
       token: {:start_tag, "", [], false},
       attr_names: []
     )
@@ -1068,10 +1063,9 @@ defmodule PureHTML.Tokenizer do
   end
 
   # End tag open state - saw '</'
-  defp step(%{state: :end_tag_open, input: <<c, rest::binary>>} = state) when is_ascii_alpha(c) do
+  defp step(%{state: :end_tag_open, input: <<c, _::binary>>} = state) when is_ascii_alpha(c) do
     continue(state,
       state: :tag_name,
-      input: <<c, rest::binary>>,
       token: {:end_tag, ""},
       attr_names: []
     )
@@ -2642,6 +2636,12 @@ defmodule PureHTML.Tokenizer do
 
   defp continue(state, input: new_input, attr_value: new_attr_value) do
     {:continue, %{state | input: new_input, attr_value: new_attr_value}}
+  end
+
+  # The tag open, end tag open, and text-state end tag open states: a new tag
+  # token, reconsuming the current input.
+  defp continue(state, state: new_state, token: new_token, attr_names: new_attr_names) do
+    {:continue, %{state | state: new_state, token: new_token, attr_names: new_attr_names}}
   end
 
   defp continue(state, state: new_state, return_state: new_return_state) do

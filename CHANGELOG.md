@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `</form>` with a null form element pointer is a parse error and is ignored, instead of closing an open form
 - Initial mode no longer counts a second parse error for a force-quirks doctype named `html` with no identifiers; the tokenizer already reported it
 - A duplicate attribute whose name ends at EOF (`<a b b`) is a duplicate-attribute parse error before eof-in-tag
+- Tokenizing is linear in the number of tags: the tag open and end tag open states reconsume without copying the rest of the input
 
 ## [0.5.0] - 2026-09-17
 

@@ -63,6 +63,30 @@ defmodule PureHTML.TokenizerTest do
       assert [{:character, text}] = tokens
       assert byte_size(text) == 420_000
     end
+
+    @tag timeout: 5_000
+    test "stays linear over many tags" do
+      # Arrange
+      html = String.duplicate("<i>x", 100_000)
+
+      # Act
+      tokens = Enum.to_list(Tokenizer.tokenize(html))
+
+      # Assert
+      assert length(tokens) == 200_000
+    end
+
+    @tag timeout: 10_000
+    test "stays linear over many end tags" do
+      # Arrange
+      html = String.duplicate("</i>", 250_000)
+
+      # Act
+      tokens = Enum.to_list(Tokenizer.tokenize(html))
+
+      # Assert
+      assert length(tokens) == 250_000
+    end
   end
 
   describe "tokenize_with_errors/2" do
