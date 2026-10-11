@@ -906,6 +906,13 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   @doc """
+  The number of character tokens in `text`, one per code point. A parse
+  error per character token counts code points; `String.length/1` counts
+  grapheme clusters, which would make e followed by U+0301 one.
+  """
+  def character_count(text), do: length(String.to_charlist(text))
+
+  @doc """
   True when every character is ASCII whitespace: U+0009, U+000A, U+000C,
   U+000D, U+0020. `String.trim/1` also strips U+00A0 and other Unicode
   whitespace, which the parser treats as characters.

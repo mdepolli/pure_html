@@ -65,7 +65,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
 
   defp handle_characters("", text, state) do
     state
-    |> parse_error(String.length(text))
+    |> parse_error(character_count(text))
     |> ok()
   end
 
@@ -75,7 +75,7 @@ defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
   defp handle_characters(ws, ws, state), do: process_in_body(state, {:character, ws})
 
   defp handle_characters(whitespace, text, state) do
-    n = String.length(text) - String.length(whitespace)
+    n = character_count(text) - character_count(whitespace)
 
     state
     |> parse_error(n)

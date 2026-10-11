@@ -251,7 +251,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   # parenting, process using the in body rules
   defp do_process_character(_, text, state) do
     state
-    |> parse_error(String.length(text))
+    |> parse_error(character_count(text))
     |> enable_foster_parenting()
     |> process_in_body({:character, text})
   end

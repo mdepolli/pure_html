@@ -75,7 +75,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTableText do
   # foster parenting enabled for those tokens.
   defp insert_pending_text(false, text, state) do
     state
-    |> parse_error(String.length(text))
+    |> parse_error(character_count(text))
     |> foster_parent_characters(text)
     |> clear_pending_text()
   end

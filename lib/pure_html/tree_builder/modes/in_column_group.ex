@@ -133,14 +133,14 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
 
   defp handle_characters(_tag, "", rest, state) do
     state
-    |> parse_error(String.length(rest))
+    |> parse_error(character_count(rest))
     |> ok()
   end
 
   defp handle_characters(_tag, ws, rest, state) do
     state
     |> add_text_to_stack(ws)
-    |> parse_error(String.length(rest))
+    |> parse_error(character_count(rest))
     |> ok()
   end
 

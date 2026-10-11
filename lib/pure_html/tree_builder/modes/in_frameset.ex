@@ -106,7 +106,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
 
   defp handle_characters("", text, state) do
     state
-    |> parse_error(String.length(text))
+    |> parse_error(character_count(text))
     |> ok()
   end
 
@@ -117,7 +117,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   end
 
   defp handle_characters(whitespace, text, state) do
-    n = String.length(text) - String.length(whitespace)
+    n = character_count(text) - character_count(whitespace)
 
     state
     |> parse_error(n)

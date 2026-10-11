@@ -2743,6 +2743,90 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "in table text counts a parse error per code point, not per grapheme" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html><table>e\u0301</table>")
+
+      # Assert: e and U+0301 are two character tokens, each fostered with a
+      # parse error.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], ["e\u0301", {"table", [], []}]}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "in table counts a parse error per code point outside a table context" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html><table><div>e\u0301")
+
+      # Assert: the fostered div is the current node, so each character is the
+      # anything else entry. Errors: div, e, U+0301, the open elements at EOF.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"div", [], ["e\u0301"]}, {"table", [], []}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 4
+    end
+
+    test "in column group counts a parse error per code point" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("e\u0301", context: "colgroup")
+
+      # Assert: the current node is not a colgroup, so each character token is
+      # a parse error and is ignored.
+      assert [] = nodes
+      assert error_count == 2
+    end
+
+    test "in frameset counts a parse error per code point" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<!DOCTYPE html><frameset>e\u0301</frameset>")
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"frameset", [], []}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "after frameset counts a parse error per code point" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<!DOCTYPE html><frameset></frameset>e\u0301")
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"frameset", [], []}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
+
+    test "after after frameset counts a parse error per code point" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<!DOCTYPE html><frameset></frameset></html>e\u0301")
+
+      # Assert
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], []}, {"frameset", [], []}]}
+             ] = nodes
+
+      assert error_count == 2
+    end
   end
 
   describe "query/2" do
