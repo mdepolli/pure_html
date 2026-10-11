@@ -34,12 +34,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
                      dl fieldset figcaption figure footer header hgroup listing main
                      menu nav ol pre search section select summary ul)
 
-  # Note: input is handled specially - only non-hidden inputs disable frameset
-  # Start tags whose in-body entries set the frameset-ok flag to "not ok"
-  # (input is handled by its own entry: only when its type is not hidden)
-  @frameset_disabling_elements ~w(pre listing textarea xmp iframe select embed keygen applet
-                                  marquee object table button img hr br wbr area dd dt li)
-
   # --------------------------------------------------------------------------
   # Token processing
   # --------------------------------------------------------------------------
@@ -621,14 +615,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> maybe_close_p(tag)
     |> maybe_close_current_heading(tag)
     |> push_element(tag, attrs)
-    |> maybe_set_frameset_not_ok_for_element(tag)
+    |> set_frameset_not_ok_for_list_item(tag)
   end
 
   defp start_tag({:start_tag, tag, attrs, _self_closing}, state) do
     state
     |> reconstruct_active_formatting()
     |> push_element(tag, attrs)
-    |> maybe_set_frameset_not_ok_for_element(tag)
   end
 
   # Generic raw text element parsing
@@ -872,12 +865,12 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp set_frameset_not_ok_for_text(true, state), do: state
   defp set_frameset_not_ok_for_text(false, state), do: set_frameset_not_ok(state)
 
-  defp maybe_set_frameset_not_ok_for_element(state, tag)
-       when tag in @frameset_disabling_elements do
-    set_frameset_not_ok(state)
-  end
+  # The li, dd, and dt entries set the frameset-ok flag to "not ok"; the other
+  # entries that do have clauses of their own.
+  defp set_frameset_not_ok_for_list_item(state, tag) when tag in ~w(li dd dt),
+    do: set_frameset_not_ok(state)
 
-  defp maybe_set_frameset_not_ok_for_element(state, _tag), do: state
+  defp set_frameset_not_ok_for_list_item(state, _tag), do: state
 
   # Per HTML5 spec: only set frameset-ok to "not ok" if input is NOT type="hidden"
   defp maybe_set_frameset_not_ok_for_input(state, attrs) do
@@ -894,14 +887,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       _ -> false
     end)
   end
-
-  # --------------------------------------------------------------------------
-  # Scope helpers
-  # --------------------------------------------------------------------------
-
-  # --------------------------------------------------------------------------
-  # Table context
-  # --------------------------------------------------------------------------
 
   # --------------------------------------------------------------------------
   # Implicit closing
@@ -1117,10 +1102,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
       special_element?(tag) -> :not_found
       true -> pop_until_tag_ref(rest, elements, target)
     end
-  end
-
-  defp pop_until_tag_ref([_ref | rest], elements, target) do
-    pop_until_tag_ref(rest, elements, target)
   end
 
   defp apply_pop_result(state, {:found, new_stack, _parent_ref}), do: %{state | stack: new_stack}

@@ -153,7 +153,7 @@ defmodule PureHTML.TreeBuilder do
 
     defstruct [
       # === Parsing Context ===
-      # Stack of open elements (currently stores full elements, will migrate to refs only)
+      # Stack of open elements, as element refs
       stack: [],
       # Active formatting elements list
       af: [],
@@ -447,10 +447,6 @@ defmodule PureHTML.TreeBuilder do
     end
   end
 
-  defp dispatch_to_insertion_mode(:eof, mode, state) do
-    Map.fetch!(@mode_modules, mode).process(:eof, state)
-  end
-
   # Per spec, a token that is not routed to the foreign content rules (an
   # integration point exception, or an HTML current node) is processed with
   # the rules for the current insertion mode.
@@ -469,21 +465,14 @@ defmodule PureHTML.TreeBuilder do
   # Finalization
   # --------------------------------------------------------------------------
 
-  # Finalize tree from state (ref-only stack + elements map)
+  # Finalize the tree from the elements map. Before html creates the html
+  # element for any token, EOF included, and nothing pops it, so it is the
+  # first node on the stack of open elements.
   defp finalize(%State{stack: stack, elements: elements}) do
-    # Find the html element - it should be the last element remaining on stack
-    # or we need to find it by looking for an element with no parent
-    html_ref = find_html_ref(stack, elements)
-
-    if html_ref do
-      elements
-      |> build_tree_from_elements(html_ref)
-      |> SelectedContent.populate()
-      |> convert_to_tuples()
-    else
-      # No html element - create minimal structure
-      {"html", [], [{"head", [], []}, {"body", [], []}]}
-    end
+    elements
+    |> build_tree_from_elements(List.last(stack))
+    |> SelectedContent.populate()
+    |> convert_to_tuples()
   end
 
   defp finalize_fragment(%State{elements: elements}, html_ref) do
@@ -511,28 +500,6 @@ defmodule PureHTML.TreeBuilder do
     {tag, attrs, Enum.reverse(kids)}
   end
 
-  # Find the html element ref
-  defp find_html_ref(stack, elements) do
-    # First try: find html at bottom of stack
-    html_ref =
-      stack
-      |> Enum.reverse()
-      |> Enum.find(fn ref ->
-        elem = elements[ref]
-        elem && elem.tag == "html"
-      end)
-
-    # Fallback: find element with tag "html" in elements map
-    html_ref || find_html_ref_in_elements(elements)
-  end
-
-  defp find_html_ref_in_elements(elements) do
-    case Enum.find(elements, fn {_ref, elem} -> elem.tag == "html" end) do
-      {ref, _elem} -> ref
-      nil -> nil
-    end
-  end
-
   # Build tree recursively from elements map
   defp build_tree_from_elements(elements, ref) do
     elem = elements[ref]
@@ -557,16 +524,11 @@ defmodule PureHTML.TreeBuilder do
         {tag, attrs, kids} when is_binary(tag) or is_tuple(tag) ->
           # Already a tuple (foreign elements, void elements)
           {tag, attrs, Enum.reverse(kids)}
-
-        %{tag: tag, attrs: attrs, children: kids} ->
-          # Map element stored as child (from legacy code paths)
-          %{tag: tag, attrs: attrs, children: Enum.reverse(kids)}
       end)
 
     %{tag: elem.tag, attrs: elem.attrs, children: resolved_children}
   end
 
-  defp convert_to_tuples(nil), do: nil
   defp convert_to_tuples({:comment, text}), do: {:comment, text}
   defp convert_to_tuples({:pi, _, _} = pi), do: pi
   defp convert_to_tuples(text) when is_binary(text), do: text

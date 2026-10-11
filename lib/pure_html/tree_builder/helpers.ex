@@ -31,8 +31,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
     track ul wbr xmp
   )
 
-  def special_elements, do: @special_elements
-
   @svg_special ~w(desc foreignobject title)
   @mathml_special ~w(annotation-xml mi mn mo ms mtext)
 
@@ -531,12 +529,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
   def current_tag(%{stack: []}), do: nil
 
   @doc """
-  Returns the current element (top of stack).
-  """
-  def current_element(%{stack: [ref | _], elements: elements}), do: elements[ref]
-  def current_element(%{stack: []}), do: nil
-
-  @doc """
   Finds the ref of an element with the given tag in the stack.
   Returns the ref or nil if not found.
   """
@@ -798,8 +790,8 @@ defmodule PureHTML.TreeBuilder.Helpers do
   - `{:text, text}` - insert text, returns `{state, nil}`
   - `{:element, {tag, attrs, children}}` - insert complete element, returns `{state, nil}`
   - `{:push, tag, attrs}` - create element, push to stack, returns `{state, ref}`
-  - `{:push_foreign, ns, tag, attrs, self_closing}` - create foreign element,
-     returns `{state, nil}` for self-closing, `{state, ref}` otherwise
+  - `{:push_foreign, ns, tag, attrs, false}` - create foreign element, push to
+    stack, returns `{state, ref}`
   """
   def foster_parent(state, content)
 
@@ -823,11 +815,6 @@ defmodule PureHTML.TreeBuilder.Helpers do
 
   def foster_parent(state, {:push, tag, attrs}) do
     foster_push_element(state, new_element(tag, attrs))
-  end
-
-  def foster_parent(state, {:push_foreign, ns, tag, attrs, true = _self_closing}) do
-    {new_state, _} = foster_parent(state, {:element, {{ns, tag}, attrs, []}})
-    {new_state, nil}
   end
 
   def foster_parent(state, {:push_foreign, ns, tag, attrs, false = _self_closing}) do
