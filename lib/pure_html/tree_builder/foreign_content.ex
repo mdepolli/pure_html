@@ -272,8 +272,12 @@ defmodule PureHTML.TreeBuilder.ForeignContent do
     |> insert_adjusted_element(ns, adjust_svg_tag(ns, tag), adjusted_attrs, self_closing)
   end
 
+  # "If the token has its self-closing flag set, pop the current node off the
+  # stack of open elements and acknowledge the token's self-closing flag."
   defp insert_adjusted_element(state, ns, tag, attrs, true = _self_closing) do
-    add_child_to_stack(state, {{ns, tag}, attrs, []})
+    state
+    |> add_child_to_stack({{ns, tag}, attrs, []})
+    |> acknowledge_self_closing()
   end
 
   defp insert_adjusted_element(state, ns, tag, attrs, _self_closing) do

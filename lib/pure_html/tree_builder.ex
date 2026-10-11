@@ -136,6 +136,7 @@ defmodule PureHTML.TreeBuilder do
             pending_table_text: String.t(),
             frameset_ok: boolean(),
             ignore_next_lf: boolean(),
+            self_closing_acknowledged: boolean(),
             head_element: element_ref() | nil,
             form_element: element_ref() | nil,
             scripting: boolean(),
@@ -170,6 +171,9 @@ defmodule PureHTML.TreeBuilder do
       frameset_ok: true,
       # Set by pre, listing, and textarea start tags for the next token only
       ignore_next_lf: false,
+      # False while a start tag with its self-closing flag set is processed,
+      # until an entry acknowledges the flag
+      self_closing_acknowledged: true,
       # Head element pointer (for "in head" processing)
       head_element: nil,
       # Form element pointer (for form association)
@@ -395,10 +399,29 @@ defmodule PureHTML.TreeBuilder do
     process_token_fully(token, %{state | ignore_next_lf: false})
   end
 
+  # "When a start tag token is emitted with its self-closing flag set, if the
+  # flag is not acknowledged when it is processed by the tree construction
+  # stage, that is a parse error." The flag stays unacknowledged through any
+  # reprocessing of the token.
+  defp process_token_fully({:start_tag, _tag, _attrs, true} = token, state) do
+    token
+    |> dispatch(%{state | self_closing_acknowledged: false})
+    |> disable_foster_parenting()
+    |> parse_error_unless_acknowledged()
+  end
+
   defp process_token_fully(token, state) do
     token
     |> dispatch(state)
     |> disable_foster_parenting()
+  end
+
+  defp parse_error_unless_acknowledged(%State{self_closing_acknowledged: true} = state) do
+    state
+  end
+
+  defp parse_error_unless_acknowledged(state) do
+    parse_error(%{state | self_closing_acknowledged: true})
   end
 
   defp process_character_after_lf("", state), do: state

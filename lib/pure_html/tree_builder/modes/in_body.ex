@@ -21,7 +21,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
 
   @formatting_elements ~w(a b big code em font i nobr s small strike strong tt u)
   @head_elements ~w(base basefont bgsound link meta noframes script style template title)
-  @void_elements ~w(area base basefont bgsound br embed hr img input keygen link meta param source track wbr)
   @af_marker_elements ~w(applet marquee object)
   @ignored_start_tags ~w(caption col colgroup frame tbody td tfoot th thead tr)
 
@@ -321,15 +320,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> ok()
   end
 
-  # Dispatch an HTML start tag with the in-body rules. Per spec, a start tag
-  # whose self-closing flag is not acknowledged by the tree construction stage
-  # is a parse error; only void elements (and foreign elements, handled
-  # elsewhere) acknowledge it.
-  defp dispatch_start_tag(state, {:start_tag, tag, _, self_closing} = token) do
-    token
-    |> start_tag(state)
-    |> maybe_parse_error_unacknowledged_self_closing(tag, self_closing)
-  end
+  # Process an HTML start tag with the in-body rules. The void element entries
+  # acknowledge a self-closing flag; the dispatcher counts one nothing
+  # acknowledged.
+  defp dispatch_start_tag(state, token), do: start_tag(token, state)
 
   # Per spec: with no p element in button scope, parse error and insert a p
   # element for a start tag with no attributes; then close a p element.
@@ -399,7 +393,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> close_select_for_input()
     |> reconstruct_active_formatting()
-    |> add_child_to_stack({"input", attrs, []})
+    |> insert_void_element("input", attrs)
     |> maybe_set_frameset_not_ok_for_input(attrs)
   end
 
@@ -410,7 +404,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     state
     |> maybe_close_p("hr")
     |> close_for_hr()
-    |> add_child_to_stack({"hr", attrs, []})
+    |> insert_void_element("hr", attrs)
     |> set_frameset_not_ok()
   end
 
@@ -420,13 +414,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
        when tag in ~w(area br embed img keygen wbr) do
     state
     |> reconstruct_active_formatting()
-    |> add_child_to_stack({tag, attrs, []})
+    |> insert_void_element(tag, attrs)
     |> set_frameset_not_ok()
   end
 
   # "param, source, track": insert and pop; no reconstruction, frameset-ok kept.
   defp start_tag({:start_tag, tag, attrs, _}, state) when tag in ~w(param source track) do
-    add_child_to_stack(state, {tag, attrs, []})
+    insert_void_element(state, tag, attrs)
   end
 
   # "pre", "listing": close a p in button scope, insert, ignore a LF that is
@@ -642,13 +636,6 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     |> push_element(tag, attrs)
     |> enter_text_mode(:rawtext)
   end
-
-  defp maybe_parse_error_unacknowledged_self_closing(state, tag, true)
-       when tag not in @void_elements do
-    parse_error(state)
-  end
-
-  defp maybe_parse_error_unacknowledged_self_closing(state, _tag, _self_closing), do: state
 
   # form: the pointer is set to the new form unless parsing template contents
   defp insert_form(attrs, state) do

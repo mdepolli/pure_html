@@ -72,7 +72,7 @@ defmodule PureHTML.TreeBuilder.Modes.InHead do
       when tag in @void_head_elements do
     # Insert void element as child of head
     state
-    |> add_child_to_stack({tag, attrs, []})
+    |> insert_void_element(tag, attrs)
     |> ok()
   end
 

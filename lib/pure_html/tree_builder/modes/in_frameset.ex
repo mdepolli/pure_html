@@ -66,7 +66,7 @@ defmodule PureHTML.TreeBuilder.Modes.InFrameset do
   # Start tag: frame (void element)
   def process({:start_tag, "frame", attrs, _}, state) do
     state
-    |> add_child_to_stack({"frame", attrs, []})
+    |> insert_void_element("frame", attrs)
     |> ok()
   end
 

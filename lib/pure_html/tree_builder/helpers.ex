@@ -155,6 +155,19 @@ defmodule PureHTML.TreeBuilder.Helpers do
   end
 
   @doc """
+  Inserts an HTML element for a start tag, immediately pops it, and
+  acknowledges the token's self-closing flag: the void element entries.
+  """
+  def insert_void_element(state, tag, attrs) do
+    state
+    |> add_child_to_stack({tag, attrs, []})
+    |> acknowledge_self_closing()
+  end
+
+  @doc "Acknowledges the token's self-closing flag, if it is set."
+  def acknowledge_self_closing(state), do: %{state | self_closing_acknowledged: true}
+
+  @doc """
   Adds a child (text, comment, or tuple element) to the current element.
   Updates children in elements map.
   """

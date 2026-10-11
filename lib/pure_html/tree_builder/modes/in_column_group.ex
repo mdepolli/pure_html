@@ -66,7 +66,7 @@ defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
   # Start tag: col - insert void element
   def process({:start_tag, "col", attrs, _}, state) do
     state
-    |> add_child_to_stack({"col", attrs, []})
+    |> insert_void_element("col", attrs)
     |> ok()
   end
 

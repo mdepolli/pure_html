@@ -228,7 +228,7 @@ defmodule PureHTML.TreeBuilder.Modes.InTable do
   defp table_input("hidden", {:start_tag, _, attrs, _}, state) do
     state
     |> parse_error()
-    |> add_child_to_stack({"input", attrs, []})
+    |> insert_void_element("input", attrs)
     |> ok()
   end
 

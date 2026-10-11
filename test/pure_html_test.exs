@@ -2887,6 +2887,57 @@ defmodule PureHTMLTest do
 
       assert error_count == 1
     end
+
+    test "an unacknowledged self-closing title in head is a parse error" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html><title/>x</title>")
+
+      # Assert: in head's RCDATA entry does not acknowledge the flag.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [], [{"head", [], [{"title", [], ["x"]}]}, {"body", [], []}]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "an unacknowledged self-closing tr in a table is a parse error" do
+      # Arrange / Act
+      {nodes, error_count} = PureHTML.parse_with_errors("<!DOCTYPE html><table><tr/></table>")
+
+      # Assert: in table body inserts the tr without acknowledging the flag.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"table", [], [{"tbody", [], [{"tr", [], []}]}]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 1
+    end
+
+    test "the void element and foreign element entries acknowledge the self-closing flag" do
+      # Arrange: one input per entry that acknowledges the flag, with the
+      # errors the entries themselves report.
+      cases = [
+        {"<!DOCTYPE html><meta/><link/><base/><basefont/><bgsound/>", 0},
+        {"<!DOCTYPE html><br/><img/><input/><hr/><wbr/><area/><embed/><keygen/>", 0},
+        {"<!DOCTYPE html><param/><source/><track/><image/>", 1},
+        {"<!DOCTYPE html><table><input type=hidden /></table>", 1},
+        {"<!DOCTYPE html><table><colgroup><col/></colgroup></table>", 0},
+        {"<!DOCTYPE html><frameset><frame/></frameset>", 0},
+        {"<!DOCTYPE html><svg/><math/><svg><path/></svg>", 0}
+      ]
+
+      # Act + Assert: <image> is a parse error of its own; a hidden input in
+      # a table is too.
+      for {html, expected} <- cases do
+        {_nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert {html, error_count} == {html, expected}
+      end
+    end
   end
 
   describe "query/2" do
