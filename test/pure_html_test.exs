@@ -2708,6 +2708,27 @@ defmodule PureHTMLTest do
       assert [{"form", [], [{"div", [], []}]}, "x"] = nodes
       assert error_count == 1
     end
+
+    test "a form end tag with a null form element pointer is ignored" do
+      # Arrange / Act
+      {nodes, error_count} =
+        PureHTML.parse_with_errors("<!DOCTYPE html><form><table></form></table></form>x")
+
+      # Assert: the first </form> clears the pointer but the table keeps the
+      # form out of scope, so the form stays open. The second </form> finds a
+      # null pointer: a parse error, and the token is ignored. Errors: </form>
+      # in table, the form not in scope, the null pointer, the form open at EOF.
+      assert [
+               {:doctype, "html", nil, nil},
+               {"html", [],
+                [
+                  {"head", [], []},
+                  {"body", [], [{"form", [], [{"table", [], []}, "x"]}]}
+                ]}
+             ] = nodes
+
+      assert error_count == 4
+    end
   end
 
   describe "query/2" do

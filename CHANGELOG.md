@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dialog` is no longer a special element, so the adoption agency, the `li` / `dd` / `dt` walks, and "any other end tag" pass over it
 - The Noah's Ark clause compares formatting elements' attributes in any order
 - A `template` fragment context counts as parsing template contents, so a form there does not set the form element pointer
+- `</form>` with a null form element pointer is a parse error and is ignored, instead of closing an open form
 
 ## [0.5.0] - 2026-09-17
 

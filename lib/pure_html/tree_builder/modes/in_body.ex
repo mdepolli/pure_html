@@ -32,7 +32,7 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   # Block-level end tags per HTML5 spec (generate implied end tags, then pop until match)
   # These do NOT use the "special element stops traversal" rule
   @block_end_tags ~w(address article aside blockquote button center details dialog dir div
-                     dl fieldset figcaption figure footer form header hgroup listing main
+                     dl fieldset figcaption figure footer header hgroup listing main
                      menu nav ol pre search section select summary ul)
 
   # Note: input is handled specially - only non-hidden inputs disable frameset
@@ -206,13 +206,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # </form> with a form element pointer: unless the parser is parsing template
-  # contents, the pointer's node is removed from the stack rather than popped to.
-  def process({:end_tag, "form"}, %{form_element: form_ref} = state)
-      when not is_nil(form_ref) do
+  # </form>: unless the parser is parsing template contents, the form element
+  # pointer's node is removed from the stack rather than popped to. While
+  # parsing template contents, elements are popped until a form has been.
+  def process({:end_tag, "form"}, %{form_element: form_ref} = state) do
     if parsing_template_contents?(state) do
       state
-      |> close_form_with_template()
+      |> close_form_in_template_contents()
       |> ok()
     else
       state
@@ -1054,11 +1054,13 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
     end
   end
 
-  # Special </form> handling when no template on stack
+  # </form> when the parser is not parsing template contents.
   # Per spec: Let node be the element that the form element pointer is set to.
-  # Set form element pointer to null. If node is not in the stack, parse error; return.
-  # Generate implied end tags. If current node is not node, parse error.
-  # Remove node from stack.
+  # Set form element pointer to null. If node is null or not in scope, parse
+  # error; return. Generate implied end tags. If current node is not node,
+  # parse error. Remove node from stack.
+  defp close_form_special(state, nil), do: parse_error(state)
+
   defp close_form_special(state, form_ref) do
     if node_in_scope?(state, form_ref) do
       state
@@ -1081,10 +1083,10 @@ defmodule PureHTML.TreeBuilder.Modes.InBody do
   defp parse_error_unless_current_ref(%{stack: [ref | _]} = state, ref), do: state
   defp parse_error_unless_current_ref(state, _ref), do: parse_error(state)
 
-  # </form> when template IS on stack
+  # </form> while parsing template contents.
   # Per spec: If form not in scope, parse error; ignore. Generate implied end tags.
   # If current node is not form, parse error. Pop stack until form.
-  defp close_form_with_template(state) do
+  defp close_form_in_template_contents(state) do
     if in_scope?(state, "form", :default) do
       state
       |> generate_implied_end_tags()
