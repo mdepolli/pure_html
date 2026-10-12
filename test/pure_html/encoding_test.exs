@@ -25,7 +25,7 @@ defmodule PureHTML.EncodingTest do
     end
   end
 
-  describe "get an encoding" do
+  describe "sniff/2 get an encoding" do
     test "shift_jis is a named encoding, not silent windows-1252" do
       assert Encoding.sniff("<meta charset=shift_jis>") == "shift_jis"
     end
@@ -45,7 +45,7 @@ defmodule PureHTML.EncodingTest do
     end
   end
 
-  describe "prescan a byte stream" do
+  describe "sniff/2 prescan" do
     test "meta slash is allowed before attributes" do
       assert Encoding.sniff("<meta/ charset=utf-8>") == "utf-8"
     end
@@ -69,7 +69,7 @@ defmodule PureHTML.EncodingTest do
     end
   end
 
-  describe "get an XML encoding" do
+  describe "sniff/2 XML encoding" do
     test "unterminated comment after an XML declaration still yields the XML encoding" do
       html = "<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><!-- open comment"
       assert Encoding.sniff(html) == "iso-8859-2"
@@ -91,7 +91,7 @@ defmodule PureHTML.EncodingTest do
     end
   end
 
-  describe "sniff/2" do
+  describe "sniff/2 options" do
     test "an unknown option raises ArgumentError" do
       assert_raise ArgumentError, ~r/transport/, fn -> Encoding.sniff("x", transport: "utf-8") end
     end

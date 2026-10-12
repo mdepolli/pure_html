@@ -62,6 +62,12 @@ defmodule PureHTML.QueryTest do
                {"p", [], ["Hello"]}
              ]
     end
+
+    test "a non-ASCII class selector matches" do
+      html = PureHTML.parse("<p class='café'>x</p>")
+
+      assert Query.find(html, ".café") == [{"p", [{"class", "café"}], ["x"]}]
+    end
   end
 
   describe "find/2 attribute selectors" do
@@ -133,17 +139,10 @@ defmodule PureHTML.QueryTest do
   end
 
   describe "find/2 invalid selectors" do
-    test "a non-ASCII class selector matches" do
-      html = PureHTML.parse("<p class='café'>x</p>")
-
-      assert Query.find(html, ".café") == [{"p", [{"class", "café"}], ["x"]}]
-    end
-
     test "a trailing combinator is an invalid selector and matches nothing" do
       html = PureHTML.parse("<div><p>x</p></div>")
 
       assert Query.find(html, "div >") == []
-      assert Query.find_one(html, "div >") == nil
     end
 
     test "an unterminated attribute selector matches nothing without raising" do
@@ -163,15 +162,6 @@ defmodule PureHTML.QueryTest do
 
       assert Query.find(html, "") == []
       assert Query.find(html, "p,,p") == []
-    end
-
-    test "find!/2 and find_one!/2 raise on an invalid selector" do
-      html = PureHTML.parse("<p>x</p>")
-
-      assert_raise ArgumentError, ~r/invalid selector/, fn -> Query.find!(html, "div >") end
-      assert_raise ArgumentError, ~r/invalid selector/, fn -> Query.find_one!(html, "[") end
-      assert Query.find!(html, "p") == [{"p", [], ["x"]}]
-      assert Query.find_one!(html, "p") == {"p", [], ["x"]}
     end
   end
 
@@ -400,6 +390,12 @@ defmodule PureHTML.QueryTest do
     test "returns nil for empty tree" do
       assert Query.find_one([], "p") == nil
     end
+
+    test "a trailing combinator is an invalid selector and matches nothing" do
+      html = PureHTML.parse("<div><p>x</p></div>")
+
+      assert Query.find_one(html, "div >") == nil
+    end
   end
 
   describe "find_one/2 scraping patterns" do
@@ -431,6 +427,34 @@ defmodule PureHTML.QueryTest do
 
       main = Query.find_one(html, "main.content")
       assert {"main", [{"class", "content"}], _children} = main
+    end
+  end
+
+  describe "find!/2" do
+    test "raises ArgumentError on an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~r/invalid selector/, fn -> Query.find!(html, "div >") end
+    end
+
+    test "returns the matches of a valid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert Query.find!(html, "p") == [{"p", [], ["x"]}]
+    end
+  end
+
+  describe "find_one!/2" do
+    test "raises ArgumentError on an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~r/invalid selector/, fn -> Query.find_one!(html, "[") end
+    end
+
+    test "returns the first match of a valid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert Query.find_one!(html, "p") == {"p", [], ["x"]}
     end
   end
 

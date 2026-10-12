@@ -5,68 +5,6 @@ defmodule PureHTMLTest do
   doctest PureHTML
 
   describe "parse/2" do
-    property "never crashes and always serializes on arbitrary bytes" do
-      check all(html <- binary(max_length: 1000)) do
-        {nodes, error_count} = PureHTML.parse_with_errors(html)
-        assert_parsed(nodes, error_count)
-      end
-    end
-
-    property "is deterministic" do
-      check all(html <- binary(max_length: 500)) do
-        {nodes, error_count} = PureHTML.parse_with_errors(html)
-        assert_parsed(nodes, error_count)
-        assert {nodes, error_count} == PureHTML.parse_with_errors(html)
-      end
-    end
-
-    property "handles unicode strings" do
-      check all(text <- string(:utf8, max_length: 500)) do
-        html = "<div>#{text}</div>"
-        {nodes, error_count} = PureHTML.parse_with_errors(html)
-        assert_parsed(nodes, error_count)
-      end
-    end
-
-    property "returns a list of valid nodes" do
-      check all(html <- html_fragment()) do
-        {nodes, error_count} = PureHTML.parse_with_errors(html)
-        assert_parsed(nodes, error_count)
-      end
-    end
-
-    @markup_templates [
-      "~<p>",
-      "<p ~>",
-      "<p a=~>",
-      "<p a=\"~\">",
-      "<!--~-->",
-      "<!DOCTYPE ~>",
-      "&#~;",
-      "<svg>~</svg>",
-      "<table>~</table>",
-      "<textarea>~",
-      "<script>~",
-      "<?~>",
-      "<~>",
-      "</~>",
-      "<p ~=1>",
-      "<!~",
-      "<title>~",
-      "<?a ~?>"
-    ]
-
-    property "never crashes on arbitrary code points in markup positions" do
-      check all(
-              cp <- one_of([integer(0..0xD7FF), integer(0xE000..0x10FFFF)]),
-              template <- member_of(@markup_templates)
-            ) do
-        html = String.replace(template, "~", <<cp::utf8>>)
-        {nodes, error_count} = PureHTML.parse_with_errors(html)
-        assert_parsed(nodes, error_count)
-      end
-    end
-
     test "a :context namespace other than svg or math raises ArgumentError" do
       assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "foo bar") end
       assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "html div") end
@@ -3169,6 +3107,78 @@ defmodule PureHTMLTest do
       assert error_count == 2
     end
 
+    test "raises ArgumentError for a non-boolean :scripting" do
+      assert_raise ArgumentError, ~r/scripting/, fn ->
+        PureHTML.parse_with_errors("x", scripting: :yes)
+      end
+    end
+  end
+
+  describe "parse_with_errors/2 on arbitrary input" do
+    property "never crashes and always serializes on arbitrary bytes" do
+      check all(html <- binary(max_length: 1000)) do
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+      end
+    end
+
+    property "is deterministic" do
+      check all(html <- binary(max_length: 500)) do
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+        assert {nodes, error_count} == PureHTML.parse_with_errors(html)
+      end
+    end
+
+    property "handles unicode strings" do
+      check all(text <- string(:utf8, max_length: 500)) do
+        html = "<div>#{text}</div>"
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+      end
+    end
+
+    property "returns a list of valid nodes" do
+      check all(html <- html_fragment()) do
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+      end
+    end
+
+    @markup_templates [
+      "~<p>",
+      "<p ~>",
+      "<p a=~>",
+      "<p a=\"~\">",
+      "<!--~-->",
+      "<!DOCTYPE ~>",
+      "&#~;",
+      "<svg>~</svg>",
+      "<table>~</table>",
+      "<textarea>~",
+      "<script>~",
+      "<?~>",
+      "<~>",
+      "</~>",
+      "<p ~=1>",
+      "<!~",
+      "<title>~",
+      "<?a ~?>"
+    ]
+
+    property "never crashes on arbitrary code points in markup positions" do
+      check all(
+              cp <- one_of([integer(0..0xD7FF), integer(0xE000..0x10FFFF)]),
+              template <- member_of(@markup_templates)
+            ) do
+        html = String.replace(template, "~", <<cp::utf8>>)
+        {nodes, error_count} = PureHTML.parse_with_errors(html)
+        assert_parsed(nodes, error_count)
+      end
+    end
+  end
+
+  describe "parse_with_errors/2 fragment context setup" do
     test "an HTML context name is ASCII lowercased, as createElement does" do
       # Arrange
       html = "a</textarea>b"
@@ -3213,12 +3223,6 @@ defmodule PureHTMLTest do
       assert PureHTML.parse_with_errors("<form></form><form>", context: "form") ==
                {[{"form", [], []}], 3}
     end
-
-    test "raises ArgumentError for a non-boolean :scripting" do
-      assert_raise ArgumentError, ~r/scripting/, fn ->
-        PureHTML.parse_with_errors("x", scripting: :yes)
-      end
-    end
   end
 
   describe "query/2" do
@@ -3231,6 +3235,20 @@ defmodule PureHTMLTest do
 
       # Assert
       assert result == [{"p", [{"class", "intro"}], ["Hello"]}]
+    end
+
+    test "returns [] for an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert PureHTML.query(html, "div >") == []
+    end
+  end
+
+  describe "query!/2" do
+    test "raises ArgumentError on an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, fn -> PureHTML.query!(html, "div >") end
     end
   end
 
@@ -3255,6 +3273,20 @@ defmodule PureHTMLTest do
 
       # Assert
       assert result == nil
+    end
+
+    test "returns nil for an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert PureHTML.query_one(html, "div >") == nil
+    end
+  end
+
+  describe "query_one!/2" do
+    test "raises ArgumentError on an invalid selector" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, fn -> PureHTML.query_one!(html, "div >") end
     end
   end
 
@@ -3334,75 +3366,7 @@ defmodule PureHTMLTest do
     end
   end
 
-  describe "query!/2 and query_one!/2" do
-    test "raise on an invalid selector where query/2 and query_one/2 return nothing" do
-      # Arrange
-      html = PureHTML.parse("<p>x</p>")
-
-      # Act + Assert
-      assert PureHTML.query(html, "div >") == []
-      assert PureHTML.query_one(html, "div >") == nil
-      assert_raise ArgumentError, fn -> PureHTML.query!(html, "div >") end
-      assert_raise ArgumentError, fn -> PureHTML.query_one!(html, "div >") end
-    end
-  end
-
   describe "to_html/2" do
-    test "serializes xlink:href on an SVG element" do
-      # Arrange
-      html = "<svg><a xlink:href=foo></a></svg>"
-
-      # Act
-      result =
-        html
-        |> PureHTML.parse()
-        |> PureHTML.to_html()
-
-      # Assert
-      assert result =~ "xlink:href=\"foo\""
-    end
-
-    test "serializes an xmlns attribute on an SVG element by its local name" do
-      # Arrange
-      html = "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
-
-      # Act
-      nodes = PureHTML.parse(html)
-      result = PureHTML.to_html(nodes)
-
-      # Assert
-      assert [{"html", [], [_head, {"body", [], [{{:svg, "svg"}, attrs, []}]}]}] = nodes
-      assert [{{:xmlns, "xmlns"}, "http://www.w3.org/2000/svg"}] = attrs
-      assert result =~ "<svg xmlns="
-      refute result =~ "xmlns:"
-    end
-
-    test "serializes a SYSTEM about:legacy-compat doctype by name only" do
-      # Arrange
-      html = "<!DOCTYPE html SYSTEM \"about:legacy-compat\">"
-
-      # Act
-      {nodes, error_count} = PureHTML.parse_with_errors(html)
-
-      # Assert
-      assert [{:doctype, "html", nil, "about:legacy-compat"} | _] = nodes
-      assert error_count == 0
-      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE html>")
-    end
-
-    test "serializes a doctype with a missing name" do
-      # Arrange
-      html = "<!DOCTYPE>"
-
-      # Act
-      {nodes, error_count} = PureHTML.parse_with_errors(html)
-
-      # Assert
-      assert [{:doctype, nil, nil, nil} | _] = nodes
-      assert error_count == 2
-      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
-    end
-
     test "serializes a single node, such as a query_one/2 result" do
       # Arrange
       node =
@@ -3415,75 +3379,6 @@ defmodule PureHTMLTest do
 
       # Assert
       assert result == "<p>x</p>"
-    end
-
-    test "with the default :scripting, a scripting-off parse's noscript text reparses as markup" do
-      # Arrange
-      nodes =
-        PureHTML.parse("<body><noscript>&lt;img src=x onerror=alert(1)&gt;</noscript>",
-          scripting: false
-        )
-
-      # Act
-      reparsed =
-        nodes
-        |> PureHTML.to_html()
-        |> PureHTML.parse(scripting: false)
-
-      # Assert
-      assert [{"img", [{"src", "x"}, {"onerror", "alert(1)"}], []}] =
-               PureHTML.query(reparsed, "img")
-    end
-
-    test "with the parse's scripting: false, noscript text round-trips as text" do
-      # Arrange
-      nodes =
-        PureHTML.parse("<body><noscript>&lt;img src=x onerror=alert(1)&gt;</noscript>",
-          scripting: false
-        )
-
-      # Act
-      reparsed =
-        nodes
-        |> PureHTML.to_html(scripting: false)
-        |> PureHTML.parse(scripting: false)
-
-      # Assert
-      assert reparsed == nodes
-    end
-
-    test "raises ArgumentError naming nil, a query_one/2 miss" do
-      assert_raise ArgumentError, ~r/nil/, fn -> PureHTML.to_html(nil) end
-    end
-
-    test "raises ArgumentError naming an element whose children are not a list" do
-      assert_raise ArgumentError, ~r/"text"/, fn -> PureHTML.to_html([{"p", [], "text"}]) end
-    end
-
-    test "raises ArgumentError naming an element whose attributes are a map" do
-      assert_raise ArgumentError, ~r/%\{/, fn ->
-        PureHTML.to_html([{"p", %{"class" => "a"}, []}])
-      end
-    end
-
-    test "raises ArgumentError naming an attribute whose value is not a string" do
-      assert_raise ArgumentError, ~r/"class"/, fn ->
-        PureHTML.to_html([{"p", [{"class", nil}], []}])
-      end
-    end
-
-    test "raises ArgumentError naming a doctype whose identifiers are not strings" do
-      assert_raise ArgumentError, ~r/:doctype/, fn ->
-        PureHTML.to_html({:doctype, "html", 1, :x})
-      end
-    end
-
-    test "raises ArgumentError for an unknown option" do
-      assert_raise ArgumentError, ~r/scriptng/, fn -> PureHTML.to_html([], scriptng: false) end
-    end
-
-    test "raises ArgumentError for a non-boolean :scripting" do
-      assert_raise ArgumentError, ~r/scripting/, fn -> PureHTML.to_html([], scripting: "no") end
     end
 
     test "serializes an element with text" do
@@ -3504,6 +3399,38 @@ defmodule PureHTMLTest do
       assert PureHTML.to_html(nodes) == "<div>a<span>b</span>c</div>"
     end
 
+    test "serializes a processing instruction as target, a space, and data" do
+      assert PureHTML.to_html([{:pi, "php", "echo 1; "}]) == "<?php echo 1; ?>"
+    end
+
+    test "keeps a processing instruction's space when its data is empty" do
+      assert PureHTML.to_html([{:pi, "php", ""}]) == "<?php ?>"
+    end
+
+    test "serializes a comment" do
+      assert PureHTML.to_html([{:comment, " hello "}]) == "<!-- hello -->"
+    end
+
+    test "serializes a comment inside an element" do
+      nodes = [{"div", [], [{:comment, "x"}]}]
+      assert PureHTML.to_html(nodes) == "<div><!--x--></div>"
+    end
+
+    test "a leading LF in a pre text node is emitted" do
+      assert PureHTML.to_html([{"pre", [], ["\nx"]}]) == "<pre>\nx</pre>"
+    end
+
+    test "an interior tab in pre text is emitted" do
+      assert PureHTML.to_html([{"pre", [], ["foo\tbar"]}]) == "<pre>foo\tbar</pre>"
+    end
+
+    test "serializes template contents without the content wrapper" do
+      nodes = [{"template", [], [{:content, [{"div", [], ["inside"]}]}]}]
+      assert PureHTML.to_html(nodes) == "<template><div>inside</div></template>"
+    end
+  end
+
+  describe "to_html/2 void elements" do
     test "br has no closing tag" do
       assert PureHTML.to_html([{"br", [], []}]) == "<br>"
     end
@@ -3533,7 +3460,9 @@ defmodule PureHTMLTest do
       nodes = [{{:svg, "link"}, [], ["x"]}]
       assert PureHTML.to_html(nodes) == "<link>x</link>"
     end
+  end
 
+  describe "to_html/2 attributes" do
     test "always double-quotes attribute values" do
       assert PureHTML.to_html([{"span", [{"title", "foo"}], []}]) == "<span title=\"foo\"></span>"
     end
@@ -3621,7 +3550,9 @@ defmodule PureHTMLTest do
       assert PureHTML.to_html([{"p", [{"title", "t"}, {"class", "c"}], []}]) ==
                ~s(<p title="t" class="c"></p>)
     end
+  end
 
+  describe "to_html/2 text escaping" do
     test "escapes less-than in text" do
       assert PureHTML.to_html([{"p", [], ["a<b"]}]) == "<p>a&lt;b</p>"
     end
@@ -3642,7 +3573,9 @@ defmodule PureHTMLTest do
     test "NBSP in text is escaped as &nbsp;" do
       assert PureHTML.to_html(["\u00A0"]) == "&nbsp;"
     end
+  end
 
+  describe "to_html/2 raw text" do
     test "script content is not escaped" do
       assert PureHTML.to_html([{"script", [], ["a<b>c&d"]}]) == "<script>a<b>c&d</script>"
     end
@@ -3676,21 +3609,67 @@ defmodule PureHTMLTest do
       assert PureHTML.to_html(nodes) == "<script>a&lt;b&gt;c&amp;d</script>"
     end
 
-    test "serializes a processing instruction as target, a space, and data" do
-      assert PureHTML.to_html([{:pi, "php", "echo 1; "}]) == "<?php echo 1; ?>"
+    test "with the default :scripting, a scripting-off parse's noscript text reparses as markup" do
+      # Arrange
+      nodes =
+        PureHTML.parse("<body><noscript>&lt;img src=x onerror=alert(1)&gt;</noscript>",
+          scripting: false
+        )
+
+      # Act
+      reparsed =
+        nodes
+        |> PureHTML.to_html()
+        |> PureHTML.parse(scripting: false)
+
+      # Assert
+      assert [{"img", [{"src", "x"}, {"onerror", "alert(1)"}], []}] =
+               PureHTML.query(reparsed, "img")
     end
 
-    test "keeps a processing instruction's space when its data is empty" do
-      assert PureHTML.to_html([{:pi, "php", ""}]) == "<?php ?>"
+    test "with the parse's scripting: false, noscript text round-trips as text" do
+      # Arrange
+      nodes =
+        PureHTML.parse("<body><noscript>&lt;img src=x onerror=alert(1)&gt;</noscript>",
+          scripting: false
+        )
+
+      # Act
+      reparsed =
+        nodes
+        |> PureHTML.to_html(scripting: false)
+        |> PureHTML.parse(scripting: false)
+
+      # Assert
+      assert reparsed == nodes
+    end
+  end
+
+  describe "to_html/2 doctypes" do
+    test "serializes a SYSTEM about:legacy-compat doctype by name only" do
+      # Arrange
+      html = "<!DOCTYPE html SYSTEM \"about:legacy-compat\">"
+
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, "html", nil, "about:legacy-compat"} | _] = nodes
+      assert error_count == 0
+      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE html>")
     end
 
-    test "serializes a comment" do
-      assert PureHTML.to_html([{:comment, " hello "}]) == "<!-- hello -->"
-    end
+    test "serializes a doctype with a missing name" do
+      # Arrange
+      html = "<!DOCTYPE>"
 
-    test "serializes a comment inside an element" do
-      nodes = [{"div", [], [{:comment, "x"}]}]
-      assert PureHTML.to_html(nodes) == "<div><!--x--></div>"
+      # Act
+      {nodes, error_count} = PureHTML.parse_with_errors(html)
+
+      # Assert
+      assert [{:doctype, nil, nil, nil} | _] = nodes
+      assert error_count == 2
+      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
     end
 
     test "serializes the html doctype" do
@@ -3718,6 +3697,37 @@ defmodule PureHTMLTest do
     test "doctype with a missing name keeps the space before the empty name" do
       assert PureHTML.to_html([{:doctype, nil, nil, nil}]) == "<!DOCTYPE >"
     end
+  end
+
+  describe "to_html/2 foreign content" do
+    test "serializes xlink:href on an SVG element" do
+      # Arrange
+      html = "<svg><a xlink:href=foo></a></svg>"
+
+      # Act
+      result =
+        html
+        |> PureHTML.parse()
+        |> PureHTML.to_html()
+
+      # Assert
+      assert result =~ "xlink:href=\"foo\""
+    end
+
+    test "serializes an xmlns attribute on an SVG element by its local name" do
+      # Arrange
+      html = "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+
+      # Act
+      nodes = PureHTML.parse(html)
+      result = PureHTML.to_html(nodes)
+
+      # Assert
+      assert [{"html", [], [_head, {"body", [], [{{:svg, "svg"}, attrs, []}]}]}] = nodes
+      assert [{{:xmlns, "xmlns"}, "http://www.w3.org/2000/svg"}] = attrs
+      assert result =~ "<svg xmlns="
+      refute result =~ "xmlns:"
+    end
 
     test "serializes an SVG element" do
       nodes = [{{:svg, "circle"}, [{"r", "5"}], []}]
@@ -3743,20 +3753,9 @@ defmodule PureHTMLTest do
       nodes = [{{:svg, "text"}, [{{:xml, "lang"}, "en"}], []}]
       assert PureHTML.to_html(nodes) == "<text xml:lang=\"en\"></text>"
     end
+  end
 
-    test "a leading LF in a pre text node is emitted" do
-      assert PureHTML.to_html([{"pre", [], ["\nx"]}]) == "<pre>\nx</pre>"
-    end
-
-    test "an interior tab in pre text is emitted" do
-      assert PureHTML.to_html([{"pre", [], ["foo\tbar"]}]) == "<pre>foo\tbar</pre>"
-    end
-
-    test "serializes template contents without the content wrapper" do
-      nodes = [{"template", [], [{:content, [{"div", [], ["inside"]}]}]}]
-      assert PureHTML.to_html(nodes) == "<template><div>inside</div></template>"
-    end
-
+  describe "to_html/2 round trips" do
     test "simple HTML round-trips through parse/2" do
       html = "<p>Hello</p>"
       result = html |> PureHTML.parse() |> PureHTML.to_html()
@@ -3787,6 +3786,42 @@ defmodule PureHTMLTest do
 
       # Assert
       assert reparsed == nodes
+    end
+  end
+
+  describe "to_html/2 invalid input" do
+    test "raises ArgumentError naming nil, a query_one/2 miss" do
+      assert_raise ArgumentError, ~r/nil/, fn -> PureHTML.to_html(nil) end
+    end
+
+    test "raises ArgumentError naming an element whose children are not a list" do
+      assert_raise ArgumentError, ~r/"text"/, fn -> PureHTML.to_html([{"p", [], "text"}]) end
+    end
+
+    test "raises ArgumentError naming an element whose attributes are a map" do
+      assert_raise ArgumentError, ~r/%\{/, fn ->
+        PureHTML.to_html([{"p", %{"class" => "a"}, []}])
+      end
+    end
+
+    test "raises ArgumentError naming an attribute whose value is not a string" do
+      assert_raise ArgumentError, ~r/"class"/, fn ->
+        PureHTML.to_html([{"p", [{"class", nil}], []}])
+      end
+    end
+
+    test "raises ArgumentError naming a doctype whose identifiers are not strings" do
+      assert_raise ArgumentError, ~r/:doctype/, fn ->
+        PureHTML.to_html({:doctype, "html", 1, :x})
+      end
+    end
+
+    test "raises ArgumentError for an unknown option" do
+      assert_raise ArgumentError, ~r/scriptng/, fn -> PureHTML.to_html([], scriptng: false) end
+    end
+
+    test "raises ArgumentError for a non-boolean :scripting" do
+      assert_raise ArgumentError, ~r/scripting/, fn -> PureHTML.to_html([], scripting: "no") end
     end
   end
 

@@ -3,7 +3,21 @@ defmodule PureHTML.TokenizerTest do
 
   alias PureHTML.Tokenizer
 
-  describe "basic tokenization" do
+  describe "new/2" do
+    test "counts a control character in the input stream once" do
+      assert %{error_count: 1} = Tokenizer.new("a\x01b")
+    end
+
+    test "counts a noncharacter in the input stream once" do
+      assert %{error_count: 1} = Tokenizer.new(<<0xFDD0::utf8>>)
+    end
+
+    test "does not count ASCII whitespace or NUL as input stream errors" do
+      assert %{error_count: 0} = Tokenizer.new("\t\n\f \0")
+    end
+  end
+
+  describe "tokenize/2" do
     test "simple tag" do
       tokens = Tokenizer.tokenize("<p>Hello</p>") |> Enum.to_list()
 
@@ -16,11 +30,6 @@ defmodule PureHTML.TokenizerTest do
                Tokenizer.tokenize("<!DOCTYPE html>") |> Enum.to_list()
     end
 
-    test "attributes" do
-      assert [{:start_tag, "div", [{"class", "foo"}, {"id", "bar"}], false}] =
-               Tokenizer.tokenize(~s(<div class="foo" id=bar>)) |> Enum.to_list()
-    end
-
     test "self-closing tag" do
       assert [{:start_tag, "br", [], true}] =
                Tokenizer.tokenize("<br/>") |> Enum.to_list()
@@ -30,27 +39,53 @@ defmodule PureHTML.TokenizerTest do
       assert [{:comment, " hello "}] =
                Tokenizer.tokenize("<!-- hello -->") |> Enum.to_list()
     end
-  end
 
-  describe "character handling" do
     test "emits coalesced character tokens" do
       tokens = Tokenizer.tokenize("abc") |> Enum.to_list()
 
       assert [{:character, "abc"}] = tokens
     end
 
-    test "counts a control character in the input stream once" do
-      assert %{error_count: 1} = Tokenizer.new("a\x01b")
+    test "lowercases tag names" do
+      assert [{:start_tag, "div", [], false}] =
+               Tokenizer.tokenize("<DIV>") |> Enum.to_list()
+    end
+  end
+
+  describe "tokenize/2 attributes" do
+    test "a quoted and an unquoted attribute" do
+      assert [{:start_tag, "div", [{"class", "foo"}, {"id", "bar"}], false}] =
+               Tokenizer.tokenize(~s(<div class="foo" id=bar>)) |> Enum.to_list()
     end
 
-    test "counts a noncharacter in the input stream once" do
-      assert %{error_count: 1} = Tokenizer.new(<<0xFDD0::utf8>>)
+    test "double-quoted attribute value" do
+      assert [{:start_tag, "a", [{"href", "http://example.com"}], false}] =
+               Tokenizer.tokenize("<a href=\"http://example.com\">") |> Enum.to_list()
     end
 
-    test "does not count ASCII whitespace or NUL as input stream errors" do
-      assert %{error_count: 0} = Tokenizer.new("\t\n\f \0")
+    test "single-quoted attribute value" do
+      assert [{:start_tag, "a", [{"href", "http://example.com"}], false}] =
+               Tokenizer.tokenize("<a href='http://example.com'>") |> Enum.to_list()
     end
 
+    test "unquoted attribute value" do
+      assert [{:start_tag, "input", [{"type", "text"}], false}] =
+               Tokenizer.tokenize("<input type=text>") |> Enum.to_list()
+    end
+
+    test "attribute without value" do
+      assert [{:start_tag, "input", [{"disabled", ""}], false}] =
+               Tokenizer.tokenize("<input disabled>") |> Enum.to_list()
+    end
+
+    test "multiple attributes" do
+      assert [
+               {:start_tag, "input", [{"type", "text"}, {"name", "foo"}, {"disabled", ""}], false}
+             ] = Tokenizer.tokenize("<input type=text name=foo disabled>") |> Enum.to_list()
+    end
+  end
+
+  describe "tokenize/2 linear time" do
     @tag timeout: 5_000
     test "named character references stay linear before a long ASCII run" do
       # Arrange
@@ -157,41 +192,6 @@ defmodule PureHTML.TokenizerTest do
 
     test "an invalid first character of a PI target becomes a comment" do
       assert {[{:comment, "?#"}], 1} = Tokenizer.tokenize_with_errors("<?#")
-    end
-  end
-
-  describe "tag names" do
-    test "lowercases tag names" do
-      assert [{:start_tag, "div", [], false}] =
-               Tokenizer.tokenize("<DIV>") |> Enum.to_list()
-    end
-  end
-
-  describe "attributes" do
-    test "double-quoted attribute value" do
-      assert [{:start_tag, "a", [{"href", "http://example.com"}], false}] =
-               Tokenizer.tokenize("<a href=\"http://example.com\">") |> Enum.to_list()
-    end
-
-    test "single-quoted attribute value" do
-      assert [{:start_tag, "a", [{"href", "http://example.com"}], false}] =
-               Tokenizer.tokenize("<a href='http://example.com'>") |> Enum.to_list()
-    end
-
-    test "unquoted attribute value" do
-      assert [{:start_tag, "input", [{"type", "text"}], false}] =
-               Tokenizer.tokenize("<input type=text>") |> Enum.to_list()
-    end
-
-    test "attribute without value" do
-      assert [{:start_tag, "input", [{"disabled", ""}], false}] =
-               Tokenizer.tokenize("<input disabled>") |> Enum.to_list()
-    end
-
-    test "multiple attributes" do
-      assert [
-               {:start_tag, "input", [{"type", "text"}, {"name", "foo"}, {"disabled", ""}], false}
-             ] = Tokenizer.tokenize("<input type=text name=foo disabled>") |> Enum.to_list()
     end
   end
 end
