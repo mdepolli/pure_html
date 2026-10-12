@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - html5lib encoding tests compare `Encoding.sniff/2` to the Encoding Standard name with no case fold on the actual
 - The html5lib tokenizer runner fails on an unknown `initialStates` name, on a case with no initial states, and on a fixture JSON that is not `"tests"` / `"xmlViolationTests"`, instead of passing with zero runs
 - `parse/2`, `parse_with_errors/2`, `to_html/2`, and `Encoding.sniff/2` raise `ArgumentError` on an unknown option, a non-boolean `:scripting`, or a `:transport_encoding` that is neither a string nor `nil`
+- The Elixir requirement is `~> 1.20` instead of `>= 1.20.0`, which excludes Elixir 2
 
 ### Removed
 
