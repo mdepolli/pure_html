@@ -377,12 +377,9 @@ defmodule PureHTML do
     {ns, tag} = context_element(context)
 
     html
-    |> Tokenizer.new(fragment_tokenizer_opts(ns, tag, scripting))
+    |> Tokenizer.new()
     |> TreeBuilder.build_fragment(ns, tag, scripting)
   end
-
-  @raw_text_elements ~w(style xmp iframe noembed noframes)
-  @rcdata_elements ~w(title textarea)
 
   @context_forms ~s("tag", "svg local", or "math local", each name a valid element local name)
 
@@ -437,22 +434,4 @@ defmodule PureHTML do
   defp raise_invalid_context(context) do
     raise ArgumentError, "invalid :context #{inspect(context)}: expected #{@context_forms}"
   end
-
-  # Foreign elements always use :data state — the tokenizer state rules
-  # only apply to HTML namespace context elements.
-  defp fragment_tokenizer_opts(ns, _tag, _scripting) when ns in [:svg, :math], do: []
-
-  defp fragment_tokenizer_opts(_ns, tag, _scripting) when tag in @rcdata_elements do
-    [initial_state: :rcdata]
-  end
-
-  defp fragment_tokenizer_opts(_ns, "script", _scripting), do: [initial_state: :script_data]
-  defp fragment_tokenizer_opts(_ns, "plaintext", _scripting), do: [initial_state: :plaintext]
-  defp fragment_tokenizer_opts(_ns, "noscript", true = _scripting), do: [initial_state: :rawtext]
-
-  defp fragment_tokenizer_opts(_ns, tag, _scripting) when tag in @raw_text_elements do
-    [initial_state: :rawtext]
-  end
-
-  defp fragment_tokenizer_opts(_ns, _tag, _scripting), do: []
 end

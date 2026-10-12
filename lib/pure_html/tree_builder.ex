@@ -261,59 +261,62 @@ defmodule PureHTML.TreeBuilder do
 
   Implements the WHATWG "parsing HTML fragments" algorithm. The context element
   determines the initial insertion mode and parser behavior. The children are
-  those of the html element (no `<html>/<head>/<body>` wrappers).
+  the nodes the algorithm inserts into its root insertion target, held here by
+  the root html element (no `<html>/<head>/<body>` wrappers).
   """
-  @spec build_fragment(Tokenizer.t(), atom() | nil, String.t(), boolean()) ::
+  @spec build_fragment(Tokenizer.t(), :svg | :math | nil, String.t(), boolean()) ::
           {[document_node()], non_neg_integer()}
   def build_fragment(%Tokenizer{} = tokenizer, namespace, tag, scripting) do
     context = {namespace, tag}
+    root_ref = make_ref()
+    root = %{ref: root_ref, tag: "html", attrs: [], children: [], parent_ref: nil}
 
-    # Step 1: Create an html element and push it onto the stack
-    html_ref = make_ref()
-
-    html_elem = %{
-      ref: html_ref,
-      tag: "html",
-      attrs: [],
-      children: [],
-      parent_ref: nil
-    }
-
-    elements = %{html_ref => html_elem}
-
-    # Step 2: Only html goes on the stack per WHATWG spec.
-    # The context element is used via the "adjusted current node" concept.
-    stack = [html_ref]
-
-    # Step 3: Set up initial state with context element
-    state = %State{
-      stack: stack,
-      elements: elements,
-      context_element: context,
-      template_mode_stack: initial_template_modes(context),
-      scripting: scripting
-    }
-
-    # Step 4: Reset the insertion mode appropriately
-    state = reset_insertion_mode(state)
-
-    # Step 5: If the context element is a form element, set the form element pointer
+    # The root html element is the only element on the stack of open elements;
+    # the context element is the adjusted current node while root is alone.
     state =
-      if namespace == nil and tag == "form",
-        do: %{state | form_element: make_ref()},
-        else: state
+      reset_insertion_mode(%State{
+        stack: [root_ref],
+        elements: %{root_ref => root},
+        context_element: context,
+        template_mode_stack: initial_template_modes(context),
+        form_element: initial_form_element(context),
+        scripting: scripting
+      })
 
-    # Step 6: Run the normal build loop
-    state = build_loop(tokenizer, state)
+    final_state =
+      tokenizer
+      |> Tokenizer.set_state(fragment_tokenizer_state(context, scripting))
+      |> build_loop(state)
 
-    # Step 7: Return children of the html element
-    {finalize_fragment(state, html_ref), state.error_count}
+    {finalize_fragment(final_state, root_ref), final_state.error_count}
   end
+
+  # "Set the state of the HTML parser's tokenization stage as follows,
+  # switching on the context element": each case names an HTML element.
+  defp fragment_tokenizer_state({nil, tag}, _scripting) when tag in ~w(title textarea),
+    do: :rcdata
+
+  defp fragment_tokenizer_state({nil, tag}, _scripting)
+       when tag in ~w(style xmp iframe noembed noframes),
+       do: :rawtext
+
+  defp fragment_tokenizer_state({nil, "script"}, _scripting), do: :script_data
+  defp fragment_tokenizer_state({nil, "noscript"}, true = _scripting), do: :rawtext
+  defp fragment_tokenizer_state({nil, "plaintext"}, _scripting), do: :plaintext
+  defp fragment_tokenizer_state(_context, _scripting), do: :data
 
   # "If the context element is a template element, push "in template" onto the
   # stack of template insertion modes": an HTML template only.
   defp initial_template_modes({nil, "template"}), do: [:in_template]
   defp initial_template_modes(_context), do: []
+
+  # "Set the parser's form element pointer to the nearest node to the context
+  # element that is a form element (going straight up the ancestor chain, and
+  # including the element itself)". The context has no ancestors here, so only
+  # a form context sets it. That form is never on the stack of open elements,
+  # so a ref to no element stands for it.
+  defp initial_form_element({nil, "form"}), do: make_ref()
+  defp initial_form_element(_context), do: nil
 
   defp build_loop(tokenizer, state) do
     tokenizer = update_tokenizer_context(tokenizer, state)
