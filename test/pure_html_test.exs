@@ -3403,6 +3403,20 @@ defmodule PureHTMLTest do
       assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
     end
 
+    test "serializes a single node, such as a query_one/2 result" do
+      # Arrange
+      node =
+        "<p>x</p>"
+        |> PureHTML.parse()
+        |> PureHTML.query_one("p")
+
+      # Act
+      result = PureHTML.to_html(node)
+
+      # Assert
+      assert result == "<p>x</p>"
+    end
+
     test "raises ArgumentError for an unknown option" do
       assert_raise ArgumentError, ~r/scriptng/, fn -> PureHTML.to_html([], scriptng: false) end
     end

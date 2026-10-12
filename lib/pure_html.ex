@@ -126,7 +126,7 @@ defmodule PureHTML do
   end
 
   @doc """
-  Converts parsed HTML nodes back to an HTML string.
+  Converts parsed HTML nodes, or a single node, back to an HTML string.
 
   Follows the HTML fragment serialization algorithm.
 
@@ -152,13 +152,23 @@ defmodule PureHTML do
       iex> PureHTML.to_html([{"div", [{"class", "foo"}], ["text"]}])
       "<div class=\\"foo\\">text</div>"
 
+      iex> "<ul><li>A</li></ul>"
+      ...> |> PureHTML.parse()
+      ...> |> PureHTML.query_one("li")
+      ...> |> PureHTML.to_html()
+      "<li>A</li>"
+
   """
-  @spec to_html([html_node()], keyword()) :: String.t()
-  def to_html(nodes, opts \\ []) when is_list(nodes) do
+  @spec to_html(html_node() | [html_node()], keyword()) :: String.t()
+  def to_html(nodes, opts \\ [])
+
+  def to_html(nodes, opts) when is_list(nodes) do
     %{scripting: scripting} = serialize_options(opts)
 
     Serializer.serialize(nodes, scripting: scripting)
   end
+
+  def to_html(node, opts), do: to_html([node], opts)
 
   @doc """
   Finds all nodes matching the CSS selector.
