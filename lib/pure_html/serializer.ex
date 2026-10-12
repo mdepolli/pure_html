@@ -4,16 +4,7 @@ defmodule PureHTML.Serializer do
 
   Implements the HTML fragment serialization algorithm.
 
-  ## Options
-
-  - `:scripting` — whether scripting is enabled (default: `true`).
-
-    `to_html/2` is usually called on a tree `parse/2` built. Parse's scripting
-    flag decides whether noscript children are a text node or elements. With
-    the default parse (scripting on), noscript holds one text node that must
-    be emitted literally, so the serializer default is `true`. If the tree was
-    parsed with scripting off, noscript holds elements and this flag does not
-    affect them.
+  `PureHTML.to_html/2` documents the `:scripting` option.
   """
 
   @void_elements ~w(area base basefont bgsound br col embed frame hr img input

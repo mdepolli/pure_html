@@ -3417,6 +3417,41 @@ defmodule PureHTMLTest do
       assert result == "<p>x</p>"
     end
 
+    test "with the default :scripting, a scripting-off parse's noscript text reparses as markup" do
+      # Arrange
+      nodes =
+        PureHTML.parse("<body><noscript>&lt;img src=x onerror=alert(1)&gt;</noscript>",
+          scripting: false
+        )
+
+      # Act
+      reparsed =
+        nodes
+        |> PureHTML.to_html()
+        |> PureHTML.parse(scripting: false)
+
+      # Assert
+      assert [{"img", [{"src", "x"}, {"onerror", "alert(1)"}], []}] =
+               PureHTML.query(reparsed, "img")
+    end
+
+    test "with the parse's scripting: false, noscript text round-trips as text" do
+      # Arrange
+      nodes =
+        PureHTML.parse("<body><noscript>&lt;img src=x onerror=alert(1)&gt;</noscript>",
+          scripting: false
+        )
+
+      # Act
+      reparsed =
+        nodes
+        |> PureHTML.to_html(scripting: false)
+        |> PureHTML.parse(scripting: false)
+
+      # Assert
+      assert reparsed == nodes
+    end
+
     test "raises ArgumentError naming nil, a query_one/2 miss" do
       assert_raise ArgumentError, ~r/nil/, fn -> PureHTML.to_html(nil) end
     end

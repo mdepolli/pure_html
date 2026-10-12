@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An HTML `:context` name is ASCII case-insensitive, as in `createElement`, so `"TEXTAREA"` parses as RCDATA
 - `to_html/2` raises `ArgumentError` naming a malformed node or attribute, instead of `FunctionClauseError` or `Protocol.UndefinedError`, or serializing a map of attributes or a doctype with non-string identifiers
 
+### Security
+
+- A tree from `parse(html, scripting: false)` passed to `to_html/2` with the default `scripting: true` writes decoded noscript text unescaped, so `&lt;img onerror=...&gt;` becomes a live `<img>`. The 0.5.0 docs said the flag did not matter for such a tree; they now say to pass the `:scripting` given to `parse/2`. No code changed
+
 ## [0.5.0] - 2026-09-17
 
 ### Added

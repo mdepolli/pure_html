@@ -134,14 +134,15 @@ defmodule PureHTML do
 
   ## Options
 
-  - `:scripting` — whether scripting is enabled (default: `true`).
+  - `:scripting` - Whether scripting is enabled (default: `true`, as for
+    `parse/2`). Text in a `noscript` element is written literally when it is
+    `true` and escaped when it is `false`.
 
-    `to_html/2` is usually called on a tree `parse/2` built. Parse's scripting
-    flag decides whether noscript children are a text node or elements. With
-    the default parse (scripting on), noscript holds one text node that must
-    be emitted literally, so the serializer default is `true`. If the tree was
-    parsed with scripting off, noscript holds elements and this flag does not
-    affect them.
+    Pass the `:scripting` you passed to `parse/2`. A scripting-on parse keeps
+    noscript content as one text node of raw markup, which must be written
+    literally. A scripting-off parse decodes character references in noscript
+    text, so writing that text literally turns `&lt;img onerror=...&gt;` back
+    into a live `<img>`.
 
   An unknown option, or a `:scripting` that is not a boolean, raises
   `ArgumentError`.
