@@ -14,24 +14,11 @@ defmodule PureHTML.Serializer do
   defguardp string_or_nil(value) when is_binary(value) or is_nil(value)
 
   @doc """
-  Serializes a list of parsed HTML nodes to an HTML string.
-
-  ## Examples
-
-      iex> PureHTML.Serializer.serialize([{"p", [], ["Hello"]}])
-      "<p>Hello</p>"
-
-      iex> PureHTML.Serializer.serialize([{"br", [], []}])
-      "<br>"
-
-      iex> PureHTML.Serializer.serialize([{"span", [{"title", "foo"}], []}])
-      "<span title=\\"foo\\"></span>"
-
+  Serializes a list of parsed HTML nodes to an HTML string, with the scripting
+  flag deciding how noscript text is written.
   """
-  @spec serialize([PureHTML.html_node()], keyword()) :: String.t()
-  def serialize(nodes, opts \\ []) when is_list(nodes) do
-    scripting = Keyword.get(opts, :scripting, true)
-
+  @spec serialize([PureHTML.html_node()], boolean()) :: String.t()
+  def serialize(nodes, scripting) when is_list(nodes) do
     nodes
     |> Enum.map(&serialize_node(&1, nil, scripting))
     |> IO.iodata_to_binary()

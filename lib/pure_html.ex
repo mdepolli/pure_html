@@ -165,7 +165,7 @@ defmodule PureHTML do
   def to_html(nodes, opts) when is_list(nodes) do
     %{scripting: scripting} = serialize_options(opts)
 
-    Serializer.serialize(nodes, scripting: scripting)
+    Serializer.serialize(nodes, scripting)
   end
 
   def to_html(node, opts), do: to_html([node], opts)
