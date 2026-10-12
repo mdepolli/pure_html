@@ -128,7 +128,9 @@ defmodule PureHTML do
   @doc """
   Converts parsed HTML nodes, or a single node, back to an HTML string.
 
-  Follows the HTML fragment serialization algorithm.
+  Follows the HTML fragment serialization algorithm. A node that is not a
+  `t:html_node/0`, or an attribute that is not a `t:attr/0`, raises
+  `ArgumentError` naming it.
 
   ## Options
 

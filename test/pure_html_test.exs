@@ -3417,6 +3417,32 @@ defmodule PureHTMLTest do
       assert result == "<p>x</p>"
     end
 
+    test "raises ArgumentError naming nil, a query_one/2 miss" do
+      assert_raise ArgumentError, ~r/nil/, fn -> PureHTML.to_html(nil) end
+    end
+
+    test "raises ArgumentError naming an element whose children are not a list" do
+      assert_raise ArgumentError, ~r/"text"/, fn -> PureHTML.to_html([{"p", [], "text"}]) end
+    end
+
+    test "raises ArgumentError naming an element whose attributes are a map" do
+      assert_raise ArgumentError, ~r/%\{/, fn ->
+        PureHTML.to_html([{"p", %{"class" => "a"}, []}])
+      end
+    end
+
+    test "raises ArgumentError naming an attribute whose value is not a string" do
+      assert_raise ArgumentError, ~r/"class"/, fn ->
+        PureHTML.to_html([{"p", [{"class", nil}], []}])
+      end
+    end
+
+    test "raises ArgumentError naming a doctype whose identifiers are not strings" do
+      assert_raise ArgumentError, ~r/:doctype/, fn ->
+        PureHTML.to_html({:doctype, "html", 1, :x})
+      end
+    end
+
     test "raises ArgumentError for an unknown option" do
       assert_raise ArgumentError, ~r/scriptng/, fn -> PureHTML.to_html([], scriptng: false) end
     end
