@@ -24,10 +24,6 @@ defmodule PureHTML.Serializer do
     |> IO.iodata_to_binary()
   end
 
-  @doc "True for the HTML void elements, which serialize as a start tag only."
-  @spec void_element?(String.t()) :: boolean()
-  def void_element?(tag), do: tag in @void_elements
-
   defp serialize_node({:doctype, name, public_id, system_id}, _parent, _scripting)
        when string_or_nil(name) and string_or_nil(public_id) and string_or_nil(system_id) do
     serialize_doctype(name)

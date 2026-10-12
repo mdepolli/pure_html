@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `PureHTML.Tokenizer`, `PureHTML.TreeBuilder`, `PureHTML.Serializer`, `PureHTML.Query`, `PureHTML.Entities`, and their submodules are hidden from the docs (`@moduledoc false`). The public API is `PureHTML` and `PureHTML.Encoding`
+- `PureHTML.Serializer.void_element?/1`, added in 0.5.0
 
 ### Fixed
 
