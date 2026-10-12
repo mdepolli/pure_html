@@ -43,7 +43,7 @@ defmodule PureHTML.Serializer do
 
   defp serialize_node({:doctype, name, public_id, system_id}, _parent, _scripting)
        when string_or_nil(name) and string_or_nil(public_id) and string_or_nil(system_id) do
-    serialize_doctype(name, public_id, system_id)
+    serialize_doctype(name)
   end
 
   defp serialize_node({:comment, text}, _parent, _scripting) when is_binary(text) do
@@ -141,7 +141,7 @@ defmodule PureHTML.Serializer do
 
   # HTML fragment serialization: "<!DOCTYPE ", the name, ">". A missing
   # name is the empty string, so the space stays.
-  defp serialize_doctype(name, _public_id, _system_id) do
+  defp serialize_doctype(name) do
     ["<!DOCTYPE ", name || "", ">"]
   end
 end
