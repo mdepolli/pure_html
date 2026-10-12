@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `Encoding.sniff/2` docs say `:transport_encoding` takes the `charset` label, not the header, and that the result can be `"replacement"`
 - The README's html5lib claim gives the case counts, the corrected cases, and the cases not run, instead of "passes all 8,602"
 - `ROADMAP.md` is in the docs, so the README and guide links to it resolve on HexDocs
+- The package includes `ROADMAP.md` and `guides/`, so its README links resolve and `mix docs` builds from it
 
 ### Security
 
