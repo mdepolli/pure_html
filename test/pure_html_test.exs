@@ -113,6 +113,10 @@ defmodule PureHTMLTest do
         assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: context) end
       end
     end
+
+    test "raises ArgumentError for an unknown option" do
+      assert_raise ArgumentError, ~r/contxt/, fn -> PureHTML.parse("x", contxt: "td") end
+    end
   end
 
   describe "parse_with_errors/2" do
@@ -3184,6 +3188,12 @@ defmodule PureHTMLTest do
       assert PureHTML.parse_with_errors("<p>x", context: "_x") == {[{"p", [], ["x"]}], 0}
       assert PureHTML.parse_with_errors("<p>x", context: "éx") == {[{"p", [], ["x"]}], 0}
     end
+
+    test "raises ArgumentError for a non-boolean :scripting" do
+      assert_raise ArgumentError, ~r/scripting/, fn ->
+        PureHTML.parse_with_errors("x", scripting: :yes)
+      end
+    end
   end
 
   describe "query/2" do
@@ -3366,6 +3376,14 @@ defmodule PureHTMLTest do
       assert [{:doctype, nil, nil, nil} | _] = nodes
       assert error_count == 2
       assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
+    end
+
+    test "raises ArgumentError for an unknown option" do
+      assert_raise ArgumentError, ~r/scriptng/, fn -> PureHTML.to_html([], scriptng: false) end
+    end
+
+    test "raises ArgumentError for a non-boolean :scripting" do
+      assert_raise ArgumentError, ~r/scripting/, fn -> PureHTML.to_html([], scripting: "no") end
     end
   end
 

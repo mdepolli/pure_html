@@ -90,4 +90,16 @@ defmodule PureHTML.EncodingTest do
       assert Encoding.sniff(html) == "windows-1252"
     end
   end
+
+  describe "sniff/2" do
+    test "an unknown option raises ArgumentError" do
+      assert_raise ArgumentError, ~r/transport/, fn -> Encoding.sniff("x", transport: "utf-8") end
+    end
+
+    test "a :transport_encoding that is not a string raises ArgumentError" do
+      assert_raise ArgumentError, ~r/transport_encoding/, fn ->
+        Encoding.sniff("x", transport_encoding: :utf8)
+      end
+    end
+  end
 end

@@ -78,6 +78,9 @@ defmodule PureHTML do
   - `:scripting` - Whether the scripting flag is enabled (default: `true`).
     When `false`, `<noscript>` content is parsed as HTML instead of raw text.
 
+  An unknown option, or a `:scripting` that is not a boolean, raises
+  `ArgumentError`.
+
   ## Examples
 
       iex> PureHTML.parse("<p>Hello</p>")
@@ -117,8 +120,7 @@ defmodule PureHTML do
   """
   @spec parse_with_errors(String.t(), keyword()) :: {[html_node()], non_neg_integer()}
   def parse_with_errors(html, opts \\ []) when is_binary(html) do
-    context = Keyword.get(opts, :context)
-    scripting = Keyword.get(opts, :scripting, true)
+    %{context: context, scripting: scripting} = parse_options(opts)
 
     build(html, context, scripting)
   end
@@ -139,6 +141,9 @@ defmodule PureHTML do
     parsed with scripting off, noscript holds elements and this flag does not
     affect them.
 
+  An unknown option, or a `:scripting` that is not a boolean, raises
+  `ArgumentError`.
+
   ## Examples
 
       iex> PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
@@ -150,7 +155,9 @@ defmodule PureHTML do
   """
   @spec to_html([html_node()], keyword()) :: String.t()
   def to_html(nodes, opts \\ []) when is_list(nodes) do
-    Serializer.serialize(nodes, opts)
+    %{scripting: scripting} = serialize_options(opts)
+
+    Serializer.serialize(nodes, scripting: scripting)
   end
 
   @doc """
@@ -330,6 +337,31 @@ defmodule PureHTML do
 
   """
   defdelegate attribute(html, selector, name), to: Query
+
+  # --------------------------------------------------------------------------
+  # Options
+  # --------------------------------------------------------------------------
+
+  defp parse_options(opts) do
+    opts
+    |> Keyword.validate!(context: nil, scripting: true)
+    |> Map.new()
+    |> validate_scripting()
+  end
+
+  defp serialize_options(opts) do
+    opts
+    |> Keyword.validate!(scripting: true)
+    |> Map.new()
+    |> validate_scripting()
+  end
+
+  defp validate_scripting(%{scripting: scripting} = options) when is_boolean(scripting),
+    do: options
+
+  defp validate_scripting(%{scripting: scripting}) do
+    raise ArgumentError, ":scripting must be a boolean, got: #{inspect(scripting)}"
+  end
 
   # --------------------------------------------------------------------------
   # Building

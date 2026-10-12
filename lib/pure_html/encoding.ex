@@ -26,6 +26,9 @@ defmodule PureHTML.Encoding do
   - `:transport_encoding` - encoding from HTTP Content-Type header. Used only
     when it is a supported Encoding Standard label, and only after a BOM.
 
+  An unknown option, or a `:transport_encoding` that is not a string or `nil`,
+  raises `ArgumentError`.
+
   ## Examples
 
       iex> PureHTML.Encoding.sniff(<<0xEF, 0xBB, 0xBF, "<html>">>)
@@ -40,12 +43,25 @@ defmodule PureHTML.Encoding do
   """
   @spec sniff(binary(), keyword()) :: String.t()
   def sniff(bytes, opts \\ []) when is_binary(bytes) do
-    transport = Keyword.get(opts, :transport_encoding)
+    transport = transport_encoding(opts)
 
     bom_sniff(bytes) ||
       get_encoding(transport) ||
       prescan(bytes) ||
       "windows-1252"
+  end
+
+  defp transport_encoding(opts) do
+    opts
+    |> Keyword.validate!(transport_encoding: nil)
+    |> Keyword.fetch!(:transport_encoding)
+    |> validate_transport_encoding()
+  end
+
+  defp validate_transport_encoding(label) when is_binary(label) or is_nil(label), do: label
+
+  defp validate_transport_encoding(label) do
+    raise ArgumentError, ":transport_encoding must be a string or nil, got: #{inspect(label)}"
   end
 
   defp bom_sniff(<<0xEF, 0xBB, 0xBF, _::binary>>), do: "utf-8"
