@@ -3189,6 +3189,31 @@ defmodule PureHTMLTest do
       assert PureHTML.parse_with_errors("<p>x", context: "éx") == {[{"p", [], ["x"]}], 0}
     end
 
+    # "Set the state of the HTML parser's tokenization stage as follows,
+    # switching on the context element": no start tag has been emitted, so the
+    # context's own end tag is not an appropriate end tag and stays text.
+    for tag <- ~w(title textarea style xmp iframe noembed noframes script noscript plaintext) do
+      test "a #{tag} context starts the tokenizer in its text state" do
+        tag = unquote(tag)
+
+        assert PureHTML.parse_with_errors("a</#{tag}>b", context: tag) ==
+                 {["a</#{tag}>b"], 0}
+      end
+    end
+
+    test "a noscript context with scripting off starts the tokenizer in the data state" do
+      assert PureHTML.parse_with_errors("<b>a</noscript>b", context: "noscript", scripting: false) ==
+               {[{"b", [], ["ab"]}], 2}
+    end
+
+    # "Set the parser's form element pointer to the nearest node to the context
+    # element that is a form element": a nested form is ignored, and </form>
+    # clears the pointer with a parse error, since the context is not in scope.
+    test "a form context sets the form element pointer" do
+      assert PureHTML.parse_with_errors("<form></form><form>", context: "form") ==
+               {[{"form", [], []}], 3}
+    end
+
     test "raises ArgumentError for a non-boolean :scripting" do
       assert_raise ArgumentError, ~r/scripting/, fn ->
         PureHTML.parse_with_errors("x", scripting: :yes)
