@@ -49,10 +49,7 @@ defmodule PureHTML do
   @typedoc "One attribute: name and value, in source order on the element."
   @type attr :: {attr_name(), String.t()}
 
-  @typedoc """
-  A node `parse/2` returns. The runtime check of this type is `valid_node?/1`
-  in `test/pure_html_test.exs`.
-  """
+  @typedoc "A node `parse/2` returns."
   @type html_node ::
           {String.t(), [attr()], [html_node()]}
           | {{:svg | :math, String.t()}, [attr()], [html_node()]}
@@ -184,6 +181,8 @@ defmodule PureHTML do
   - ID: `#id`
   - Attribute: `[attr]`, `[attr=value]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`
   - Selector list: `.a, .b`
+  - Combinators: `div p` (descendant), `div > p` (child), `h1 + p` (next
+    sibling), `h1 ~ p` (subsequent sibling)
 
   An invalid selector represents, and therefore matches, nothing: the result
   is `[]`. `query!/2` raises instead.

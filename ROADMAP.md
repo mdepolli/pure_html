@@ -22,7 +22,7 @@ Entails: a second source in `test/fixtures/html5lib/UPSTREAM` and in `mix html5l
 
 ## Send the error-count corrections upstream
 
-Six tree-construction cases (`webkit02:44` to `:48`, `adoption02:2`) list error counts that contradict the living standard by hand walk, recorded in `test/fixtures/corrections/` with the walk in the project notes. They are candidates for web-platform-tests, so they stop being ours to carry.
+Six tree-construction cases (`webkit02:44` to `:48`, `adoption02:2`) list error counts that contradict the living standard by hand walk, recorded in `test/fixtures/corrections/` with the walk in `test/fixtures/corrections/WALKS.md`. They are candidates for web-platform-tests, so they stop being ours to carry.
 
 Entails: a WPT pull request per disagreement with the walk as the justification; on merge, the correction drops off.
 

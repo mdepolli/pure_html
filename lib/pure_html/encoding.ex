@@ -4,7 +4,8 @@ defmodule PureHTML.Encoding do
 
   Detects the character encoding of an HTML document by examining, in order:
   1. BOM (Byte Order Mark)
-  2. A transport encoding (HTTP Content-Type), if it is a supported label
+  2. A transport encoding (the `charset` of an HTTP `Content-Type`), if it is
+     a supported label
   3. A prescan of the byte stream (`<meta charset>`, `http-equiv`, XML declaration)
 
   The prescan runs to the end of the given binary, not the first 1024 bytes
@@ -19,12 +20,16 @@ defmodule PureHTML.Encoding do
   Sniffs the encoding of an HTML byte stream.
 
   Returns the detected encoding name as a lowercase string.
-  Defaults to "windows-1252" if no encoding is detected.
+  Defaults to "windows-1252" if no encoding is detected. The result can be
+  "replacement" (for example from `<meta charset=iso-2022-kr>`): the Encoding
+  Standard's replacement encoding, whose decoder turns any non-empty input
+  into a single U+FFFD.
 
   ## Options
 
-  - `:transport_encoding` - encoding from HTTP Content-Type header. Used only
-    when it is a supported Encoding Standard label, and only after a BOM.
+  - `:transport_encoding` - the label from the `charset` parameter of an HTTP
+    `Content-Type` header (for example `"utf-8"`), not the header itself. Used
+    only when it is a supported Encoding Standard label, and only after a BOM.
 
   An unknown option, or a `:transport_encoding` that is not a string or `nil`,
   raises `ArgumentError`.

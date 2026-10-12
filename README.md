@@ -20,7 +20,7 @@ PureHTML has **zero dependencies**. It's pure Elixir code all the way down.
 PureHTML implements the [WHATWG HTML5 specification](https://html.spec.whatwg.org/multipage/parsing.html). It handles all the complex error-recovery rules that browsers use.
 
 - **Spec compliant**: Implements the full HTML5 tree construction algorithm including adoption agency, foster parenting, and foreign content (SVG/MathML).
-- **100% html5lib compliance**: Passes all 8,602 tree-construction and tokenizer cases of the official [html5lib-tests](https://github.com/html5lib/html5lib-tests) suite used by browser vendors, the tree-construction cases in both scripting modes.
+- **html5lib-tests**: Covers the 1,796 tree-construction and 6,810 tokenizer cases of the official [html5lib-tests](https://github.com/html5lib/html5lib-tests) suite used by browser vendors, each tree-construction case in every scripting mode it applies to. The 48 cases whose expectation contradicts the living standard are asserted against a correction backed by a walk of the text. Eight cases are not run: 4 `scripted/` cases that need a script engine, and 4 tokenizer cases with lone surrogates in the input, deferred to the [roadmap](ROADMAP.md). One more tokenizer case has its tokens asserted but not its error count.
 - **Parse errors**: `parse_with_errors/2` reports the number of parse errors the WHATWG tokenizer and tree builder define, so you can tell well-formed input from recovered input.
 
 ### Fast Enough
@@ -58,8 +58,9 @@ PureHTML.parse("<p>Hello</p>") |> PureHTML.to_html()
 PureHTML.parse_with_errors("<p>Hello</p>")
 # => {[{"html", [], [{"head", [], []}, {"body", [], [{"p", [], ["Hello"]}]}]}], 1}
 
-# Parse as if scripting were disabled (affects <noscript>)
-PureHTML.parse("<noscript><p>Hi</p></noscript>", scripting: false)
+# Parse as if scripting were disabled: noscript content becomes elements
+PureHTML.parse("<body><noscript><p>Hi</p></noscript>", scripting: false)
+# => [{"html", [], [{"head", [], []}, {"body", [], [{"noscript", [], [{"p", [], ["Hi"]}]}]}]}]
 ```
 
 ## Querying

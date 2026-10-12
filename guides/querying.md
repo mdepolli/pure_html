@@ -231,9 +231,9 @@ html = PureHTML.parse("<p>Hello <strong>World</strong>!</p>")
 PureHTML.text(html)
 #=> "Hello World!"
 
-# With a separator between text segments
+# With a separator between text segments; each segment keeps its own whitespace
 PureHTML.text(html, separator: " ")
-#=> "Hello World !"
+#=> "Hello  World !"
 ```
 
 ### Text Options
@@ -342,7 +342,7 @@ html = PureHTML.parse("<div><p class='keep'>Keep</p><p>Remove</p></div>")
 html
 |> PureHTML.query(".keep")
 |> PureHTML.to_html()
-#=> "<p class=keep>Keep</p>"
+#=> "<p class=\"keep\">Keep</p>"
 ```
 
 ## Selectors Not Yet Supported
