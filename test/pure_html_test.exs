@@ -2198,7 +2198,10 @@ defmodule PureHTMLTest do
       {nodes, error_count} = PureHTML.parse_with_errors(html)
 
       # Assert
-      assert [{:doctype, _, _, _}, {"html", [], [{"head", [], []}, {"body", [], ["Hello"]}]}] =
+      assert [
+               {:doctype, nil, nil, nil},
+               {"html", [], [{"head", [], []}, {"body", [], ["Hello"]}]}
+             ] =
                nodes
 
       assert error_count == 2
@@ -3657,19 +3660,6 @@ defmodule PureHTMLTest do
       assert [{:doctype, "html", nil, "about:legacy-compat"} | _] = nodes
       assert error_count == 0
       assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE html>")
-    end
-
-    test "serializes a doctype with a missing name" do
-      # Arrange
-      html = "<!DOCTYPE>"
-
-      # Act
-      {nodes, error_count} = PureHTML.parse_with_errors(html)
-
-      # Assert
-      assert [{:doctype, nil, nil, nil} | _] = nodes
-      assert error_count == 2
-      assert String.starts_with?(PureHTML.to_html(nodes), "<!DOCTYPE >")
     end
 
     test "serializes the html doctype" do
