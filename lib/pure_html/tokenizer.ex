@@ -1,29 +1,27 @@
 defmodule PureHTML.Tokenizer do
-  @moduledoc """
-  HTML5 tokenizer that produces a stream of tokens.
-
-  The tokenizer is implemented as a state machine. Each call to `next_token/1`
-  advances the machine until it produces a token, then returns the token and
-  the updated state. The tree builder switches the state for raw text, RCDATA,
-  script data, and plaintext elements with `set_state/2`, and tells the
-  tokenizer whether the adjusted current node is foreign with
-  `set_foreign_content/2` (for CDATA sections).
-
-  ## Usage
-
-      iex> PureHTML.Tokenizer.tokenize("<p>Hello</p>") |> Enum.to_list()
-      [{:start_tag, "p", [], false}, {:character, "Hello"}, {:end_tag, "p"}]
-
-  ## Token Types
-
-  - `{:doctype, name, public_id, system_id, force_quirks?}`
-  - `{:start_tag, name, attrs, self_closing?}`
-  - `{:end_tag, name}`
-  - `{:comment, data}`
-  - `{:pi, target, data}`
-  - `{:character, data}`
-
-  """
+  @moduledoc false
+  # HTML5 tokenizer that produces a stream of tokens.
+  #
+  # The tokenizer is implemented as a state machine. Each call to `next_token/1`
+  # advances the machine until it produces a token, then returns the token and
+  # the updated state. The tree builder switches the state for raw text, RCDATA,
+  # script data, and plaintext elements with `set_state/2`, and tells the
+  # tokenizer whether the adjusted current node is foreign with
+  # `set_foreign_content/2` (for CDATA sections).
+  #
+  # ## Usage
+  #
+  #     iex> PureHTML.Tokenizer.tokenize("<p>Hello</p>") |> Enum.to_list()
+  #     [{:start_tag, "p", [], false}, {:character, "Hello"}, {:end_tag, "p"}]
+  #
+  # ## Token Types
+  #
+  # - `{:doctype, name, public_id, system_id, force_quirks?}`
+  # - `{:start_tag, name, attrs, self_closing?}`
+  # - `{:end_tag, name}`
+  # - `{:comment, data}`
+  # - `{:pi, target, data}`
+  # - `{:character, data}`
 
   alias PureHTML.Entities
 

@@ -1,26 +1,25 @@
 defmodule PureHTML.TreeBuilder.Modes.InTableBody do
-  @moduledoc """
-  HTML5 "in table body" insertion mode.
-
-  This mode handles content inside tbody, thead, or tfoot elements.
-
-  Per HTML5 spec:
-  - Character tokens: process using "in table" rules
-  - Comments: process using "in table" rules
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - tr: clear to table body context, insert tr, switch to "in row"
-    - th, td: parse error, insert tr, reprocess
-    - caption, col, colgroup, tbody, tfoot, thead: close table body, reprocess
-    - Anything else: process using "in table" rules
-  - End tags:
-    - tbody, tfoot, thead: close if in scope, switch to "in table"
-    - table: close table body, reprocess
-    - body, caption, col, colgroup, html, td, th, tr: parse error, ignore
-    - Anything else: process using "in table" rules
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intbody
-  """
+  @moduledoc false
+  # HTML5 "in table body" insertion mode.
+  #
+  # This mode handles content inside tbody, thead, or tfoot elements.
+  #
+  # Per HTML5 spec:
+  # - Character tokens: process using "in table" rules
+  # - Comments: process using "in table" rules
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - tr: clear to table body context, insert tr, switch to "in row"
+  #   - th, td: parse error, insert tr, reprocess
+  #   - caption, col, colgroup, tbody, tfoot, thead: close table body, reprocess
+  #   - Anything else: process using "in table" rules
+  # - End tags:
+  #   - tbody, tfoot, thead: close if in scope, switch to "in table"
+  #   - table: close table body, reprocess
+  #   - body, caption, col, colgroup, html, td, th, tr: parse error, ignore
+  #   - Anything else: process using "in table" rules
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intbody
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

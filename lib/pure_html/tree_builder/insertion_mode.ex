@@ -1,12 +1,11 @@
 defmodule PureHTML.TreeBuilder.InsertionMode do
-  @moduledoc """
-  Behavior for HTML5 insertion mode handlers.
-
-  Each insertion mode module implements this behavior to handle tokens
-  according to the HTML5 tree construction algorithm.
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-insertion-mode
-  """
+  @moduledoc false
+  # Behavior for HTML5 insertion mode handlers.
+  #
+  # Each insertion mode module implements this behavior to handle tokens
+  # according to the HTML5 tree construction algorithm.
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#the-insertion-mode
 
   alias PureHTML.TreeBuilder.State
 

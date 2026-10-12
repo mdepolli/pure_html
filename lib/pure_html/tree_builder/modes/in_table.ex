@@ -1,37 +1,36 @@
 defmodule PureHTML.TreeBuilder.Modes.InTable do
-  @moduledoc """
-  HTML5 "in table" insertion mode.
-
-  This mode handles content inside a <table> element.
-
-  Per HTML5 spec:
-  - Character tokens with a table, tbody, template, tfoot, thead, or tr as the
-    current node: collect them in "in table text"
-  - Comments: insert comment
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - caption: clear to table context, insert marker, insert caption, switch to in_caption
-    - colgroup: clear to table context, insert colgroup, switch to in_column_group
-    - col: clear to table context, insert colgroup, switch to in_column_group, reprocess
-    - tbody/thead/tfoot: clear to table context, insert element, switch to in_table_body
-    - td/th/tr: clear to table context, insert tbody, switch to in_table_body, reprocess
-    - table: parse error; with a table in table scope, pop through it, reset the
-      insertion mode, reprocess
-    - style/script/template: process using in_head rules
-    - input type=hidden: parse error, insert and pop
-    - form: parse error; ignored when the form element pointer is set and the
-      parser is not parsing template contents; otherwise insert the form, point
-      to it unless parsing template contents, and pop it
-    - Anything else: parse error, enable foster parenting, process using in_body rules
-  - End tags:
-    - table: with a table in table scope, pop through it and reset the insertion mode
-    - body/caption/col/colgroup/html/tbody/td/tfoot/th/thead/tr: parse error, ignore
-    - template: process using in_head rules
-    - Anything else: parse error, enable foster parenting, process using in_body rules
-  - EOF: process using in_body rules
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intable
-  """
+  @moduledoc false
+  # HTML5 "in table" insertion mode.
+  #
+  # This mode handles content inside a <table> element.
+  #
+  # Per HTML5 spec:
+  # - Character tokens with a table, tbody, template, tfoot, thead, or tr as the
+  #   current node: collect them in "in table text"
+  # - Comments: insert comment
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - caption: clear to table context, insert marker, insert caption, switch to in_caption
+  #   - colgroup: clear to table context, insert colgroup, switch to in_column_group
+  #   - col: clear to table context, insert colgroup, switch to in_column_group, reprocess
+  #   - tbody/thead/tfoot: clear to table context, insert element, switch to in_table_body
+  #   - td/th/tr: clear to table context, insert tbody, switch to in_table_body, reprocess
+  #   - table: parse error; with a table in table scope, pop through it, reset the
+  #     insertion mode, reprocess
+  #   - style/script/template: process using in_head rules
+  #   - input type=hidden: parse error, insert and pop
+  #   - form: parse error; ignored when the form element pointer is set and the
+  #     parser is not parsing template contents; otherwise insert the form, point
+  #     to it unless parsing template contents, and pop it
+  #   - Anything else: parse error, enable foster parenting, process using in_body rules
+  # - End tags:
+  #   - table: with a table in table scope, pop through it and reset the insertion mode
+  #   - body/caption/col/colgroup/html/tbody/td/tfoot/th/thead/tr: parse error, ignore
+  #   - template: process using in_head rules
+  #   - Anything else: parse error, enable foster parenting, process using in_body rules
+  # - EOF: process using in_body rules
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intable
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

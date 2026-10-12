@@ -1,12 +1,11 @@
 defmodule PureHTML.TreeBuilder.ForeignContent do
-  @moduledoc """
-  The rules for parsing tokens in foreign content (SVG and MathML), the
-  integration point tests that decide when the tree construction dispatcher
-  applies them, and the insertion of foreign elements with their tag and
-  attribute adjustments.
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
-  """
+  @moduledoc false
+  # The rules for parsing tokens in foreign content (SVG and MathML), the
+  # integration point tests that decide when the tree construction dispatcher
+  # applies them, and the insertion of foreign elements with their tag and
+  # attribute adjustments.
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
 
   import PureHTML.TreeBuilder.Helpers
 

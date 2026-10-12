@@ -1,7 +1,6 @@
 defmodule PureHTML.Query.Selector do
-  @moduledoc """
-  Represents a parsed CSS selector and provides matching functionality.
-  """
+  @moduledoc false
+  # Represents a parsed CSS selector and provides matching functionality.
 
   alias PureHTML.Query.Selector.AttributeSelector
 
@@ -94,9 +93,8 @@ defmodule PureHTML.Query.Selector do
 end
 
 defmodule PureHTML.Query.Selector.AttributeSelector do
-  @moduledoc """
-  Represents an attribute selector like `[href]` or `[href^="https"]`.
-  """
+  @moduledoc false
+  # Represents an attribute selector like `[href]` or `[href^="https"]`.
 
   defstruct name: nil, value: nil, match_type: :exists
 

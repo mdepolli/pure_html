@@ -1,9 +1,8 @@
 defmodule PureHTML.Query do
-  @moduledoc """
-  CSS selector querying for PureHTML documents.
-
-  Provides functions for finding and traversing HTML nodes using CSS selectors.
-  """
+  @moduledoc false
+  # CSS selector querying for PureHTML documents.
+  #
+  # Provides functions for finding and traversing HTML nodes using CSS selectors.
 
   alias PureHTML.Query.Selector
   alias PureHTML.Query.Selector.Parser

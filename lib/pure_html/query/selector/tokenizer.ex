@@ -1,30 +1,29 @@
 defmodule PureHTML.Query.Selector.Tokenizer do
-  @moduledoc """
-  Tokenizes CSS selector strings into a stream of tokens.
-
-  Identifiers follow CSS Syntax Level 3: an ident-start code point is a
-  letter, an underscore, or any non-ASCII code point; an ident code point is
-  also a digit or a hyphen.
-
-  ## Token Types
-
-  - `{:ident, value}` - Identifier (tag name, attribute name/value)
-  - `{:class, value}` - Class selector (.class)
-  - `{:id, value}` - ID selector (#id)
-  - `:star` - Universal selector (*)
-  - `:open_bracket` - Opening bracket for attribute selector
-  - `:close_bracket` - Closing bracket for attribute selector
-  - `:equal` - Exact match (=)
-  - `:prefix_match` - Prefix match (^=)
-  - `:suffix_match` - Suffix match ($=)
-  - `:substring_match` - Substring match (*=)
-  - `:comma` - Selector list separator
-  - `{:string, value}` - Quoted string
-  - `:child` - Child combinator (>)
-  - `:adjacent_sibling` - Adjacent sibling combinator (+)
-  - `:general_sibling` - General sibling combinator (~)
-  - `:whitespace` - Whitespace (potential descendant combinator)
-  """
+  @moduledoc false
+  # Tokenizes CSS selector strings into a stream of tokens.
+  #
+  # Identifiers follow CSS Syntax Level 3: an ident-start code point is a
+  # letter, an underscore, or any non-ASCII code point; an ident code point is
+  # also a digit or a hyphen.
+  #
+  # ## Token Types
+  #
+  # - `{:ident, value}` - Identifier (tag name, attribute name/value)
+  # - `{:class, value}` - Class selector (.class)
+  # - `{:id, value}` - ID selector (#id)
+  # - `:star` - Universal selector (*)
+  # - `:open_bracket` - Opening bracket for attribute selector
+  # - `:close_bracket` - Closing bracket for attribute selector
+  # - `:equal` - Exact match (=)
+  # - `:prefix_match` - Prefix match (^=)
+  # - `:suffix_match` - Suffix match ($=)
+  # - `:substring_match` - Substring match (*=)
+  # - `:comma` - Selector list separator
+  # - `{:string, value}` - Quoted string
+  # - `:child` - Child combinator (>)
+  # - `:adjacent_sibling` - Adjacent sibling combinator (+)
+  # - `:general_sibling` - General sibling combinator (~)
+  # - `:whitespace` - Whitespace (potential descendant combinator)
 
   @type token ::
           {:ident, String.t()}

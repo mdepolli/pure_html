@@ -1,11 +1,10 @@
 defmodule PureHTML.TreeBuilder.Quirks do
-  @moduledoc """
-  The document mode a DOCTYPE token selects.
-
-  The lists are the initial insertion mode's, fetched from the standard on
-  2026-09-15. Identifiers compare ASCII case-insensitively, and an empty
-  system identifier is not missing for the quirks-only-without-system rows.
-  """
+  @moduledoc false
+  # The document mode a DOCTYPE token selects.
+  #
+  # The lists are the initial insertion mode's, fetched from the standard on
+  # 2026-09-15. Identifiers compare ASCII case-insensitively, and an empty
+  # system identifier is not missing for the quirks-only-without-system rows.
 
   @quirks_public_ids [
     "-//W3O//DTD W3 HTML Strict 3.0//EN//",

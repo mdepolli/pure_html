@@ -1,24 +1,23 @@
 defmodule PureHTML.TreeBuilder.Modes.InCell do
-  @moduledoc """
-  HTML5 "in cell" insertion mode.
-
-  This mode handles content inside a <td> or <th> element.
-
-  Per HTML5 spec:
-  - Character tokens: process using "in body" rules
-  - Comments: process using "in body" rules
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - caption, col, colgroup, tbody, td, tfoot, th, thead, tr: close cell, reprocess
-    - Anything else: process using "in body" rules
-  - End tags:
-    - td, th: close cell, switch to "in row"
-    - body, caption, col, colgroup, html: parse error, ignore
-    - table, tbody, tfoot, thead, tr: close cell if in scope, reprocess
-    - Anything else: process using "in body" rules
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incell
-  """
+  @moduledoc false
+  # HTML5 "in cell" insertion mode.
+  #
+  # This mode handles content inside a <td> or <th> element.
+  #
+  # Per HTML5 spec:
+  # - Character tokens: process using "in body" rules
+  # - Comments: process using "in body" rules
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - caption, col, colgroup, tbody, td, tfoot, th, thead, tr: close cell, reprocess
+  #   - Anything else: process using "in body" rules
+  # - End tags:
+  #   - td, th: close cell, switch to "in row"
+  #   - body, caption, col, colgroup, html: parse error, ignore
+  #   - table, tbody, tfoot, thead, tr: close cell if in scope, reprocess
+  #   - Anything else: process using "in body" rules
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incell
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

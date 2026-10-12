@@ -1,8 +1,7 @@
 defmodule PureHTML.Entities do
-  @moduledoc """
-  HTML5 named character references.
-  Generated from https://html.spec.whatwg.org/entities.json
-  """
+  @moduledoc false
+  # HTML5 named character references.
+  # Generated from https://html.spec.whatwg.org/entities.json
 
   @doc """
   Looks up a named character reference.

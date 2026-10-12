@@ -1,33 +1,32 @@
 defmodule PureHTML.TreeBuilder.SelectedContent do
-  @moduledoc """
-  The customizable select's `selectedcontent` mirroring, replayed after
-  parsing.
-
-  This is not a rule of the tree construction algorithm. The forms chapter of
-  the standard updates selectedcontent elements from the DOM insertion steps
-  and when the parser pops an option, so the tree a browser ends up with shows
-  the clone. This module produces that tree once the parse is complete, with
-  the forms chapter's definitions as fetched on 2026-10-11:
-
-  - a selectedcontent is enabled when its nearest select ancestor is its only
-    select ancestor and no option or selectedcontent is among its ancestors
-    ("recalculate a selectedcontent element's disabledness");
-  - every enabled selectedcontent descendant of a select without `multiple`
-    is updated ("update a select's descendant selectedcontent elements");
-  - the list of options is the option descendants of the select in tree
-    order, not descending into select, hr, option, datalist, or a nested
-    optgroup;
-  - selectedness starts from the `selected` attribute, then the selectedness
-    setting algorithm: without `multiple`, all but the last selected option
-    lose selectedness, and with display size 1 and nothing selected the first
-    non-disabled option is selected;
-  - the first selected option's children are cloned into the selectedcontent,
-    or it is cleared when none is selected;
-  - a template's children are its contents, a separate fragment, so neither
-    the ancestor walk nor the list of options crosses into them.
-
-  See: https://html.spec.whatwg.org/multipage/form-elements.html#update-a-select's-descendant-selectedcontent-elements
-  """
+  @moduledoc false
+  # The customizable select's `selectedcontent` mirroring, replayed after
+  # parsing.
+  #
+  # This is not a rule of the tree construction algorithm. The forms chapter of
+  # the standard updates selectedcontent elements from the DOM insertion steps
+  # and when the parser pops an option, so the tree a browser ends up with shows
+  # the clone. This module produces that tree once the parse is complete, with
+  # the forms chapter's definitions as fetched on 2026-10-11:
+  #
+  # - a selectedcontent is enabled when its nearest select ancestor is its only
+  #   select ancestor and no option or selectedcontent is among its ancestors
+  #   ("recalculate a selectedcontent element's disabledness");
+  # - every enabled selectedcontent descendant of a select without `multiple`
+  #   is updated ("update a select's descendant selectedcontent elements");
+  # - the list of options is the option descendants of the select in tree
+  #   order, not descending into select, hr, option, datalist, or a nested
+  #   optgroup;
+  # - selectedness starts from the `selected` attribute, then the selectedness
+  #   setting algorithm: without `multiple`, all but the last selected option
+  #   lose selectedness, and with display size 1 and nothing selected the first
+  #   non-disabled option is selected;
+  # - the first selected option's children are cloned into the selectedcontent,
+  #   or it is cleared when none is selected;
+  # - a template's children are its contents, a separate fragment, so neither
+  #   the ancestor walk nor the list of options crosses into them.
+  #
+  # See: https://html.spec.whatwg.org/multipage/form-elements.html#update-a-select's-descendant-selectedcontent-elements
 
   @doc "Replays the selectedcontent updates over a finished tree or fragment child."
   def populate(tree), do: mirror(tree, [], nil)

@@ -1,11 +1,10 @@
 defmodule PureHTML.TreeBuilder.Modes.InBody do
-  @moduledoc """
-  HTML5 "in body" insertion mode.
-
-  This is the main parsing mode for document content inside <body>.
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
-  """
+  @moduledoc false
+  # HTML5 "in body" insertion mode.
+  #
+  # This is the main parsing mode for document content inside <body>.
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

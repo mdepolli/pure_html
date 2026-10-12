@@ -1,27 +1,26 @@
 defmodule PureHTML.TreeBuilder do
-  @moduledoc """
-  Builds an HTML document tree from a tokenizer, following the WHATWG tree
-  construction stage.
-
-  ## Architecture
-
-  - **Parsing context**: the stack of open elements (refs), the list of active
-    formatting elements, the insertion mode, the stack of template insertion
-    modes, and the element pointers, all in the `State` struct.
-  - **DOM structure**: elements stored in a map keyed by `make_ref()`, each with
-    its tag, attributes, children, and parent ref. The stack top is the
-    insertion parent; foster parenting is resolved at insertion time.
-  - **Dispatch**: each token goes to the foreign content rules
-    (`PureHTML.TreeBuilder.ForeignContent`) or to the module for the current
-    insertion mode. The modes switch the tokenizer state for raw text, RCDATA,
-    script data, and plaintext.
-  - **After parsing**: `PureHTML.TreeBuilder.SelectedContent` replays the
-    customizable select's selectedcontent mirroring over the finished tree.
-
-  ## Output
-
-  Final output: {tag, attrs, children} tuples (attrs are lists of {name, value} tuples)
-  """
+  @moduledoc false
+  # Builds an HTML document tree from a tokenizer, following the WHATWG tree
+  # construction stage.
+  #
+  # ## Architecture
+  #
+  # - **Parsing context**: the stack of open elements (refs), the list of active
+  #   formatting elements, the insertion mode, the stack of template insertion
+  #   modes, and the element pointers, all in the `State` struct.
+  # - **DOM structure**: elements stored in a map keyed by `make_ref()`, each with
+  #   its tag, attributes, children, and parent ref. The stack top is the
+  #   insertion parent; foster parenting is resolved at insertion time.
+  # - **Dispatch**: each token goes to the foreign content rules
+  #   (`PureHTML.TreeBuilder.ForeignContent`) or to the module for the current
+  #   insertion mode. The modes switch the tokenizer state for raw text, RCDATA,
+  #   script data, and plaintext.
+  # - **After parsing**: `PureHTML.TreeBuilder.SelectedContent` replays the
+  #   customizable select's selectedcontent mirroring over the finished tree.
+  #
+  # ## Output
+  #
+  # Final output: {tag, attrs, children} tuples (attrs are lists of {name, value} tuples)
 
   import PureHTML.TreeBuilder.Helpers
 
@@ -43,12 +42,11 @@ defmodule PureHTML.TreeBuilder do
   # --------------------------------------------------------------------------
 
   defmodule State do
-    @moduledoc """
-    Parser state for the HTML5 tree construction algorithm.
-
-    The stack of open elements is the insertion parent. Each element's
-    `parent_ref` is its tree parent (`nil` for `html`).
-    """
+    @moduledoc false
+    # Parser state for the HTML5 tree construction algorithm.
+    #
+    # The stack of open elements is the insertion parent. Each element's
+    # `parent_ref` is its tree parent (`nil` for `html`).
 
     # --------------------------------------------------------------------------
     # Type Definitions

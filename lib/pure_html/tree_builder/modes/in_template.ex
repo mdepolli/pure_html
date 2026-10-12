@@ -1,30 +1,29 @@
 defmodule PureHTML.TreeBuilder.Modes.InTemplate do
-  @moduledoc """
-  HTML5 "in template" insertion mode.
-
-  This mode handles content inside a <template> element.
-
-  Per HTML5 spec:
-  - Character tokens: process using "in body" rules
-  - Comments: process using "in body" rules
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - base, basefont, bgsound, link, meta, noframes, script, style, template, title:
-      Process using "in head" rules
-    - caption, colgroup, tbody, tfoot, thead: switch to "in table", reprocess
-    - col: switch to "in column group", reprocess
-    - tr: switch to "in table body", reprocess
-    - td, th: switch to "in row", reprocess
-    - Anything else: switch to "in body", reprocess
-  - End tags:
-    - template: process using "in head" rules
-    - Anything else: parse error, ignore
-  - EOF: with no template on the stack, stop; otherwise parse error, pop through
-    the template, clear formatting to the marker, pop the template insertion
-    mode, reset the insertion mode, reprocess
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intemplate
-  """
+  @moduledoc false
+  # HTML5 "in template" insertion mode.
+  #
+  # This mode handles content inside a <template> element.
+  #
+  # Per HTML5 spec:
+  # - Character tokens: process using "in body" rules
+  # - Comments: process using "in body" rules
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - base, basefont, bgsound, link, meta, noframes, script, style, template, title:
+  #     Process using "in head" rules
+  #   - caption, colgroup, tbody, tfoot, thead: switch to "in table", reprocess
+  #   - col: switch to "in column group", reprocess
+  #   - tr: switch to "in table body", reprocess
+  #   - td, th: switch to "in row", reprocess
+  #   - Anything else: switch to "in body", reprocess
+  # - End tags:
+  #   - template: process using "in head" rules
+  #   - Anything else: parse error, ignore
+  # - EOF: with no template on the stack, stop; otherwise parse error, pop through
+  #   the template, clear formatting to the marker, pop the template insertion
+  #   mode, reset the insertion mode, reprocess
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intemplate
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

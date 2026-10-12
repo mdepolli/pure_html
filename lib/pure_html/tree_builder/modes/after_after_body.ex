@@ -1,18 +1,17 @@
 defmodule PureHTML.TreeBuilder.Modes.AfterAfterBody do
-  @moduledoc """
-  HTML5 "after after body" insertion mode.
-
-  This mode is entered after the closing </html> tag.
-
-  Per HTML5 spec:
-  - Comment: Insert as last child of the Document object
-  - DOCTYPE: Parse error, ignore
-  - Whitespace: Process using "in body" rules
-  - <html> start tag: Process using "in body" rules
-  - Anything else: Parse error, switch to "in body", reprocess
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-body-insertion-mode
-  """
+  @moduledoc false
+  # HTML5 "after after body" insertion mode.
+  #
+  # This mode is entered after the closing </html> tag.
+  #
+  # Per HTML5 spec:
+  # - Comment: Insert as last child of the Document object
+  # - DOCTYPE: Parse error, ignore
+  # - Whitespace: Process using "in body" rules
+  # - <html> start tag: Process using "in body" rules
+  # - Anything else: Parse error, switch to "in body", reprocess
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-body-insertion-mode
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

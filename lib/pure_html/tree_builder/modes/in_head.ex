@@ -1,30 +1,29 @@
 defmodule PureHTML.TreeBuilder.Modes.InHead do
-  @moduledoc """
-  HTML5 "in head" insertion mode.
-
-  This mode handles content inside the <head> element.
-
-  Per HTML5 spec:
-  - Whitespace: Insert the character
-  - Comment: Insert a comment
-  - DOCTYPE: Parse error, ignore
-  - <html> start tag: Process using "in body" rules
-  - <base>, <basefont>, <bgsound>, <link>, <meta>: Insert void element
-  - <title>: generic RCDATA element parsing
-  - <noscript> (scripting on), <noframes>, <style>: generic raw text element parsing
-  - <noscript> (scripting off): insert, switch to "in head noscript"
-  - <script>: insert, switch the tokenizer to script data, switch to "text"
-  - <template>: insert, marker, frameset-ok "not ok", push "in template"
-  - </head>: pop the current node, switch to "after head"
-  - </body>, </html>, </br>: Act as "anything else"
-  - </template>: pop through the template, clear formatting to the marker, pop the
-    template insertion mode, reset the insertion mode
-  - <head>: Parse error, ignore
-  - Any other end tag: Parse error, ignore
-  - Anything else: pop the current node, switch to "after head", reprocess
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
-  """
+  @moduledoc false
+  # HTML5 "in head" insertion mode.
+  #
+  # This mode handles content inside the <head> element.
+  #
+  # Per HTML5 spec:
+  # - Whitespace: Insert the character
+  # - Comment: Insert a comment
+  # - DOCTYPE: Parse error, ignore
+  # - <html> start tag: Process using "in body" rules
+  # - <base>, <basefont>, <bgsound>, <link>, <meta>: Insert void element
+  # - <title>: generic RCDATA element parsing
+  # - <noscript> (scripting on), <noframes>, <style>: generic raw text element parsing
+  # - <noscript> (scripting off): insert, switch to "in head noscript"
+  # - <script>: insert, switch the tokenizer to script data, switch to "text"
+  # - <template>: insert, marker, frameset-ok "not ok", push "in template"
+  # - </head>: pop the current node, switch to "after head"
+  # - </body>, </html>, </br>: Act as "anything else"
+  # - </template>: pop through the template, clear formatting to the marker, pop the
+  #   template insertion mode, reset the insertion mode
+  # - <head>: Parse error, ignore
+  # - Any other end tag: Parse error, ignore
+  # - Anything else: pop the current node, switch to "after head", reprocess
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

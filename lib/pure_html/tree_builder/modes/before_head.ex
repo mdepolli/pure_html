@@ -1,21 +1,20 @@
 defmodule PureHTML.TreeBuilder.Modes.BeforeHead do
-  @moduledoc """
-  HTML5 "before head" insertion mode.
-
-  This mode is entered after the html element is created.
-
-  Per HTML5 spec:
-  - Whitespace: Ignore
-  - Comment: Insert as child of Document
-  - DOCTYPE: Parse error, ignore
-  - <html> start tag: Process using "in body" rules (merge attrs)
-  - <head> start tag: Insert head element, switch to "in head"
-  - </head>, </body>, </html>, </br>: Act as "anything else"
-  - Any other end tag: Parse error, ignore
-  - Anything else: Insert implied <head>, switch to "in head", reprocess
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-before-head-insertion-mode
-  """
+  @moduledoc false
+  # HTML5 "before head" insertion mode.
+  #
+  # This mode is entered after the html element is created.
+  #
+  # Per HTML5 spec:
+  # - Whitespace: Ignore
+  # - Comment: Insert as child of Document
+  # - DOCTYPE: Parse error, ignore
+  # - <html> start tag: Process using "in body" rules (merge attrs)
+  # - <head> start tag: Insert head element, switch to "in head"
+  # - </head>, </body>, </html>, </br>: Act as "anything else"
+  # - Any other end tag: Parse error, ignore
+  # - Anything else: Insert implied <head>, switch to "in head", reprocess
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#the-before-head-insertion-mode
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

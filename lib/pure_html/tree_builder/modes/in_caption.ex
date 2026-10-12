@@ -1,24 +1,23 @@
 defmodule PureHTML.TreeBuilder.Modes.InCaption do
-  @moduledoc """
-  HTML5 "in caption" insertion mode.
-
-  This mode handles content inside a <caption> element within a table.
-
-  Per HTML5 spec:
-  - Character tokens: process using "in body" rules
-  - Comments: process using "in body" rules
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - caption, col, colgroup, tbody, td, tfoot, th, thead, tr: close caption, reprocess
-    - Anything else: process using "in body" rules
-  - End tags:
-    - caption: close caption, switch to "in table"
-    - table: parse error, close caption, reprocess
-    - body, col, colgroup, html, tbody, td, tfoot, th, thead, tr: parse error, ignore
-    - Anything else: process using "in body" rules
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incaption
-  """
+  @moduledoc false
+  # HTML5 "in caption" insertion mode.
+  #
+  # This mode handles content inside a <caption> element within a table.
+  #
+  # Per HTML5 spec:
+  # - Character tokens: process using "in body" rules
+  # - Comments: process using "in body" rules
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - caption, col, colgroup, tbody, td, tfoot, th, thead, tr: close caption, reprocess
+  #   - Anything else: process using "in body" rules
+  # - End tags:
+  #   - caption: close caption, switch to "in table"
+  #   - table: parse error, close caption, reprocess
+  #   - body, col, colgroup, html, tbody, td, tfoot, th, thead, tr: parse error, ignore
+  #   - Anything else: process using "in body" rules
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incaption
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

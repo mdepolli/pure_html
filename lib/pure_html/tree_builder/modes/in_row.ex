@@ -1,26 +1,25 @@
 defmodule PureHTML.TreeBuilder.Modes.InRow do
-  @moduledoc """
-  HTML5 "in row" insertion mode.
-
-  This mode handles content inside a <tr> element.
-
-  Per HTML5 spec:
-  - Character tokens: process using "in table" rules
-  - Comments: process using "in table" rules
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - th, td: clear to table row context, insert element, switch to "in cell"
-    - caption, col, colgroup, tbody, tfoot, thead, tr: close row, reprocess
-    - Anything else: process using "in table" rules
-  - End tags:
-    - tr: close row, switch to "in table body"
-    - table: close row, reprocess
-    - tbody, tfoot, thead: close row if in scope, reprocess
-    - body, caption, col, colgroup, html, td, th: parse error, ignore
-    - Anything else: process using "in table" rules
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intr
-  """
+  @moduledoc false
+  # HTML5 "in row" insertion mode.
+  #
+  # This mode handles content inside a <tr> element.
+  #
+  # Per HTML5 spec:
+  # - Character tokens: process using "in table" rules
+  # - Comments: process using "in table" rules
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - th, td: clear to table row context, insert element, switch to "in cell"
+  #   - caption, col, colgroup, tbody, tfoot, thead, tr: close row, reprocess
+  #   - Anything else: process using "in table" rules
+  # - End tags:
+  #   - tr: close row, switch to "in table body"
+  #   - table: close row, reprocess
+  #   - tbody, tfoot, thead: close row if in scope, reprocess
+  #   - body, caption, col, colgroup, html, td, th: parse error, ignore
+  #   - Anything else: process using "in table" rules
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intr
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

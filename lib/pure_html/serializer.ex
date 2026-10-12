@@ -1,11 +1,10 @@
 defmodule PureHTML.Serializer do
-  @moduledoc """
-  Converts parsed HTML nodes back to HTML strings.
-
-  Implements the HTML fragment serialization algorithm.
-
-  `PureHTML.to_html/2` documents the `:scripting` option.
-  """
+  @moduledoc false
+  # Converts parsed HTML nodes back to HTML strings.
+  #
+  # Implements the HTML fragment serialization algorithm.
+  #
+  # `PureHTML.to_html/2` documents the `:scripting` option.
 
   @void_elements ~w(area base basefont bgsound br col embed frame hr img input
                     keygen link meta param source track wbr)

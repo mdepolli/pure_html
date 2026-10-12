@@ -1,24 +1,23 @@
 defmodule PureHTML.TreeBuilder.Modes.InFrameset do
-  @moduledoc """
-  HTML5 "in frameset" insertion mode.
-
-  This mode handles content inside a <frameset> element.
-
-  Per HTML5 spec:
-  - Whitespace characters: insert
-  - Non-whitespace: parse error, ignore
-  - Comments: insert
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - html: process using "in body" rules (merge attrs)
-    - frameset: insert element
-    - frame: insert void element
-    - noframes: process using "in head" rules
-  - End tag frameset: pop frameset, switch to "after frameset"
-  - Anything else: parse error, ignore
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inframeset
-  """
+  @moduledoc false
+  # HTML5 "in frameset" insertion mode.
+  #
+  # This mode handles content inside a <frameset> element.
+  #
+  # Per HTML5 spec:
+  # - Whitespace characters: insert
+  # - Non-whitespace: parse error, ignore
+  # - Comments: insert
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - html: process using "in body" rules (merge attrs)
+  #   - frameset: insert element
+  #   - frame: insert void element
+  #   - noframes: process using "in head" rules
+  # - End tag frameset: pop frameset, switch to "after frameset"
+  # - Anything else: parse error, ignore
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inframeset
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

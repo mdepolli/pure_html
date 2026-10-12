@@ -1,28 +1,27 @@
 defmodule PureHTML.TreeBuilder.Modes.AfterHead do
-  @moduledoc """
-  HTML5 "after head" insertion mode.
-
-  This mode is entered after the head element is closed.
-
-  Per HTML5 spec:
-  - Whitespace: Insert the character
-  - Comment: Insert a comment
-  - DOCTYPE: Parse error, ignore
-  - <html> start tag: Process using "in body" rules
-  - <body> start tag: Insert body element, switch to "in body"
-  - <frameset> start tag: Insert frameset element, switch to "in frameset"
-  - Head elements (<base>, <basefont>, <bgsound>, <link>, <meta>, <noframes>,
-    <script>, <style>, <template>, <title>): parse error; push the head element,
-    process using "in head" rules, remove the head element from the stack
-  - </template>: Process using "in head" rules
-  - </body>, </html>, </br>: Act as "anything else"
-  - <head> start tag: Parse error, ignore
-  - Any other end tag: Parse error, ignore
-  - Anything else (EOF included): insert a body element, frameset-ok "ok",
-    switch to "in body", reprocess
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode
-  """
+  @moduledoc false
+  # HTML5 "after head" insertion mode.
+  #
+  # This mode is entered after the head element is closed.
+  #
+  # Per HTML5 spec:
+  # - Whitespace: Insert the character
+  # - Comment: Insert a comment
+  # - DOCTYPE: Parse error, ignore
+  # - <html> start tag: Process using "in body" rules
+  # - <body> start tag: Insert body element, switch to "in body"
+  # - <frameset> start tag: Insert frameset element, switch to "in frameset"
+  # - Head elements (<base>, <basefont>, <bgsound>, <link>, <meta>, <noframes>,
+  #   <script>, <style>, <template>, <title>): parse error; push the head element,
+  #   process using "in head" rules, remove the head element from the stack
+  # - </template>: Process using "in head" rules
+  # - </body>, </html>, </br>: Act as "anything else"
+  # - <head> start tag: Parse error, ignore
+  # - Any other end tag: Parse error, ignore
+  # - Anything else (EOF included): insert a body element, frameset-ok "ok",
+  #   switch to "in body", reprocess
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

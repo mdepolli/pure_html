@@ -1,19 +1,18 @@
 defmodule PureHTML.TreeBuilder.Modes.AfterAfterFrameset do
-  @moduledoc """
-  HTML5 "after after frameset" insertion mode.
-
-  This mode is entered after the closing </html> tag in a frameset document.
-
-  Per HTML5 spec:
-  - Comment: Insert as last child of the Document object
-  - DOCTYPE: Parse error, ignore
-  - Whitespace: Process using "in body" rules
-  - <html> start tag: Process using "in body" rules
-  - <noframes> start tag: Process using "in head" rules
-  - Anything else: Parse error, ignore
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-frameset-insertion-mode
-  """
+  @moduledoc false
+  # HTML5 "after after frameset" insertion mode.
+  #
+  # This mode is entered after the closing </html> tag in a frameset document.
+  #
+  # Per HTML5 spec:
+  # - Comment: Insert as last child of the Document object
+  # - DOCTYPE: Parse error, ignore
+  # - Whitespace: Process using "in body" rules
+  # - <html> start tag: Process using "in body" rules
+  # - <noframes> start tag: Process using "in head" rules
+  # - Anything else: Parse error, ignore
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-frameset-insertion-mode
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

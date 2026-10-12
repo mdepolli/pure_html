@@ -1,22 +1,21 @@
 defmodule PureHTML.TreeBuilder.Modes.InTableText do
-  @moduledoc """
-  HTML5 "in table text" insertion mode.
-
-  This mode collects character tokens while in table context, then decides
-  whether to insert them normally (whitespace only) or foster parent them
-  (contains non-whitespace).
-
-  Per HTML5 spec:
-  - Character tokens: append to pending table character tokens
-  - Anything else:
-    - If pending tokens have any non-whitespace: foster parent all
-      (using "in body" rules with foster parenting enabled)
-    - Otherwise: insert as normal text
-    - Switch back to original mode
-    - Reprocess current token
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intabletext
-  """
+  @moduledoc false
+  # HTML5 "in table text" insertion mode.
+  #
+  # This mode collects character tokens while in table context, then decides
+  # whether to insert them normally (whitespace only) or foster parent them
+  # (contains non-whitespace).
+  #
+  # Per HTML5 spec:
+  # - Character tokens: append to pending table character tokens
+  # - Anything else:
+  #   - If pending tokens have any non-whitespace: foster parent all
+  #     (using "in body" rules with foster parenting enabled)
+  #   - Otherwise: insert as normal text
+  #   - Switch back to original mode
+  #   - Reprocess current token
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intabletext
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

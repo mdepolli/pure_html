@@ -67,6 +67,10 @@ defmodule PureHTML.MixProject do
         "CHANGELOG.md": [title: "Changelog"],
         LICENSE: [title: "License"]
       ],
+      # The html5lib.sync task is development tooling, not part of the package.
+      filter_modules: ~r/^Elixir\.PureHTML/,
+      # Changelog entries name modules that were public when they were written.
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
       formatters: ["html"]

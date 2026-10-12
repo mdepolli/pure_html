@@ -1,16 +1,15 @@
 defmodule PureHTML.TreeBuilder.Helpers do
-  @moduledoc """
-  Shared helpers for the tree builder's insertion modes.
-
-  The stack of open elements holds refs; the elements map holds the data
-  (`ref => %{tag, attrs, children, parent_ref}`). A child joins its parent's
-  children at push time, and popping only removes the ref: the stack top is
-  the insertion parent.
-
-  The modes import this module whole. Delegations between modes ("process the
-  token using the rules for ...") are plain calls that leave the insertion mode
-  to the rules invoked.
-  """
+  @moduledoc false
+  # Shared helpers for the tree builder's insertion modes.
+  #
+  # The stack of open elements holds refs; the elements map holds the data
+  # (`ref => %{tag, attrs, children, parent_ref}`). A child joins its parent's
+  # children at push time, and popping only removes the ref: the stack top is
+  # the insertion parent.
+  #
+  # The modes import this module whole. Delegations between modes ("process the
+  # token using the rules for ...") are plain calls that leave the insertion mode
+  # to the rules invoked.
 
   alias PureHTML.TreeBuilder.Modes.InBody
   alias PureHTML.TreeBuilder.Modes.InHead

@@ -1,17 +1,16 @@
 defmodule PureHTML.TreeBuilder.Modes.Initial do
-  @moduledoc """
-  HTML5 "initial" insertion mode.
-
-  This is the starting mode before any content is processed.
-
-  Per HTML5 spec:
-  - DOCTYPE token: Create DOCTYPE, switch to "before html"
-  - Comment token: Insert as child of Document
-  - Whitespace: Ignore
-  - Anything else: Switch to "before html" and reprocess
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
-  """
+  @moduledoc false
+  # HTML5 "initial" insertion mode.
+  #
+  # This is the starting mode before any content is processed.
+  #
+  # Per HTML5 spec:
+  # - DOCTYPE token: Create DOCTYPE, switch to "before html"
+  # - Comment token: Insert as child of Document
+  # - Whitespace: Ignore
+  # - Anything else: Switch to "before html" and reprocess
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

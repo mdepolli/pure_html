@@ -1,10 +1,9 @@
 defmodule PureHTML.TreeBuilder.AdoptionAgency do
-  @moduledoc """
-  The adoption agency algorithm, run for a formatting element end tag (and by
-  the `a` and `nobr` start tag entries), one function per step of the text.
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
-  """
+  @moduledoc false
+  # The adoption agency algorithm, run for a formatting element end tag (and by
+  # the `a` and `nobr` start tag entries), one function per step of the text.
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
 
   import PureHTML.TreeBuilder.Helpers
 

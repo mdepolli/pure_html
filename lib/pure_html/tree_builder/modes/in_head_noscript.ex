@@ -1,26 +1,25 @@
 defmodule PureHTML.TreeBuilder.Modes.InHeadNoscript do
-  @moduledoc """
-  HTML5 "in head noscript" insertion mode.
-
-  This mode handles content inside a <noscript> element within <head>.
-
-  Per HTML5 spec:
-  - Character tokens (whitespace): process using "in head" rules
-  - Comments: process using "in head" rules
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - html: process using "in body" rules
-    - basefont, bgsound, link, meta, noframes, style: process using "in head" rules
-    - head, noscript: parse error, ignore
-    - Anything else: parse error, pop noscript, switch to "in head", reprocess
-  - End tags:
-    - noscript: pop noscript, switch to "in head"
-    - br: parse error, pop noscript, switch to "in head", reprocess
-    - Anything else: parse error, ignore
-  - EOF: anything else (parse error, pop noscript, switch to "in head", reprocess)
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inheadnoscript
-  """
+  @moduledoc false
+  # HTML5 "in head noscript" insertion mode.
+  #
+  # This mode handles content inside a <noscript> element within <head>.
+  #
+  # Per HTML5 spec:
+  # - Character tokens (whitespace): process using "in head" rules
+  # - Comments: process using "in head" rules
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - html: process using "in body" rules
+  #   - basefont, bgsound, link, meta, noframes, style: process using "in head" rules
+  #   - head, noscript: parse error, ignore
+  #   - Anything else: parse error, pop noscript, switch to "in head", reprocess
+  # - End tags:
+  #   - noscript: pop noscript, switch to "in head"
+  #   - br: parse error, pop noscript, switch to "in head", reprocess
+  #   - Anything else: parse error, ignore
+  # - EOF: anything else (parse error, pop noscript, switch to "in head", reprocess)
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inheadnoscript
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 

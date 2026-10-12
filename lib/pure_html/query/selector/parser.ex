@@ -1,7 +1,6 @@
 defmodule PureHTML.Query.Selector.Parser do
-  @moduledoc """
-  Parses CSS selector tokens into Selector structs.
-  """
+  @moduledoc false
+  # Parses CSS selector tokens into Selector structs.
 
   alias PureHTML.Query.Selector
   alias PureHTML.Query.Selector.AttributeSelector

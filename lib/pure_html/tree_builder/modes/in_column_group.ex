@@ -1,29 +1,28 @@
 defmodule PureHTML.TreeBuilder.Modes.InColumnGroup do
-  @moduledoc """
-  HTML5 "in column group" insertion mode.
-
-  This mode handles content inside a <colgroup> element within a table.
-
-  Per HTML5 spec:
-  - Character tokens:
-    - Whitespace: insert
-    - Anything else: close colgroup, reprocess in "in table"
-  - Comments: insert
-  - DOCTYPE: parse error, ignore
-  - Start tags:
-    - html: process using "in body" rules
-    - col: insert void element
-    - template: process using "in head" rules
-    - Anything else: close colgroup, reprocess in "in table"
-  - End tags:
-    - colgroup: pop colgroup, switch to "in table"
-    - col: parse error, ignore
-    - template: process using "in head" rules
-    - Anything else: close colgroup, reprocess in "in table"
-  - EOF: process using "in body" rules
-
-  See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incolgroup
-  """
+  @moduledoc false
+  # HTML5 "in column group" insertion mode.
+  #
+  # This mode handles content inside a <colgroup> element within a table.
+  #
+  # Per HTML5 spec:
+  # - Character tokens:
+  #   - Whitespace: insert
+  #   - Anything else: close colgroup, reprocess in "in table"
+  # - Comments: insert
+  # - DOCTYPE: parse error, ignore
+  # - Start tags:
+  #   - html: process using "in body" rules
+  #   - col: insert void element
+  #   - template: process using "in head" rules
+  #   - Anything else: close colgroup, reprocess in "in table"
+  # - End tags:
+  #   - colgroup: pop colgroup, switch to "in table"
+  #   - col: parse error, ignore
+  #   - template: process using "in head" rules
+  #   - Anything else: close colgroup, reprocess in "in table"
+  # - EOF: process using "in body" rules
+  #
+  # See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incolgroup
 
   @behaviour PureHTML.TreeBuilder.InsertionMode
 
