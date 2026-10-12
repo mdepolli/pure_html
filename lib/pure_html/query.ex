@@ -344,7 +344,7 @@ defmodule PureHTML.Query do
       nil
 
   """
-  @spec attr(html_node(), String.t()) :: String.t() | nil
+  @spec attr(html_node(), PureHTML.attr_name()) :: String.t() | nil
   def attr(node, name) do
     case get_attrs(node) do
       nil -> nil
@@ -372,7 +372,7 @@ defmodule PureHTML.Query do
       ["/one", "/two"]
 
   """
-  @spec attribute(html_tree() | html_node(), String.t()) :: [String.t()]
+  @spec attribute(html_tree() | html_node(), PureHTML.attr_name()) :: [String.t()]
   def attribute(html, name) do
     html
     |> List.wrap()
@@ -402,7 +402,7 @@ defmodule PureHTML.Query do
       ["a.png", "b.png"]
 
   """
-  @spec attribute(html_tree() | html_node(), String.t(), String.t()) :: [String.t()]
+  @spec attribute(html_tree() | html_node(), String.t(), PureHTML.attr_name()) :: [String.t()]
   def attribute(html, selector, name) do
     html
     |> find(selector)

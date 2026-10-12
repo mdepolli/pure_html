@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An invalid `:context` raises `ArgumentError` instead of `FunctionClauseError`, `CaseClauseError`, or a silent misparse. The forms are those of the html5lib `#document-fragment` format (`"tag"`, `"svg local"`, `"math local"`), and each name must be a valid element local name in DOM
 - An HTML `:context` name is ASCII case-insensitive, as in `createElement`, so `"TEXTAREA"` parses as RCDATA
 - `to_html/2` raises `ArgumentError` naming a malformed node or attribute, instead of `FunctionClauseError` or `Protocol.UndefinedError`, or serializing a map of attributes or a doctype with non-string identifiers
+- The query functions on `PureHTML` (`query/2`, `query_one/2`, `children/2`, `text/2`, `attr/2`, `attribute/2`, `attribute/3`, and the bang variants) have typespecs in the docs
 
 ### Security
 

@@ -199,11 +199,13 @@ defmodule PureHTML do
       [{"li", [], ["A"]}, {"li", [], ["B"]}]
 
   """
+  @spec query([html_node()] | html_node(), String.t()) :: [html_node()]
   defdelegate query(html, selector), to: Query, as: :find
 
   @doc """
   Like `query/2`, but raises `ArgumentError` on an invalid selector.
   """
+  @spec query!([html_node()] | html_node(), String.t()) :: [html_node()]
   defdelegate query!(html, selector), to: Query, as: :find!
 
   @doc """
@@ -226,11 +228,13 @@ defmodule PureHTML do
       nil
 
   """
+  @spec query_one([html_node()] | html_node(), String.t()) :: html_node() | nil
   defdelegate query_one(html, selector), to: Query, as: :find_one
 
   @doc """
   Like `query_one/2`, but raises `ArgumentError` on an invalid selector.
   """
+  @spec query_one!([html_node()] | html_node(), String.t()) :: html_node() | nil
   defdelegate query_one!(html, selector), to: Query, as: :find_one!
 
   @doc """
@@ -251,6 +255,7 @@ defmodule PureHTML do
       [{"p", [], ["Hello"]}]
 
   """
+  @spec children(html_node(), keyword()) :: [html_node()] | nil
   defdelegate children(node, opts \\ []), to: Query
 
   @doc """
@@ -290,6 +295,7 @@ defmodule PureHTML do
       "One | Two"
 
   """
+  @spec text([html_node()] | html_node(), keyword()) :: String.t()
   defdelegate text(html, opts \\ []), to: Query
 
   @doc """
@@ -312,6 +318,7 @@ defmodule PureHTML do
       nil
 
   """
+  @spec attr(html_node(), attr_name()) :: String.t() | nil
   defdelegate attr(node, name), to: Query
 
   @doc """
@@ -328,6 +335,7 @@ defmodule PureHTML do
       ["/one", "/two"]
 
   """
+  @spec attribute([html_node()] | html_node(), attr_name()) :: [String.t()]
   defdelegate attribute(nodes, name), to: Query
 
   @doc """
@@ -349,6 +357,7 @@ defmodule PureHTML do
       ["a.png", "b.png"]
 
   """
+  @spec attribute([html_node()] | html_node(), String.t(), attr_name()) :: [String.t()]
   defdelegate attribute(html, selector, name), to: Query
 
   # --------------------------------------------------------------------------
