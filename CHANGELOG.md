@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Doc examples match the output: the quoted `class` in the querying guide, the two spaces `text/2` keeps with a separator, the README noscript example, and the combinators in `query/2`'s selector list
 - The `Encoding.sniff/2` docs say `:transport_encoding` takes the `charset` label, not the header, and that the result can be `"replacement"`
 - The README's html5lib claim gives the case counts, the corrected cases, and the cases not run, instead of "passes all 8,602"
+- `ROADMAP.md` is in the docs, so the README and guide links to it resolve on HexDocs
 
 ### Security
 

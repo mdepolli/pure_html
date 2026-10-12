@@ -64,6 +64,7 @@ defmodule PureHTML.MixProject do
       extras: [
         "README.md": [title: "Overview"],
         "guides/querying.md": [title: "Querying HTML"],
+        "ROADMAP.md": [title: "Roadmap"],
         "CHANGELOG.md": [title: "Changelog"],
         LICENSE: [title: "License"]
       ],

@@ -18,7 +18,7 @@ Entails: a text representation for input and tree that admits lone surrogates (c
 
 The tree-construction fixtures are pinned at html5lib-tests `9329e64`, the last commit before upstream moved them to web-platform-tests (`html/syntax/parsing/resources/`), where they are maintained in the same `.dat` format and already include `processing-instructions.dat`.
 
-Entails: a second source in `test/fixtures/html5lib/UPSTREAM` and in `mix html5lib.sync`, fetched with a sparse partial clone since the WPT repository is large; then re-walking the corrections in `test/fixtures/corrections/tree-construction/` against the new files, dropping those upstream has since made.
+Entails: a second source in `test/fixtures/html5lib/UPSTREAM` and in the `html5lib.sync` task, fetched with a sparse partial clone since the WPT repository is large; then re-walking the corrections in `test/fixtures/corrections/tree-construction/` against the new files, dropping those upstream has since made.
 
 ## Send the error-count corrections upstream
 
