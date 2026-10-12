@@ -1,4 +1,4 @@
-alias PureHTML.{Tokenizer, TreeBuilder}
+alias PureHTML.Tokenizer
 
 html = File.read!("test/fixtures/wikipedia_homepage.html")
 
@@ -16,7 +16,7 @@ case System.argv() do
   ["full"] ->
     IO.puts("Profiling full parse (tokenizer + tree builder)...")
     :fprof.trace([:start, {:procs, self()}])
-    html |> Tokenizer.new() |> TreeBuilder.build()
+    PureHTML.parse(html)
     :fprof.trace(:stop)
     :fprof.profile()
     :fprof.analyse(totals: true, sort: :own)

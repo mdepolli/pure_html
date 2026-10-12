@@ -88,21 +88,8 @@ defmodule PureHTML do
   """
   @spec parse(String.t(), keyword()) :: [html_node()]
   def parse(html, opts \\ []) when is_binary(html) do
-    scripting = Keyword.get(opts, :scripting, true)
-
-    case Keyword.get(opts, :context) do
-      nil ->
-        html
-        |> Tokenizer.new()
-        |> TreeBuilder.build(scripting)
-
-      context ->
-        {ns, tag} = parse_context(context)
-
-        html
-        |> Tokenizer.new(fragment_tokenizer_opts(ns, tag, scripting))
-        |> TreeBuilder.build_fragment(ns, tag, scripting)
-    end
+    {nodes, _error_count} = parse_with_errors(html, opts)
+    nodes
   end
 
   @doc """
@@ -125,21 +112,10 @@ defmodule PureHTML do
   """
   @spec parse_with_errors(String.t(), keyword()) :: {[html_node()], non_neg_integer()}
   def parse_with_errors(html, opts \\ []) when is_binary(html) do
+    context = Keyword.get(opts, :context)
     scripting = Keyword.get(opts, :scripting, true)
 
-    case Keyword.get(opts, :context) do
-      nil ->
-        html
-        |> Tokenizer.new()
-        |> TreeBuilder.build_with_errors(scripting)
-
-      context ->
-        {ns, tag} = parse_context(context)
-
-        html
-        |> Tokenizer.new(fragment_tokenizer_opts(ns, tag, scripting))
-        |> TreeBuilder.build_fragment_with_errors(ns, tag, scripting)
-    end
+    build(html, context, scripting)
   end
 
   @doc """
@@ -351,8 +327,22 @@ defmodule PureHTML do
   defdelegate attribute(html, selector, name), to: Query
 
   # --------------------------------------------------------------------------
-  # Fragment parsing helpers
+  # Building
   # --------------------------------------------------------------------------
+
+  defp build(html, nil = _context, scripting) do
+    html
+    |> Tokenizer.new()
+    |> TreeBuilder.build(scripting)
+  end
+
+  defp build(html, context, scripting) do
+    {ns, tag} = parse_context(context)
+
+    html
+    |> Tokenizer.new(fragment_tokenizer_opts(ns, tag, scripting))
+    |> TreeBuilder.build_fragment(ns, tag, scripting)
+  end
 
   @raw_text_elements ~w(style xmp iframe noembed noframes)
   @rcdata_elements ~w(title textarea)

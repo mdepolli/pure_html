@@ -234,28 +234,13 @@ defmodule PureHTML.TreeBuilder do
   # --------------------------------------------------------------------------
 
   @doc """
-  Builds a document from a tokenizer.
+  Builds a document from a tokenizer and returns `{nodes, error_count}`.
 
-  Returns a list of top-level nodes. If a doctype is present, it appears first
+  The nodes are the top-level nodes. If a doctype is present, it appears first
   as `{:doctype, name, public_id, system_id}`.
   """
-  @spec build(Tokenizer.t(), boolean()) :: [document_node()]
-  def build(%Tokenizer{} = tokenizer, scripting \\ true) do
-    {nodes, _error_count} = do_build(tokenizer, scripting)
-    nodes
-  end
-
-  @doc """
-  Builds a document from a tokenizer, returning both nodes and parse error count.
-
-  Same as `build/2` but returns `{nodes, error_count}`.
-  """
-  @spec build_with_errors(Tokenizer.t(), boolean()) :: {[document_node()], non_neg_integer()}
-  def build_with_errors(%Tokenizer{} = tokenizer, scripting \\ true) do
-    do_build(tokenizer, scripting)
-  end
-
-  defp do_build(tokenizer, scripting) do
+  @spec build(Tokenizer.t(), boolean()) :: {[document_node()], non_neg_integer()}
+  def build(%Tokenizer{} = tokenizer, scripting) do
     state = build_loop(tokenizer, %State{scripting: scripting})
 
     nodes =
@@ -271,31 +256,16 @@ defmodule PureHTML.TreeBuilder do
   defp doctype_nodes({name, public, system}), do: [{:doctype, name, public, system}]
 
   @doc """
-  Builds a fragment from a tokenizer using the given context element.
+  Builds a fragment from a tokenizer using the given context element and
+  returns `{children, error_count}`.
 
   Implements the WHATWG "parsing HTML fragments" algorithm. The context element
-  determines the initial insertion mode and parser behavior.
-
-  Returns a list of child nodes (no `<html>/<head>/<body>` wrappers).
+  determines the initial insertion mode and parser behavior. The children are
+  those of the html element (no `<html>/<head>/<body>` wrappers).
   """
-  @spec build_fragment(Tokenizer.t(), atom() | nil, String.t(), boolean()) :: [document_node()]
-  def build_fragment(%Tokenizer{} = tokenizer, namespace, tag, scripting \\ true) do
-    {children, _error_count} = do_build_fragment(tokenizer, namespace, tag, scripting)
-    children
-  end
-
-  @doc """
-  Builds a fragment from a tokenizer, returning both children and parse error count.
-
-  Same as `build_fragment/4` but returns `{children, error_count}`.
-  """
-  @spec build_fragment_with_errors(Tokenizer.t(), atom() | nil, String.t(), boolean()) ::
+  @spec build_fragment(Tokenizer.t(), atom() | nil, String.t(), boolean()) ::
           {[document_node()], non_neg_integer()}
-  def build_fragment_with_errors(%Tokenizer{} = tokenizer, namespace, tag, scripting \\ true) do
-    do_build_fragment(tokenizer, namespace, tag, scripting)
-  end
-
-  defp do_build_fragment(tokenizer, namespace, tag, scripting) do
+  def build_fragment(%Tokenizer{} = tokenizer, namespace, tag, scripting) do
     context = {namespace, tag}
 
     # Step 1: Create an html element and push it onto the stack

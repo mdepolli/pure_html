@@ -1,4 +1,4 @@
-alias PureHTML.{Tokenizer, TreeBuilder}
+alias PureHTML.Tokenizer
 
 html = File.read!("test/fixtures/wikipedia_homepage.html")
 file_size = byte_size(html)
@@ -24,7 +24,7 @@ Tokenizer:
 # Full parse benchmark
 {time_us, tree} =
   :timer.tc(fn ->
-    html |> Tokenizer.new() |> TreeBuilder.build()
+    PureHTML.parse(html)
   end)
 
 time_ms = time_us / 1000
