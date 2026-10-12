@@ -3485,6 +3485,278 @@ defmodule PureHTMLTest do
     test "raises ArgumentError for a non-boolean :scripting" do
       assert_raise ArgumentError, ~r/scripting/, fn -> PureHTML.to_html([], scripting: "no") end
     end
+
+    test "serializes an element with text" do
+      assert PureHTML.to_html([{"p", [], ["Hello"]}]) == "<p>Hello</p>"
+    end
+
+    test "serializes nested elements" do
+      nodes = [{"div", [], [{"p", [], ["text"]}]}]
+      assert PureHTML.to_html(nodes) == "<div><p>text</p></div>"
+    end
+
+    test "serializes an empty element with its end tag" do
+      assert PureHTML.to_html([{"div", [], []}]) == "<div></div>"
+    end
+
+    test "serializes multiple children" do
+      nodes = [{"div", [], ["a", {"span", [], ["b"]}, "c"]}]
+      assert PureHTML.to_html(nodes) == "<div>a<span>b</span>c</div>"
+    end
+
+    test "br has no closing tag" do
+      assert PureHTML.to_html([{"br", [], []}]) == "<br>"
+    end
+
+    test "img has no closing tag" do
+      assert PureHTML.to_html([{"img", [{"src", "a.png"}], []}]) == "<img src=\"a.png\">"
+    end
+
+    test "hr has no closing tag" do
+      assert PureHTML.to_html([{"hr", [], []}]) == "<hr>"
+    end
+
+    test "input has no closing tag" do
+      assert PureHTML.to_html([{"input", [{"type", "text"}], []}]) == "<input type=\"text\">"
+    end
+
+    test "meta has no closing tag" do
+      assert PureHTML.to_html([{"meta", [{"charset", "utf-8"}], []}]) ==
+               "<meta charset=\"utf-8\">"
+    end
+
+    test "frame is void and drops children" do
+      assert PureHTML.to_html([{"frame", [], [{"p", [], ["x"]}]}]) == "<frame>"
+    end
+
+    test "SVG link is not void" do
+      nodes = [{{:svg, "link"}, [], ["x"]}]
+      assert PureHTML.to_html(nodes) == "<link>x</link>"
+    end
+
+    test "always double-quotes attribute values" do
+      assert PureHTML.to_html([{"span", [{"title", "foo"}], []}]) == "<span title=\"foo\"></span>"
+    end
+
+    test "double-quotes an attribute value with a space" do
+      assert PureHTML.to_html([{"span", [{"title", "foo bar"}], []}]) ==
+               "<span title=\"foo bar\"></span>"
+    end
+
+    test "double-quotes an attribute value with a single quote" do
+      assert PureHTML.to_html([{"span", [{"title", "foo'bar"}], []}]) ==
+               "<span title=\"foo'bar\"></span>"
+    end
+
+    test "escapes double quotes in attribute values" do
+      assert PureHTML.to_html([{"span", [{"title", "foo\"bar"}], []}]) ==
+               "<span title=\"foo&quot;bar\"></span>"
+    end
+
+    test "escapes double quotes when the value also has a single quote" do
+      assert PureHTML.to_html([{"span", [{"title", "foo'bar\"baz"}], []}]) ==
+               "<span title=\"foo'bar&quot;baz\"></span>"
+    end
+
+    test "escapes ampersand in attribute values" do
+      assert PureHTML.to_html([{"span", [{"title", "a&b"}], []}]) ==
+               "<span title=\"a&amp;b\"></span>"
+    end
+
+    test "escapes ampersand among other characters" do
+      assert PureHTML.to_html([{"span", [{"title", "a & b"}], []}]) ==
+               "<span title=\"a &amp; b\"></span>"
+    end
+
+    test "escapes angle brackets in attribute values" do
+      assert PureHTML.to_html([{"span", [{"title", "foo<bar"}], []}]) ==
+               "<span title=\"foo&lt;bar\"></span>"
+    end
+
+    test "attribute mode escapes greater-than" do
+      assert PureHTML.to_html([{"span", [{"title", "a>b"}], []}]) ==
+               "<span title=\"a&gt;b\"></span>"
+    end
+
+    test "empty attribute value is quoted empty" do
+      assert PureHTML.to_html([{"button", [{"disabled", ""}], []}]) ==
+               "<button disabled=\"\"></button>"
+    end
+
+    test "double-quotes an attribute value with an equals sign" do
+      assert PureHTML.to_html([{"span", [{"title", "a=b"}], []}]) == "<span title=\"a=b\"></span>"
+    end
+
+    test "tab in an attribute is emitted inside quotes" do
+      assert PureHTML.to_html([{"span", [{"title", "foo\tbar"}], []}]) ==
+               "<span title=\"foo\tbar\"></span>"
+    end
+
+    test "LF in an attribute is emitted inside quotes" do
+      assert PureHTML.to_html([{"span", [{"title", "foo\nbar"}], []}]) ==
+               "<span title=\"foo\nbar\"></span>"
+    end
+
+    test "CR in an attribute is emitted inside quotes" do
+      assert PureHTML.to_html([{"span", [{"title", "foo\rbar"}], []}]) ==
+               "<span title=\"foo\rbar\"></span>"
+    end
+
+    test "form feed in an attribute is emitted inside quotes" do
+      assert PureHTML.to_html([{"span", [{"title", "foo\fbar"}], []}]) ==
+               "<span title=\"foo\fbar\"></span>"
+    end
+
+    test "vertical tab in an attribute is emitted inside quotes" do
+      assert PureHTML.to_html([{"span", [{"title", "foo\vbar"}], []}]) ==
+               "<span title=\"foo\vbar\"></span>"
+    end
+
+    test "NBSP in an attribute is escaped as &nbsp;" do
+      assert PureHTML.to_html([{"span", [{"title", "\u00A0"}], []}]) ==
+               "<span title=\"&nbsp;\"></span>"
+    end
+
+    test "serializes multiple attributes in order" do
+      assert PureHTML.to_html([{"p", [{"title", "t"}, {"class", "c"}], []}]) ==
+               ~s(<p title="t" class="c"></p>)
+    end
+
+    test "escapes less-than in text" do
+      assert PureHTML.to_html([{"p", [], ["a<b"]}]) == "<p>a&lt;b</p>"
+    end
+
+    test "escapes greater-than in text" do
+      assert PureHTML.to_html([{"p", [], ["a>b"]}]) == "<p>a&gt;b</p>"
+    end
+
+    test "escapes ampersand in text" do
+      assert PureHTML.to_html([{"p", [], ["a&b"]}]) == "<p>a&amp;b</p>"
+    end
+
+    test "escapes every special character in text" do
+      assert PureHTML.to_html([{"p", [], ["<script>alert('xss')</script>"]}]) ==
+               "<p>&lt;script&gt;alert('xss')&lt;/script&gt;</p>"
+    end
+
+    test "NBSP in text is escaped as &nbsp;" do
+      assert PureHTML.to_html(["\u00A0"]) == "&nbsp;"
+    end
+
+    test "script content is not escaped" do
+      assert PureHTML.to_html([{"script", [], ["a<b>c&d"]}]) == "<script>a<b>c&d</script>"
+    end
+
+    test "style content is not escaped" do
+      assert PureHTML.to_html([{"style", [], ["a<b{color:red}"]}]) ==
+               "<style>a<b{color:red}</style>"
+    end
+
+    test "noscript text is not escaped when scripting is on" do
+      nodes = [{"noscript", [], ["<p>x</p>"]}]
+      assert PureHTML.to_html(nodes) == "<noscript><p>x</p></noscript>"
+    end
+
+    test "noscript text is escaped when scripting is off" do
+      nodes = [{"noscript", [], ["<p>x</p>"]}]
+
+      assert PureHTML.to_html(nodes, scripting: false) ==
+               "<noscript>&lt;p&gt;x&lt;/p&gt;</noscript>"
+    end
+
+    test "SVG script text is escaped" do
+      nodes = [{{:svg, "script"}, [], ["a<b>c&d"]}]
+      assert PureHTML.to_html(nodes) == "<script>a&lt;b&gt;c&amp;d</script>"
+    end
+
+    test "serializes a processing instruction as target, a space, and data" do
+      assert PureHTML.to_html([{:pi, "php", "echo 1; "}]) == "<?php echo 1; ?>"
+    end
+
+    test "keeps a processing instruction's space when its data is empty" do
+      assert PureHTML.to_html([{:pi, "php", ""}]) == "<?php ?>"
+    end
+
+    test "serializes a comment" do
+      assert PureHTML.to_html([{:comment, " hello "}]) == "<!-- hello -->"
+    end
+
+    test "serializes a comment inside an element" do
+      nodes = [{"div", [], [{:comment, "x"}]}]
+      assert PureHTML.to_html(nodes) == "<div><!--x--></div>"
+    end
+
+    test "serializes the html doctype" do
+      assert PureHTML.to_html([{:doctype, "html", nil, nil}]) == "<!DOCTYPE html>"
+    end
+
+    test "doctype with public identifier serializes the name only" do
+      nodes = [{:doctype, "HTML", "-//W3C//DTD HTML 4.01//EN", nil}]
+      assert PureHTML.to_html(nodes) == "<!DOCTYPE HTML>"
+    end
+
+    test "doctype with system identifier serializes the name only" do
+      nodes = [{:doctype, "html", "", "http://example.com/dtd"}]
+      assert PureHTML.to_html(nodes) == "<!DOCTYPE html>"
+    end
+
+    test "doctype with both identifiers serializes the name only" do
+      nodes = [
+        {:doctype, "HTML", "-//W3C//DTD HTML 4.01//EN", "http://www.w3.org/TR/html4/strict.dtd"}
+      ]
+
+      assert PureHTML.to_html(nodes) == "<!DOCTYPE HTML>"
+    end
+
+    test "doctype with a missing name keeps the space before the empty name" do
+      assert PureHTML.to_html([{:doctype, nil, nil, nil}]) == "<!DOCTYPE >"
+    end
+
+    test "serializes an SVG element" do
+      nodes = [{{:svg, "circle"}, [{"r", "5"}], []}]
+      assert PureHTML.to_html(nodes) == "<circle r=\"5\"></circle>"
+    end
+
+    test "serializes a MathML element" do
+      nodes = [{{:math, "mrow"}, [], []}]
+      assert PureHTML.to_html(nodes) == "<mrow></mrow>"
+    end
+
+    test "serializes xmlns attributes with and without a prefix" do
+      nodes = [{{:svg, "svg"}, [{{:xmlns, "xmlns"}, "s"}, {{:xmlns, "xlink"}, "x"}], []}]
+      assert PureHTML.to_html(nodes) == "<svg xmlns=\"s\" xmlns:xlink=\"x\"></svg>"
+    end
+
+    test "serializes namespaced attribute tuples" do
+      nodes = [{{:svg, "a"}, [{{:xlink, "href"}, "foo"}], []}]
+      assert PureHTML.to_html(nodes) == "<a xlink:href=\"foo\"></a>"
+    end
+
+    test "a leading LF in a pre text node is emitted" do
+      assert PureHTML.to_html([{"pre", [], ["\nx"]}]) == "<pre>\nx</pre>"
+    end
+
+    test "an interior tab in pre text is emitted" do
+      assert PureHTML.to_html([{"pre", [], ["foo\tbar"]}]) == "<pre>foo\tbar</pre>"
+    end
+
+    test "serializes template contents without the content wrapper" do
+      nodes = [{"template", [], [{:content, [{"div", [], ["inside"]}]}]}]
+      assert PureHTML.to_html(nodes) == "<template><div>inside</div></template>"
+    end
+
+    test "simple HTML round-trips through parse/2" do
+      html = "<p>Hello</p>"
+      result = html |> PureHTML.parse() |> PureHTML.to_html()
+      # Parser adds html/head/body structure
+      assert result == "<html><head></head><body><p>Hello</p></body></html>"
+    end
+
+    test "a full document round-trips through parse/2" do
+      html = "<!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>"
+      result = html |> PureHTML.parse() |> PureHTML.to_html()
+      assert result == "<!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>"
+    end
   end
 
   defp assert_parsed(nodes, error_count) do

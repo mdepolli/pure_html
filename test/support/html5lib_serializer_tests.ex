@@ -5,14 +5,12 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   The fixtures test html5lib's token serializer: each token is written as it
   comes, with html5lib's attribute quoting, boolean minimization, optional tag
-  omission, meta injection, and PUBLIC/SYSTEM doctypes. `PureHTML.Serializer`
+  omission, meta injection, and PUBLIC/SYSTEM doctypes. `PureHTML.to_html/2`
   implements the HTML fragment serialization algorithm, which serializes a
   tree. `skip_reason/1` names why a case cannot be evidence for that
   algorithm; the test file reports such cases as skipped and runs the rest
-  through `build_tree/1` and `PureHTML.Serializer.serialize/2`.
+  through `build_tree/1` and `PureHTML.to_html/2`.
   """
-
-  alias PureHTML.Serializer
 
   @test_dir Path.expand("../fixtures/html5lib/serializer", __DIR__)
   @html_ns "http://www.w3.org/1999/xhtml"
@@ -99,7 +97,7 @@ defmodule PureHTML.Test.Html5libSerializerTests do
 
   defp failure_report(name, test) do
     {:ok, nodes} = build_tree(test["input"])
-    actual = Serializer.serialize(nodes)
+    actual = PureHTML.to_html(nodes)
 
     if actual in test["expected"] do
       []
@@ -183,13 +181,16 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   defp omits_end_tag?(test) do
     opened =
       for ["StartTag", @html_ns, tag, _attrs] <- test["input"],
-          not Serializer.void_element?(tag),
+          not void?(tag),
           do: tag
 
     Enum.any?(opened, fn tag ->
       Enum.all?(test["expected"], &(not String.contains?(&1, "</" <> tag <> ">")))
     end)
   end
+
+  # The fragment algorithm writes a void element as its start tag alone.
+  defp void?(tag), do: PureHTML.to_html({tag, [], []}) == "<#{tag}>"
 
   @doc """
   Builds the library's node list from an html5lib token stream, or returns
@@ -203,7 +204,7 @@ defmodule PureHTML.Test.Html5libSerializerTests do
   end
 
   defp push_token(["StartTag", @html_ns, tag, attrs], stack) do
-    if Serializer.void_element?(tag) do
+    if void?(tag) do
       append_node({tag, decode_attrs(attrs), []}, stack)
     else
       {:cont, [{tag, decode_attrs(attrs), []} | stack]}
