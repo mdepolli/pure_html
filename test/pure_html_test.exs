@@ -66,6 +66,53 @@ defmodule PureHTMLTest do
         assert_parsed(nodes, error_count)
       end
     end
+
+    test "a :context namespace other than svg or math raises ArgumentError" do
+      assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "foo bar") end
+      assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "html div") end
+    end
+
+    test "an empty :context name raises ArgumentError" do
+      assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "") end
+      assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "svg ") end
+    end
+
+    test "a :context of more than a namespace and a local name raises ArgumentError" do
+      assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: "svg a b") end
+    end
+
+    test "a foreign context keeps the case of its local name" do
+      assert PureHTML.parse("<x>", context: "svg foreignObject") == [{"x", [], []}]
+    end
+
+    test "a bare svg :context is an HTML element, as the html5lib format reads it" do
+      assert PureHTML.parse("<x>", context: "svg") == [{"x", [], []}]
+    end
+
+    # DOM's valid element local name: an ASCII alpha, then anything but ASCII
+    # whitespace, NUL, "/", or ">"; or ":", "_", or a non-ASCII code point,
+    # then ASCII alphanumerics, "-", ".", ":", "_", or non-ASCII code points.
+    test "a :context name that is not a valid element local name raises ArgumentError" do
+      # Arrange
+      contexts = [
+        "1td",
+        "-x",
+        "a/b",
+        "a>b",
+        "a\0b",
+        "a\tb",
+        ":a!",
+        "éb!",
+        "svg 1x",
+        "math a>b",
+        "a" <> <<255>>
+      ]
+
+      # Act + Assert
+      for context <- contexts do
+        assert_raise ArgumentError, ~r/context/, fn -> PureHTML.parse("x", context: context) end
+      end
+    end
   end
 
   describe "parse_with_errors/2" do
@@ -3116,6 +3163,26 @@ defmodule PureHTMLTest do
       # Assert: errors: div breaks out of foreign content; div is open at EOF.
       assert [{"div", [], [{"input", [], []}]}] = nodes
       assert error_count == 2
+    end
+
+    test "an HTML context name is ASCII lowercased, as createElement does" do
+      # Arrange
+      html = "a</textarea>b"
+
+      # Act
+      result = PureHTML.parse_with_errors(html, context: "TEXTAREA")
+
+      # Assert
+      assert result == {["a</textarea>b"], 0}
+    end
+
+    test "a custom element name is a valid HTML context" do
+      assert PureHTML.parse_with_errors("<p>x", context: "my-el") == {[{"p", [], ["x"]}], 0}
+    end
+
+    test "a name that starts with an underscore or a non-ASCII code point is a valid context" do
+      assert PureHTML.parse_with_errors("<p>x", context: "_x") == {[{"p", [], ["x"]}], 0}
+      assert PureHTML.parse_with_errors("<p>x", context: "éx") == {[{"p", [], ["x"]}], 0}
     end
   end
 

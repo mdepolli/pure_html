@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every enabled `selectedcontent` in a select mirrors the selected option, disabledness walks every ancestor, and fragment parsing mirrors too
 - A select's `size` skips only ASCII whitespace when parsed, so a leading U+00A0 leaves the display size at 1
 - An SVG or MathML `select` fragment context no longer makes in body ignore `select` and `input` start tags; only an HTML select context does
+- An invalid `:context` raises `ArgumentError` instead of `FunctionClauseError`, `CaseClauseError`, or a silent misparse. The forms are those of the html5lib `#document-fragment` format (`"tag"`, `"svg local"`, `"math local"`), and each name must be a valid element local name in DOM
+- An HTML `:context` name is ASCII case-insensitive, as in `createElement`, so `"TEXTAREA"` parses as RCDATA
 
 ## [0.5.0] - 2026-09-17
 

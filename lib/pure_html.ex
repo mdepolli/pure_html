@@ -69,7 +69,12 @@ defmodule PureHTML do
 
   ## Options
 
-  - `:context` - Context element for fragment parsing (e.g., `"div"`, `"svg title"`)
+  - `:context` - Context element for fragment parsing: `"tag"` for an HTML
+    element (ASCII case-insensitive, e.g. `"div"`), or `"svg local"` or
+    `"math local"` for a foreign one (case-sensitive, e.g. `"svg foreignObject"`).
+    A bare `"svg"` is an HTML element named svg; the SVG root is `"svg svg"`.
+    A name that is not a valid element local name in DOM, or any other form,
+    raises `ArgumentError`.
   - `:scripting` - Whether the scripting flag is enabled (default: `true`).
     When `false`, `<noscript>` content is parsed as HTML instead of raw text.
 
@@ -337,7 +342,7 @@ defmodule PureHTML do
   end
 
   defp build(html, context, scripting) do
-    {ns, tag} = parse_context(context)
+    {ns, tag} = context_element(context)
 
     html
     |> Tokenizer.new(fragment_tokenizer_opts(ns, tag, scripting))
@@ -347,12 +352,58 @@ defmodule PureHTML do
   @raw_text_elements ~w(style xmp iframe noembed noframes)
   @rcdata_elements ~w(title textarea)
 
-  defp parse_context(context) do
-    case String.split(context, " ", parts: 2) do
-      ["svg", tag] -> {:svg, tag}
-      ["math", tag] -> {:math, tag}
-      [tag] -> {nil, tag}
+  @context_forms ~s("tag", "svg local", or "math local", each name a valid element local name)
+
+  # The html5lib #document-fragment format: "svg local" and "math local" are
+  # foreign elements, anything else an HTML one. Each name must be a valid
+  # element local name, which createElement and createElementNS require; an
+  # HTML name is then ASCII lowercased, as createElement does in an HTML
+  # document, and a foreign one keeps its case.
+  defp context_element(context) when is_binary(context) do
+    context
+    |> String.split(" ")
+    |> context_element_from_names(context)
+  end
+
+  defp context_element(context), do: raise_invalid_context(context)
+
+  defp context_element_from_names(["svg", local], context),
+    do: {:svg, context_name(local, context)}
+
+  defp context_element_from_names(["math", local], context),
+    do: {:math, context_name(local, context)}
+
+  defp context_element_from_names([tag], context) do
+    name =
+      tag
+      |> context_name(context)
+      |> String.downcase(:ascii)
+
+    {nil, name}
+  end
+
+  defp context_element_from_names(_names, context), do: raise_invalid_context(context)
+
+  defp context_name(name, context) do
+    if valid_element_local_name?(name) do
+      name
+    else
+      raise_invalid_context(context)
     end
+  end
+
+  # DOM's "valid element local name", as the regular expression the standard
+  # gives for it. A binary that is not UTF-8 holds no name.
+  defp valid_element_local_name?(name) do
+    String.valid?(name) and
+      Regex.match?(
+        ~r/\A(?:[A-Za-z][^\x00\t\n\f\r \/>]*|[:_\x{80}-\x{10FFFF}][A-Za-z0-9\-.:_\x{80}-\x{10FFFF}]*)\z/u,
+        name
+      )
+  end
+
+  defp raise_invalid_context(context) do
+    raise ArgumentError, "invalid :context #{inspect(context)}: expected #{@context_forms}"
   end
 
   # Foreign elements always use :data state — the tokenizer state rules
