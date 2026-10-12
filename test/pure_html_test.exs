@@ -3664,6 +3664,13 @@ defmodule PureHTMLTest do
                "<noscript>&lt;p&gt;x&lt;/p&gt;</noscript>"
     end
 
+    for tag <- ~w(xmp iframe noembed noframes plaintext) do
+      test "#{tag} text is not escaped" do
+        tag = unquote(tag)
+        assert PureHTML.to_html([{tag, [], ["a<b>&c"]}]) == "<#{tag}>a<b>&c</#{tag}>"
+      end
+    end
+
     test "SVG script text is escaped" do
       nodes = [{{:svg, "script"}, [], ["a<b>c&d"]}]
       assert PureHTML.to_html(nodes) == "<script>a&lt;b&gt;c&amp;d</script>"
@@ -3732,6 +3739,11 @@ defmodule PureHTMLTest do
       assert PureHTML.to_html(nodes) == "<a xlink:href=\"foo\"></a>"
     end
 
+    test "serializes an xml-prefixed attribute" do
+      nodes = [{{:svg, "text"}, [{{:xml, "lang"}, "en"}], []}]
+      assert PureHTML.to_html(nodes) == "<text xml:lang=\"en\"></text>"
+    end
+
     test "a leading LF in a pre text node is emitted" do
       assert PureHTML.to_html([{"pre", [], ["\nx"]}]) == "<pre>\nx</pre>"
     end
@@ -3756,6 +3768,25 @@ defmodule PureHTMLTest do
       html = "<!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>"
       result = html |> PureHTML.parse() |> PureHTML.to_html()
       assert result == "<!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>"
+    end
+
+    test "escaped text, quoted attributes, foreign content, and template contents reparse to the same tree" do
+      # Arrange
+      nodes =
+        PureHTML.parse("""
+        <!DOCTYPE html><title>a &amp; b</title><p title='say "hi" &amp; <go>'>1 &lt; 2&nbsp;3</p>\
+        <svg viewBox="0 0 1 1"><a xlink:href="#x"><title>t</title></a></svg>\
+        <template><td>cell</td></template><script>if (a < b && c) {}</script>
+        """)
+
+      # Act
+      reparsed =
+        nodes
+        |> PureHTML.to_html()
+        |> PureHTML.parse()
+
+      # Assert
+      assert reparsed == nodes
     end
   end
 
