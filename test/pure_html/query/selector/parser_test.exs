@@ -87,6 +87,11 @@ defmodule PureHTML.Query.Selector.ParserTest do
                chains([%Selector{type: "div"}, %Selector{type: "p"}, %Selector{type: "span"}])
     end
 
+    test "whitespace around a comma is not a descendant combinator" do
+      assert Parser.parse("p ,q") == chains([%Selector{type: "p"}, %Selector{type: "q"}])
+      assert Parser.parse("p , q") == chains([%Selector{type: "p"}, %Selector{type: "q"}])
+    end
+
     test "complex compound selector" do
       assert Parser.parse("div.foo#bar[data-id]") ==
                chain(%Selector{
