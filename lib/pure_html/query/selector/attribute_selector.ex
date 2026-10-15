@@ -20,6 +20,12 @@ defmodule PureHTML.Query.Selector.AttributeSelector do
     value != nil
   end
 
+  # Selectors 4: a substring matching attribute selector whose value is the
+  # empty string "does not represent anything".
+  def match?(_value, %__MODULE__{match_type: match_type, value: ""})
+      when match_type in [:prefix, :suffix, :substring],
+      do: false
+
   def match?(value, %__MODULE__{match_type: :equal, value: expected}) do
     value == expected
   end

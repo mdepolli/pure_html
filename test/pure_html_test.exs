@@ -3255,6 +3255,29 @@ defmodule PureHTMLTest do
     end
   end
 
+  # The selector tests below call query!/2, which tells a valid selector that
+  # matches nothing from an invalid one; query/2 returns [] for both.
+
+  describe "query!/2 attribute selectors" do
+    # Selectors 4, substring matching attribute selectors: "If "val" is the
+    # empty string then the selector does not represent anything."
+    for operator <- ~w(^= $= *=) do
+      test "an empty value after #{operator} matches nothing" do
+        operator = unquote(operator)
+        html = PureHTML.parse("<a href=x>y</a>")
+
+        assert PureHTML.query!(html, ~s([href#{operator}""])) == []
+      end
+    end
+
+    # [att=val] has no such rule.
+    test "an empty value after = matches an empty attribute" do
+      html = PureHTML.parse(~s(<a href="">y</a>))
+
+      assert PureHTML.query!(html, ~s([href=""])) == [{"a", [{"href", ""}], ["y"]}]
+    end
+  end
+
   describe "query_one/2" do
     test "delegates to Query.find_one/2" do
       # Arrange
