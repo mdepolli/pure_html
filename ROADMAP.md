@@ -37,3 +37,9 @@ Entails: a position carried through the tokenizer and tree builder, an error lis
 `PureHTML.query/2` supports type, universal, class, id, and attribute selectors, selector lists, and the four combinators. Pseudo-classes are not parsed; a selector using one is invalid and matches nothing.
 
 Entails: `:first-child`, `:last-child`, `:nth-child(n)`, and `:not(selector)` in the selector tokenizer and parser, sibling-position matching in the matcher, and the same invalid-selector rule for pseudo-classes still unsupported. Pseudo-elements do not apply to a static tree.
+
+## Quirks-mode selector matching
+
+Selectors 4 matches ID and class selectors ASCII case-insensitively in a quirks-mode document, such as one with no doctype, and the HTML standard relays the rule. The tree builder computes the document mode, but `PureHTML.parse/2` returns only the nodes, so the query functions compare IDs and classes exactly.
+
+Entails: the document mode carried with the parse result or passed to the query functions, and ID and class matching that folds ASCII case in quirks mode while `[id=…]` and `[class=…]` stay case-sensitive, as the standard requires.

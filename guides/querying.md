@@ -157,6 +157,14 @@ PureHTML.query(html, "article > section > p")
 PureHTML.query(html, "article section > h2 + p")
 ```
 
+### Case Sensitivity
+
+Matching follows the HTML standard's [case-sensitivity of selectors](https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors):
+
+- A type selector and an attribute name are ASCII lowercased before they are compared to an HTML element, so `DIV` matches `<div>` and `[HREF]` matches `href`. On SVG and MathML elements they keep their case: `foreignObject` matches, `foreignobject` does not.
+- Attribute values are case-sensitive, except for the attributes the standard lists, such as `type`, on HTML elements: `[type=text]` matches `type="TEXT"`.
+- IDs and classes are always compared exactly. A browser folds their case in a quirks-mode document, such as one with no doctype; supporting that is on the [roadmap](../ROADMAP.md).
+
 ## Traversing Children
 
 Use `children/2` to get the immediate children of an element.

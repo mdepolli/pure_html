@@ -3258,6 +3258,96 @@ defmodule PureHTMLTest do
   # The selector tests below call query!/2, which tells a valid selector that
   # matches nothing from an invalid one; query/2 returns [] for both.
 
+  # HTML "Case-sensitivity of selectors": a type selector and the name part
+  # of an attribute selector are ASCII lowercased before they are compared to
+  # an HTML element and its attributes, and keep their case for other elements.
+  describe "query!/2 case sensitivity" do
+    test "an uppercase type selector matches an HTML element" do
+      html = PureHTML.parse("<div>x</div>")
+
+      assert PureHTML.query!(html, "DIV") == [{"div", [], ["x"]}]
+    end
+
+    # ASCII lowercase changes only A to Z, as the tokenizer did to the tag.
+    test "a type selector is ASCII lowercased" do
+      html = PureHTML.parse("<D\u0130V>x</D\u0130V>")
+
+      assert PureHTML.query!(html, "D\u0130V") == [{"d\u0130v", [], ["x"]}]
+    end
+
+    test "an uppercase attribute name matches an attribute of an HTML element" do
+      html = PureHTML.parse("<a href=x>y</a>")
+
+      assert PureHTML.query!(html, "[HREF]") == [{"a", [{"href", "x"}], ["y"]}]
+    end
+
+    test "a type selector keeps its case for a foreign element" do
+      html = PureHTML.parse("<svg><foreignObject></foreignObject></svg>")
+
+      assert [{{:svg, "foreignObject"}, [], []}] = PureHTML.query!(html, "foreignObject")
+      assert PureHTML.query!(html, "foreignobject") == []
+    end
+
+    test "an attribute name keeps its case for a foreign element" do
+      html = PureHTML.parse("<svg viewBox='0 0 1 1'></svg>")
+
+      assert [{{:svg, "svg"}, _, []}] = PureHTML.query!(html, "[viewBox]")
+      assert PureHTML.query!(html, "[viewbox]") == []
+    end
+
+    # "Attribute selectors on an HTML element in an HTML document must treat
+    # the values of attributes with the following names as ASCII
+    # case-insensitive", type and lang among them.
+    test "the value of a listed attribute matches ASCII case-insensitively" do
+      html = PureHTML.parse("<input type=TEXT>")
+
+      assert PureHTML.query!(html, "[type=text]") == [{"input", [{"type", "TEXT"}], []}]
+      assert PureHTML.query!(html, "[TYPE=text]") == [{"input", [{"type", "TEXT"}], []}]
+    end
+
+    test "an uppercase selector value matches a listed attribute" do
+      html = PureHTML.parse("<input type=text>")
+
+      assert PureHTML.query!(html, "[type=TEXT]") == [{"input", [{"type", "text"}], []}]
+    end
+
+    # The rule covers every attribute selector, not only =.
+    test "the value of a listed attribute matches ASCII case-insensitively after ^=" do
+      html = PureHTML.parse("<input type=TEXT>")
+
+      assert PureHTML.query!(html, "[type^=te]") == [{"input", [{"type", "TEXT"}], []}]
+    end
+
+    test "the value of a listed attribute folds only ASCII letters" do
+      html = PureHTML.parse("<p lang=GRÜN>x</p>")
+
+      assert PureHTML.query!(html, "[lang=grün]") == []
+    end
+
+    test "the value of a listed attribute stays case-sensitive on a foreign element" do
+      html = PureHTML.parse("<svg type=TEXT></svg>")
+
+      assert PureHTML.query!(html, "[type=text]") == []
+    end
+
+    test "the value of an unlisted attribute stays case-sensitive" do
+      html = PureHTML.parse("<p title=A>x</p>")
+
+      assert PureHTML.query!(html, "[title=a]") == []
+    end
+
+    # "this does not apply for attribute selectors with "id" or "class" as
+    # the name part"
+    for name <- ~w(id class) do
+      test "the value of the #{name} attribute stays case-sensitive" do
+        name = unquote(name)
+        html = PureHTML.parse("<p #{name}=A>x</p>")
+
+        assert PureHTML.query!(html, "[#{name}=a]") == []
+      end
+    end
+  end
+
   describe "query!/2 attribute selectors" do
     # Selectors 4, substring matching attribute selectors: "If "val" is the
     # empty string then the selector does not represent anything."
@@ -3275,6 +3365,23 @@ defmodule PureHTMLTest do
       html = PureHTML.parse(~s(<a href="">y</a>))
 
       assert PureHTML.query!(html, ~s([href=""])) == [{"a", [{"href", ""}], ["y"]}]
+    end
+  end
+
+  describe "query!/2 ID and class selectors" do
+    # IDs and classes keep their case in a no-quirks document. The tree does
+    # not record the mode, so they are always compared exactly; the doctype
+    # keeps these inputs no-quirks either way.
+    test "an ID selector is case-sensitive" do
+      html = PureHTML.parse("<!DOCTYPE html><p id=a>x</p>")
+
+      assert PureHTML.query!(html, "#A") == []
+    end
+
+    test "a class selector is case-sensitive" do
+      html = PureHTML.parse("<!DOCTYPE html><p class=a>x</p>")
+
+      assert PureHTML.query!(html, ".A") == []
     end
   end
 
