@@ -4,25 +4,15 @@ defmodule PureHTML.Query.Selector do
 
   alias PureHTML.Query.Selector.AttributeSelector
 
-  defstruct type: nil, ids: [], classes: [], attributes: []
+  defstruct type: nil, html_type: nil, ids: [], classes: [], attributes: []
 
   @type t :: %__MODULE__{
           type: String.t() | :universal | nil,
+          html_type: String.t() | :universal | nil,
           ids: [String.t()],
           classes: [String.t()],
           attributes: [AttributeSelector.t()]
         }
-
-  # HTML, case-sensitivity of selectors: "Attribute selectors on an HTML
-  # element in an HTML document must treat the values of attributes with the
-  # following names as ASCII case-insensitive".
-  @case_insensitive_attributes ~w(
-    accept accept-charset align alink axis bgcolor charset checked clear
-    codetype color compact declare defer dir direction disabled enctype face
-    frame hreflang http-equiv lang language link media method multiple nohref
-    noresize noshade nowrap readonly rel rev rules scope scrolling selected
-    shape target text type valign valuetype vlink
-  )
 
   @ascii_whitespace [" ", "\t", "\n", "\f", "\r"]
 
@@ -31,11 +21,11 @@ defmodule PureHTML.Query.Selector do
 
   ## Examples
 
-      iex> selector = %PureHTML.Query.Selector{type: "div"}
+      iex> selector = PureHTML.Query.Selector.put_type(%PureHTML.Query.Selector{}, "div")
       iex> PureHTML.Query.Selector.match?({"div", [], []}, selector)
       true
 
-      iex> selector = %PureHTML.Query.Selector{type: "div"}
+      iex> selector = PureHTML.Query.Selector.put_type(%PureHTML.Query.Selector{}, "div")
       iex> PureHTML.Query.Selector.match?({"p", [], []}, selector)
       false
 
@@ -43,7 +33,7 @@ defmodule PureHTML.Query.Selector do
   @spec match?(term(), t()) :: boolean()
   def match?(node, %__MODULE__{} = selector) do
     element?(node) and
-      type_matches?(node, selector.type) and
+      type_matches?(node, selector) and
       ids_match?(node, selector.ids) and
       classes_match?(node, selector.classes) and
       attributes_match?(node, selector.attributes)
@@ -60,13 +50,24 @@ defmodule PureHTML.Query.Selector do
 
   def element?(_), do: false
 
-  # HTML, case-sensitivity of selectors: a type selector is ASCII lowercased
-  # before it is compared to the name of an HTML element, and compared as
-  # written to the name of any other element.
-  defp type_matches?(_node, nil), do: true
-  defp type_matches?(_node, :universal), do: true
-  defp type_matches?({{_ns, tag}, _, _}, type), do: tag == type
-  defp type_matches?({tag, _, _}, type), do: tag == String.downcase(type, :ascii)
+  @doc """
+  Sets the type selector of a compound: `:universal`, or a name.
+
+  HTML, case-sensitivity of selectors: a type selector is ASCII lowercased
+  before it is compared to the name of an HTML element, and compared as
+  written to the name of any other element. Both forms are kept, so a
+  selector meets either kind of element without lowercasing again.
+  """
+  @spec put_type(t(), String.t() | :universal) :: t()
+  def put_type(selector, :universal), do: %{selector | type: :universal, html_type: :universal}
+
+  def put_type(selector, type),
+    do: %{selector | type: type, html_type: String.downcase(type, :ascii)}
+
+  defp type_matches?(_node, %__MODULE__{type: nil}), do: true
+  defp type_matches?(_node, %__MODULE__{type: :universal}), do: true
+  defp type_matches?({{_ns, tag}, _, _}, %__MODULE__{type: type}), do: tag == type
+  defp type_matches?({tag, _, _}, %__MODULE__{html_type: type}), do: tag == type
 
   defp ids_match?(_node, []), do: true
 
@@ -98,35 +99,20 @@ defmodule PureHTML.Query.Selector do
     Enum.all?(attr_selectors, &attribute_matches?(node, &1))
   end
 
-  # HTML, case-sensitivity of selectors: the name part of an attribute
-  # selector is ASCII lowercased before it is compared to the attributes of an
-  # HTML element, and compared as written to those of any other element.
-  defp attribute_matches?({{_ns, _tag}, _attrs, _children} = node, attribute) do
-    node
-    |> attr_value(attribute.name)
-    |> AttributeSelector.match?(attribute)
-  end
-
-  defp attribute_matches?(node, attribute) do
-    name = String.downcase(attribute.name, :ascii)
-
+  defp attribute_matches?(
+         {{_ns, _tag}, _attrs, _children} = node,
+         %AttributeSelector{name: name} = attribute
+       ) do
     node
     |> attr_value(name)
-    |> html_attribute_matches?(name, attribute)
+    |> AttributeSelector.match_foreign?(attribute)
   end
 
-  defp html_attribute_matches?(value, name, attribute)
-       when name in @case_insensitive_attributes do
-    value
-    |> ascii_downcase()
-    |> AttributeSelector.match?(%{attribute | value: ascii_downcase(attribute.value)})
+  defp attribute_matches?(node, %AttributeSelector{html_name: name} = attribute) do
+    node
+    |> attr_value(name)
+    |> AttributeSelector.match_html?(attribute)
   end
-
-  defp html_attribute_matches?(value, _name, attribute),
-    do: AttributeSelector.match?(value, attribute)
-
-  defp ascii_downcase(nil), do: nil
-  defp ascii_downcase(string), do: String.downcase(string, :ascii)
 
   # A namespaced attribute's name is a {namespace, name} tuple, so a plain
   # name never finds it.

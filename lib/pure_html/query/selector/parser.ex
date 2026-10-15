@@ -26,10 +26,10 @@ defmodule PureHTML.Query.Selector.Parser do
   ## Examples
 
       iex> PureHTML.Query.Selector.Parser.parse("div")
-      {:ok, [[{nil, %PureHTML.Query.Selector{type: "div"}}]]}
+      {:ok, [[{nil, %PureHTML.Query.Selector{type: "div", html_type: "div"}}]]}
 
       iex> PureHTML.Query.Selector.Parser.parse("div > p")
-      {:ok, [[{nil, %PureHTML.Query.Selector{type: "div"}}, {:child, %PureHTML.Query.Selector{type: "p"}}]]}
+      {:ok, [[{nil, %PureHTML.Query.Selector{type: "div", html_type: "div"}}, {:child, %PureHTML.Query.Selector{type: "p", html_type: "p"}}]]}
 
       iex> PureHTML.Query.Selector.Parser.parse(".a, .b")
       {:ok, [[{nil, %PureHTML.Query.Selector{classes: ["a"]}}], [{nil, %PureHTML.Query.Selector{classes: ["b"]}}]]}
@@ -145,12 +145,12 @@ defmodule PureHTML.Query.Selector.Parser do
   end
 
   defp parse_simple_selectors([{:ident, tag} | rest], %Selector{type: nil} = selector, 0),
-    do: parse_simple_selectors(rest, %{selector | type: tag}, 1)
+    do: parse_simple_selectors(rest, Selector.put_type(selector, tag), 1)
 
   # An escaped asterisk is an identifier, a type selector for an element named
   # *, so the universal selector is an atom rather than the string "*".
   defp parse_simple_selectors([:star | rest], %Selector{type: nil} = selector, 0),
-    do: parse_simple_selectors(rest, %{selector | type: :universal}, 1)
+    do: parse_simple_selectors(rest, Selector.put_type(selector, :universal), 1)
 
   defp parse_simple_selectors([{:class, class} | rest], selector, n),
     do: parse_simple_selectors(rest, %{selector | classes: selector.classes ++ [class]}, n + 1)
@@ -204,12 +204,12 @@ defmodule PureHTML.Query.Selector.Parser do
   # An attribute selector after its opening bracket: a name, then either the
   # closing bracket or an operator, a value, and the closing bracket.
   defp parse_attribute_selector([{:ident, name}, :close_bracket | rest]),
-    do: {:ok, %AttributeSelector{name: name, match_type: :exists}, rest}
+    do: {:ok, AttributeSelector.new(name, :exists, nil), rest}
 
   defp parse_attribute_selector([{:ident, name}, operator, {kind, value}, :close_bracket | rest])
        when is_map_key(@attribute_operators, operator) and kind in [:string, :ident] do
     match_type = Map.fetch!(@attribute_operators, operator)
-    {:ok, %AttributeSelector{name: name, value: value, match_type: match_type}, rest}
+    {:ok, AttributeSelector.new(name, match_type, value), rest}
   end
 
   # Selectors 4: an <attr-modifier>, i or s, may follow the value.

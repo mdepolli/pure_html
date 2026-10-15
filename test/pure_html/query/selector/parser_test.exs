@@ -5,18 +5,20 @@ defmodule PureHTML.Query.Selector.ParserTest do
   alias PureHTML.Query.Selector.AttributeSelector
   alias PureHTML.Query.Selector.Parser
 
-  # Helpers wrapping selectors in the parser's {:ok, chains} shape
+  # Helpers for the parser's {:ok, chains} shape, and for a compound that
+  # holds only a type selector
   defp chain(selector), do: {:ok, [[{nil, selector}]]}
   defp chains(selectors), do: {:ok, Enum.map(selectors, fn sel -> [{nil, sel}] end)}
+  defp type(name), do: Selector.put_type(%Selector{}, name)
 
   describe "parse/1" do
     test "tag selector" do
-      assert Parser.parse("div") == chain(%Selector{type: "div"})
-      assert Parser.parse("p") == chain(%Selector{type: "p"})
+      assert Parser.parse("div") == chain(type("div"))
+      assert Parser.parse("p") == chain(type("p"))
     end
 
     test "universal selector" do
-      assert Parser.parse("*") == chain(%Selector{type: :universal})
+      assert Parser.parse("*") == chain(type(:universal))
     end
 
     test "class selector" do
@@ -29,17 +31,19 @@ defmodule PureHTML.Query.Selector.ParserTest do
     end
 
     test "compound selector" do
-      assert Parser.parse("div.foo") == chain(%Selector{type: "div", classes: ["foo"]})
-      assert Parser.parse("div#bar") == chain(%Selector{type: "div", ids: ["bar"]})
+      assert Parser.parse("div.foo") ==
+               chain(Selector.put_type(%Selector{classes: ["foo"]}, "div"))
+
+      assert Parser.parse("div#bar") == chain(Selector.put_type(%Selector{ids: ["bar"]}, "div"))
 
       assert Parser.parse("div.foo#bar") ==
-               chain(%Selector{type: "div", ids: ["bar"], classes: ["foo"]})
+               chain(Selector.put_type(%Selector{ids: ["bar"], classes: ["foo"]}, "div"))
     end
 
     test "attribute selector - existence" do
       assert Parser.parse("[href]") ==
                chain(%Selector{
-                 attributes: [%AttributeSelector{name: "href", match_type: :exists}]
+                 attributes: [AttributeSelector.new("href", :exists, nil)]
                })
     end
 
@@ -47,7 +51,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
       assert Parser.parse("[type=text]") ==
                chain(%Selector{
                  attributes: [
-                   %AttributeSelector{name: "type", value: "text", match_type: :equal}
+                   AttributeSelector.new("type", :equal, "text")
                  ]
                })
     end
@@ -56,7 +60,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
       assert Parser.parse("[href^=https]") ==
                chain(%Selector{
                  attributes: [
-                   %AttributeSelector{name: "href", value: "https", match_type: :prefix}
+                   AttributeSelector.new("href", :prefix, "https")
                  ]
                })
     end
@@ -65,7 +69,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
       assert Parser.parse("[href$=\".pdf\"]") ==
                chain(%Selector{
                  attributes: [
-                   %AttributeSelector{name: "href", value: ".pdf", match_type: :suffix}
+                   AttributeSelector.new("href", :suffix, ".pdf")
                  ]
                })
     end
@@ -74,9 +78,20 @@ defmodule PureHTML.Query.Selector.ParserTest do
       assert Parser.parse("[href*=example]") ==
                chain(%Selector{
                  attributes: [
-                   %AttributeSelector{name: "href", value: "example", match_type: :substring}
+                   AttributeSelector.new("href", :substring, "example")
                  ]
                })
+    end
+
+    # The parser hands names to the builders as written; they keep the ASCII
+    # lowercase for HTML elements.
+    test "a type selector keeps its name as written" do
+      assert Parser.parse("DIV") == chain(type("DIV"))
+    end
+
+    test "an attribute selector keeps its name and value as written" do
+      assert Parser.parse("[TYPE=TEXT]") ==
+               chain(%Selector{attributes: [AttributeSelector.new("TYPE", :equal, "TEXT")]})
     end
 
     test "selector list" do
@@ -84,30 +99,34 @@ defmodule PureHTML.Query.Selector.ParserTest do
                chains([%Selector{classes: ["a"]}, %Selector{classes: ["b"]}])
 
       assert Parser.parse("div, p, span") ==
-               chains([%Selector{type: "div"}, %Selector{type: "p"}, %Selector{type: "span"}])
+               chains([type("div"), type("p"), type("span")])
     end
 
     test "whitespace around a comma is not a descendant combinator" do
-      assert Parser.parse("p ,q") == chains([%Selector{type: "p"}, %Selector{type: "q"}])
-      assert Parser.parse("p , q") == chains([%Selector{type: "p"}, %Selector{type: "q"}])
+      assert Parser.parse("p ,q") == chains([type("p"), type("q")])
+      assert Parser.parse("p , q") == chains([type("p"), type("q")])
     end
 
     test "complex compound selector" do
       assert Parser.parse("div.foo#bar[data-id]") ==
-               chain(%Selector{
-                 type: "div",
-                 ids: ["bar"],
-                 classes: ["foo"],
-                 attributes: [%AttributeSelector{name: "data-id", match_type: :exists}]
-               })
+               chain(
+                 Selector.put_type(
+                   %Selector{
+                     ids: ["bar"],
+                     classes: ["foo"],
+                     attributes: [AttributeSelector.new("data-id", :exists, nil)]
+                   },
+                   "div"
+                 )
+               )
     end
 
     test "multiple attribute selectors" do
       assert Parser.parse("[type=text][required]") ==
                chain(%Selector{
                  attributes: [
-                   %AttributeSelector{name: "type", value: "text", match_type: :equal},
-                   %AttributeSelector{name: "required", match_type: :exists}
+                   AttributeSelector.new("type", :equal, "text"),
+                   AttributeSelector.new("required", :exists, nil)
                  ]
                })
     end
@@ -119,8 +138,8 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "div"}},
-                    {:child, %Selector{type: "p"}}
+                    {nil, type("div")},
+                    {:child, type("p")}
                   ]
                 ]}
     end
@@ -130,8 +149,8 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "div"}},
-                    {:descendant, %Selector{type: "p"}}
+                    {nil, type("div")},
+                    {:descendant, type("p")}
                   ]
                 ]}
     end
@@ -141,8 +160,8 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "h1"}},
-                    {:adjacent_sibling, %Selector{type: "p"}}
+                    {nil, type("h1")},
+                    {:adjacent_sibling, type("p")}
                   ]
                 ]}
     end
@@ -152,8 +171,8 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "h1"}},
-                    {:general_sibling, %Selector{type: "p"}}
+                    {nil, type("h1")},
+                    {:general_sibling, type("p")}
                   ]
                 ]}
     end
@@ -163,9 +182,9 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "article"}},
-                    {:child, %Selector{type: "section"}},
-                    {:child, %Selector{type: "p"}}
+                    {nil, type("article")},
+                    {:child, type("section")},
+                    {:child, type("p")}
                   ]
                 ]}
     end
@@ -175,9 +194,9 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "div"}},
-                    {:descendant, %Selector{type: "p"}},
-                    {:child, %Selector{type: "span"}}
+                    {nil, type("div")},
+                    {:descendant, type("p")},
+                    {:child, type("span")}
                   ]
                 ]}
     end
@@ -203,8 +222,8 @@ defmodule PureHTML.Query.Selector.ParserTest do
                {:ok,
                 [
                   [
-                    {nil, %Selector{type: "div", classes: ["container"]}},
-                    {:child, %Selector{type: "p", classes: ["intro"]}}
+                    {nil, Selector.put_type(%Selector{classes: ["container"]}, "div")},
+                    {:child, Selector.put_type(%Selector{classes: ["intro"]}, "p")}
                   ]
                 ]}
     end

@@ -3353,6 +3353,13 @@ defmodule PureHTMLTest do
       assert PureHTML.query!(html, "[type=text]") == []
     end
 
+    # One selector meets both kinds of element in one walk.
+    test "a listed attribute folds its case on the HTML element of a mixed document only" do
+      html = PureHTML.parse("<p lang=EN>x</p><svg lang=EN></svg>")
+
+      assert PureHTML.query!(html, "[lang=en]") == [{"p", [{"lang", "EN"}], ["x"]}]
+    end
+
     test "the value of an unlisted attribute stays case-sensitive" do
       html = PureHTML.parse("<p title=A>x</p>")
 
