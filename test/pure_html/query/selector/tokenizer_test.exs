@@ -86,13 +86,13 @@ defmodule PureHTML.Query.Selector.TokenizerTest do
     end
 
     test "attribute selector - suffix match" do
-      assert Tokenizer.tokenize("[href$=.pdf]") ==
+      assert Tokenizer.tokenize("[href$=pdf]") ==
                {:ok,
                 [
                   :open_bracket,
                   {:ident, "href"},
                   :suffix_match,
-                  {:ident, ".pdf"},
+                  {:ident, "pdf"},
                   :close_bracket
                 ]}
     end
@@ -199,18 +199,19 @@ defmodule PureHTML.Query.Selector.TokenizerTest do
     end
 
     test "returns an error for an empty class selector" do
-      assert {:error, {:invalid_selector, "expected an identifier after '.'"}} =
+      assert {:error, {:invalid_selector, ~s(expected an identifier after ".")}} =
                Tokenizer.tokenize(".")
     end
 
     test "returns an error for an empty id selector" do
-      assert {:error, {:invalid_selector, "expected an identifier after '#'"}} =
+      assert {:error, {:invalid_selector, ~s(expected an identifier after "#")}} =
                Tokenizer.tokenize("#")
     end
 
-    test "returns an error for an unterminated string" do
-      assert {:error, {:invalid_selector, "unterminated string"}} =
-               Tokenizer.tokenize("[href=\"test]")
+    test "a string open at the end of the input ends there, and so does its bracket" do
+      assert Tokenizer.tokenize("[href=\"test]") ==
+               {:ok,
+                [:open_bracket, {:ident, "href"}, :equal, {:string, "test]"}, :close_bracket]}
     end
 
     test "reads non-ASCII identifiers" do

@@ -144,8 +144,10 @@ defmodule PureHTML.Query.Selector.Parser do
   defp parse_simple_selectors([{:ident, tag} | rest], %Selector{type: nil} = selector, 0),
     do: parse_simple_selectors(rest, %{selector | type: tag}, 1)
 
+  # An escaped asterisk is an identifier, a type selector for an element named
+  # *, so the universal selector is an atom rather than the string "*".
   defp parse_simple_selectors([:star | rest], %Selector{type: nil} = selector, 0),
-    do: parse_simple_selectors(rest, %{selector | type: "*"}, 1)
+    do: parse_simple_selectors(rest, %{selector | type: :universal}, 1)
 
   defp parse_simple_selectors([{:class, class} | rest], selector, n),
     do: parse_simple_selectors(rest, %{selector | classes: selector.classes ++ [class]}, n + 1)
@@ -167,7 +169,28 @@ defmodule PureHTML.Query.Selector.Parser do
   defp parse_simple_selectors([], selector, n), do: {:ok, selector, n, []}
 
   defp parse_simple_selectors([token | _], _selector, _n),
-    do: invalid("unexpected #{inspect(token)}")
+    do: invalid("unexpected " <> token_text(token))
+
+  @token_text %{
+    star: "*",
+    open_bracket: "[",
+    close_bracket: "]",
+    equal: "=",
+    prefix_match: "^=",
+    suffix_match: "$=",
+    substring_match: "*=",
+    comma: ",",
+    child: ">",
+    adjacent_sibling: "+",
+    general_sibling: "~"
+  }
+
+  # The text a token stands for, so an error shows the selector as written.
+  defp token_text({:string, string}), do: "string " <> inspect(string)
+  defp token_text({:ident, ident}), do: inspect(ident)
+  defp token_text({:class, class}), do: inspect("." <> class)
+  defp token_text({:id, id}), do: inspect("#" <> id)
+  defp token_text(token), do: inspect(Map.fetch!(@token_text, token))
 
   # An attribute selector after its opening bracket: a name, then either the
   # closing bracket or an operator, a value, and the closing bracket.
@@ -180,6 +203,18 @@ defmodule PureHTML.Query.Selector.Parser do
     match_type = Map.fetch!(@attribute_operators, operator)
     {:ok, %AttributeSelector{name: name, value: elem(value, 1), match_type: match_type}, rest}
   end
+
+  # Selectors 4: an <attr-modifier>, i or s, may follow the value.
+  defp parse_attribute_selector([
+         {:ident, _name},
+         operator,
+         value,
+         {:ident, flag},
+         :close_bracket | _
+       ])
+       when is_map_key(@attribute_operators, operator) and
+              (elem(value, 0) == :string or elem(value, 0) == :ident) and flag in ~w(i s I S),
+       do: invalid("attribute selector flags are not supported")
 
   defp parse_attribute_selector(_tokens), do: invalid("malformed attribute selector")
 

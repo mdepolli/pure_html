@@ -34,9 +34,15 @@ Entails: a position carried through the tokenizer and tree builder, an error lis
 
 ## Selector pseudo-classes
 
-`PureHTML.query/2` supports type, universal, class, id, and attribute selectors, selector lists, and the four combinators. Pseudo-classes are not parsed; a selector using one is invalid and matches nothing.
+`PureHTML.query/2` supports type, universal, class, id, and attribute selectors, selector lists, and the four combinators. Pseudo-classes are not parsed. A selector using one is invalid: `query/2` matches nothing, and `query!/2` raises an error that names pseudo-classes.
 
 Entails: `:first-child`, `:last-child`, `:nth-child(n)`, and `:not(selector)` in the selector tokenizer and parser, sibling-position matching in the matcher, and the same invalid-selector rule for pseudo-classes still unsupported. Pseudo-elements do not apply to a static tree.
+
+## More attribute selectors
+
+The `~=` and `|=` operators, the `i` and `s` case flags, and the any-namespace and no-namespace forms (`*|a`, `[*|href]`, `[|href]`) are not parsed, so a selector using one is invalid, and its error names the feature. Without `*|`, an attribute selector cannot reach a namespaced attribute such as `xlink:href` on an SVG element. A named prefix such as `svg|a` stays invalid, because a query declares no namespace prefixes.
+
+Entails: `~=` and `|=` tokens inside brackets (outside them `~` stays the subsequent-sibling combinator), a flag after the value, and the `*|` and `|` forms matched against the `{namespace, name}` attribute keys and tags of foreign elements.
 
 ## Quirks-mode selector matching
 

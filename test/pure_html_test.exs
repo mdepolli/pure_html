@@ -3253,6 +3253,29 @@ defmodule PureHTMLTest do
 
       assert_raise ArgumentError, fn -> PureHTML.query!(html, "div >") end
     end
+
+    test "raises ArgumentError on a selector that is not valid UTF-8" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, fn -> PureHTML.query!(html, <<0xFF>>) end
+    end
+
+    # The errors quote what they name the way Elixir's inspect/1 does.
+    test "the error quotes the delimiter an identifier was expected after" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~s(invalid selector: expected an identifier after "."), fn ->
+        PureHTML.query!(html, ".")
+      end
+    end
+
+    test "the error names an unexpected quoted value as a string" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~s(invalid selector: unexpected string "a"), fn ->
+        PureHTML.query!(html, ~s(p"a"))
+      end
+    end
   end
 
   # The selector tests below call query!/2, which tells a valid selector that
@@ -3366,6 +3389,71 @@ defmodule PureHTMLTest do
 
       assert PureHTML.query!(html, ~s([href=""])) == [{"a", [{"href", ""}], ["y"]}]
     end
+
+    # "Attribute values must be <ident-token>s or <string-token>s", and each
+    # of these unquoted values tokenizes as something else.
+    # The error says to quote the value.
+    for selector <- ~w([href$=.pdf] [data-n=1] [href^=http://] [href=a/b] [href=a|b]) do
+      test "raises ArgumentError on the unquoted value in #{selector}" do
+        selector = unquote(selector)
+        html = PureHTML.parse("<p>x</p>")
+
+        assert_raise ArgumentError, ~r/quote/, fn -> PureHTML.query!(html, selector) end
+      end
+    end
+
+    # CSS Syntax 3: consume a string token returns the string at EOF, and
+    # consume a simple block returns the block at EOF.
+    test "a quoted value open at the end of the selector ends there" do
+      html = PureHTML.parse("<p title=a>x</p>")
+
+      assert PureHTML.query!(html, ~s([title="a)) == [{"p", [{"title", "a"}], ["x"]}]
+    end
+
+    for selector <- ~w([title [title=a) do
+      test "the attribute selector #{selector} open at the end of the selector is closed there" do
+        selector = unquote(selector)
+        html = PureHTML.parse("<p title=a>x</p>")
+
+        assert PureHTML.query!(html, selector) == [{"p", [{"title", "a"}], ["x"]}]
+      end
+    end
+
+    # Consume a string token: a backslash before EOF does nothing.
+    test "a backslash at the end of an open quoted value is dropped" do
+      html = PureHTML.parse("<p title=a>x</p>")
+
+      assert PureHTML.query!(html, ~s([title="a\\)) == [{"p", [{"title", "a"}], ["x"]}]
+    end
+
+    test "raises ArgumentError on an attribute selector that ends after its operator" do
+      html = PureHTML.parse("<p title=a>x</p>")
+
+      assert_raise ArgumentError, fn -> PureHTML.query!(html, "[title=") end
+    end
+
+    # A <wq-name> has no colon; a namespace prefix is written with "|". The
+    # error says to escape the colon.
+    test "raises ArgumentError on a colon in an attribute name" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~r/escape it/, fn -> PureHTML.query!(html, "[x-on:click]") end
+    end
+
+    # An HTML element keeps a colon in an attribute name as part of the name.
+    test "an escaped colon matches an HTML attribute whose name holds a colon" do
+      html = PureHTML.parse("<div x-on:click=go>x</div>")
+
+      assert PureHTML.query!(html, ~S([x-on\:click])) == [{"div", [{"x-on:click", "go"}], ["x"]}]
+    end
+
+    # "Attribute selectors without a namespace component apply only to
+    # attributes that have no namespace."
+    test "an attribute name without a namespace skips a namespaced attribute" do
+      html = PureHTML.parse("<svg><a xlink:href=x></a></svg>")
+
+      assert PureHTML.query!(html, "[href]") == []
+    end
   end
 
   describe "query!/2 ID and class selectors" do
@@ -3399,6 +3487,38 @@ defmodule PureHTMLTest do
       assert PureHTML.query!(html, ".A") == []
     end
 
+    # Selectors 4 compares IDs and classes ASCII case-insensitively in a
+    # quirks-mode document, and a document with no doctype is one. The tree
+    # does not record the mode, so they are compared exactly here too; ADR 1
+    # records the departure.
+    test "ID and class selectors stay case-sensitive in a quirks-mode document" do
+      html = PureHTML.parse("<p id=a class=a>x</p>")
+
+      assert PureHTML.query!(html, "#A") == []
+      assert PureHTML.query!(html, ".A") == []
+    end
+
+    # "In <id-selector>, the <hash-token>'s value must be an identifier", and
+    # a <class-selector> is '.' <ident-token>, as a type selector is an
+    # <ident-token>. An identifier never starts with a digit, nor with a
+    # hyphen and a digit. The error says to escape the digit.
+    for selector <- ~w(#1foo .1foo #-1foo .-1foo 1foo) do
+      test "the error for #{selector} says to escape the digit" do
+        selector = unquote(selector)
+        html = PureHTML.parse("<p>x</p>")
+
+        assert_raise ArgumentError, ~r/escape the digit/, fn ->
+          PureHTML.query!(html, selector)
+        end
+      end
+    end
+
+    test "a class selector may start with one or two hyphens" do
+      html = PureHTML.parse(~s(<p class="--a -a">x</p>))
+
+      assert PureHTML.query!(html, ".--a.-a") == [{"p", [{"class", "--a -a"}], ["x"]}]
+    end
+
     # A class selector is [class~=identifier], and the class attribute is a
     # set of space-separated tokens, split on ASCII whitespace.
     for {name, char} <- [{"U+0085", "\u0085"}, {"U+3000", "\u3000"}] do
@@ -3416,6 +3536,296 @@ defmodule PureHTMLTest do
         html = PureHTML.parse("<p class=\"a#{char}b\">x</p>")
 
         assert PureHTML.query!(html, ".b") == [{"p", [{"class", "a#{char}b"}], ["x"]}]
+      end
+    end
+  end
+
+  describe "query!/2 escapes" do
+    # CSS Syntax 3, consume an escaped code point: one to six hex digits are a
+    # code point, and one whitespace after them is consumed.
+    test "a hex escape in a string is the code point it names" do
+      html = PureHTML.parse("<p title=A>x</p><p title=41>y</p>")
+
+      assert PureHTML.query!(html, ~S([title="\41"])) == [{"p", [{"title", "A"}], ["x"]}]
+    end
+
+    test "a hex escape consumes one whitespace after its digits" do
+      html = PureHTML.parse("<p title=AB>x</p>")
+
+      assert PureHTML.query!(html, ~S([title="\41 B"])) == [{"p", [{"title", "AB"}], ["x"]}]
+    end
+
+    test "a hex escape consumes only one whitespace" do
+      html = PureHTML.parse(~s(<p title="A B">x</p>))
+
+      assert PureHTML.query!(html, ~S([title="\41  B"])) == [{"p", [{"title", "A B"}], ["x"]}]
+    end
+
+    test "a hex escape takes at most six digits" do
+      html = PureHTML.parse("<p title=A42>x</p>")
+
+      assert PureHTML.query!(html, ~S([title="\00004142"])) == [{"p", [{"title", "A42"}], ["x"]}]
+    end
+
+    # "If this number is zero, or is for a surrogate, or is greater than the
+    # maximum allowed code point, return U+FFFD REPLACEMENT CHARACTER."
+    for escape <- [~S(\0), ~S(\D800), ~S(\110000)] do
+      test "the escape #{escape} is U+FFFD" do
+        escape = unquote(escape)
+        html = PureHTML.parse("<p title=\uFFFD>x</p>")
+
+        assert PureHTML.query!(html, ~s([title="#{escape}"])) ==
+                 [{"p", [{"title", "\uFFFD"}], ["x"]}]
+      end
+    end
+
+    # Any other escaped code point is itself, so \n is the letter n.
+    test "an escaped letter that is not a hex digit is the letter" do
+      html = PureHTML.parse("<p title=n>x</p>")
+
+      assert PureHTML.query!(html, ~S([title="\n"])) == [{"p", [{"title", "n"}], ["x"]}]
+    end
+
+    # Consume a string token: a backslash before a newline consumes the newline.
+    test "a backslash before a newline in a string continues the line" do
+      html = PureHTML.parse("<p title=ab>x</p>")
+
+      assert PureHTML.query!(html, "[title=\"a\\\nb\"]") == [{"p", [{"title", "ab"}], ["x"]}]
+      assert PureHTML.query!(html, "[title=\"a\\\r\nb\"]") == [{"p", [{"title", "ab"}], ["x"]}]
+    end
+
+    # Consume a string token: an unescaped newline is a <bad-string-token>.
+    # Preprocessing has turned CR and FF into newlines.
+    for {name, char} <- [{"line feed", "\n"}, {"carriage return", "\r"}, {"form feed", "\f"}] do
+      test "raises ArgumentError on an unescaped #{name} in a string" do
+        char = unquote(char)
+        html = PureHTML.parse("<p>x</p>")
+
+        assert_raise ArgumentError, fn -> PureHTML.query!(html, "[title=\"a#{char}b\"]") end
+      end
+    end
+
+    test "an escape in a class selector is part of the identifier" do
+      html = PureHTML.parse("<p class=md:flex>x</p>")
+
+      assert PureHTML.query!(html, ~S(.md\:flex)) == [{"p", [{"class", "md:flex"}], ["x"]}]
+    end
+
+    # An escaped asterisk is an identifier, so this is a type selector for an
+    # element named *, not the universal selector.
+    test "an escaped asterisk is a type selector" do
+      html = PureHTML.parse("<div><p>x</p></div>")
+
+      assert PureHTML.query!(html, ~S(\*)) == []
+    end
+
+    # Consume an escaped code point: "EOF: Return U+FFFD".
+    test "a backslash at the end of an identifier is U+FFFD" do
+      html = PureHTML.parse("<p class=a\u{FFFD}>x</p>")
+
+      assert PureHTML.query!(html, ".a\\") == [{"p", [{"class", "a\u{FFFD}"}], ["x"]}]
+    end
+  end
+
+  describe "query!/2 identifiers" do
+    # CSS Syntax 3 lists ranges of non-ASCII ident code points, which leave
+    # out each of these. Blink, WebKit, and rust-cssparser take any code point
+    # from U+0080 up; ADR 1 records why PureHTML follows them.
+    for {name, char} <- [
+          {"U+0080", "\u0080"},
+          {"U+00A0", "\u00A0"},
+          {"U+200B", "\u200B"},
+          {"U+FFFF", "\uFFFF"},
+          {"U+10FFFF", "\u{10FFFF}"}
+        ] do
+      test "#{name} is part of an identifier" do
+        char = unquote(char)
+        html = PureHTML.parse("<p class=\"a#{char}b\">x</p>")
+
+        assert PureHTML.query!(html, ".a#{char}b") == [{"p", [{"class", "a#{char}b"}], ["x"]}]
+      end
+    end
+
+    test "a non-ASCII code point starts an identifier" do
+      html = PureHTML.parse("<p id=\u00A0>x</p>")
+
+      assert PureHTML.query!(html, "#\u00A0") == [{"p", [{"id", "\u00A0"}], ["x"]}]
+    end
+
+    # Preprocessing replaces U+0000 with U+FFFD, an ident code point.
+    test "a NUL in an identifier is U+FFFD" do
+      html = PureHTML.parse("<p id=\uFFFD>x</p>")
+
+      assert PureHTML.query!(html, "#\0") == [{"p", [{"id", "\uFFFD"}], ["x"]}]
+    end
+
+    # Regional indicators pair into graphemes by position, so reversing the
+    # graphemes of U, S, F reorders its code points to S, F, U.
+    test "an identifier of regional indicator symbols keeps its order" do
+      # Arrange
+      class = "\u{1F1FA}\u{1F1F8}\u{1F1EB}"
+      html = PureHTML.parse("<p class=#{class}>x</p>")
+
+      # Act
+      result = PureHTML.query!(html, "." <> class)
+
+      # Assert
+      assert result == [{"p", [{"class", class}], ["x"]}]
+    end
+
+    # Consume a token: a hyphen followed by "->" is a <CDC-token>, which no
+    # selector holds, before it can start an identifier.
+    test "raises ArgumentError on -->" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, fn -> PureHTML.query!(html, "--> p") end
+    end
+
+    # A "." is a <delim-token>, so the next token starts at "-->", a
+    # <CDC-token>.
+    test "raises ArgumentError on --> after a period" do
+      html = PureHTML.parse("<p>x</p>")
+
+      assert_raise ArgumentError, ~r/-->/, fn -> PureHTML.query!(html, ".-->b") end
+    end
+
+    # A "#" takes every ident code point after it, so this ID is "--".
+    test "an ID selector may be two hyphens before >" do
+      html = PureHTML.parse("<div id=--><b>x</b></div>")
+
+      assert PureHTML.query!(html, "#-->b") == [{"b", [], ["x"]}]
+    end
+
+    # Inside an identifier the hyphens are ident code points, so x-- ends
+    # before the >.
+    test "an identifier may end in two hyphens before >" do
+      html = PureHTML.parse("<x--><p>y</p></x-->")
+
+      assert PureHTML.query!(html, "x-->p") == [{"p", [], ["y"]}]
+    end
+  end
+
+  # CSS Syntax 3, consume comments: each token starts by consuming any
+  # comments, and a comment is not whitespace.
+  describe "query!/2 comments" do
+    test "a comment between whitespace is skipped" do
+      html = PureHTML.parse("<div><p>x</p></div>")
+
+      assert PureHTML.query!(html, "div /* c */ p") == [{"p", [], ["x"]}]
+    end
+
+    test "a comment between two compound selectors is not a combinator" do
+      html = PureHTML.parse("<div><p>x</p></div>")
+
+      assert_raise ArgumentError, ~r/unexpected "p"/, fn -> PureHTML.query!(html, "div/**/p") end
+    end
+
+    test "a comment open at the end of the selector runs to the end" do
+      html = PureHTML.parse("<div>x</div>")
+
+      assert PureHTML.query!(html, "div /* c") == [{"div", [], ["x"]}]
+    end
+
+    test "a comment inside an attribute selector is skipped" do
+      html = PureHTML.parse("<a href=x>y</a>")
+
+      assert PureHTML.query!(html, "[href/* c */=x]") == [{"a", [{"href", "x"}], ["y"]}]
+    end
+  end
+
+  # Selectors 4 defines the syntax of each, and "UAs must treat as invalid
+  # any pseudo-classes, pseudo-elements, combinators, or other syntactic
+  # constructs for which they have no usable level of support". Each error
+  # names the feature, so it reads apart from a malformed selector. :before,
+  # :after, :first-line, and :first-letter are pseudo-elements, never
+  # pseudo-classes, in any case; :before( is a functional pseudo-class.
+  describe "query!/2 unsupported selectors" do
+    for {selector, feature} <- [
+          {"p:first-child", "pseudo-classes are not supported"},
+          {"p:before(x)", "pseudo-classes are not supported"},
+          {"p::before", "pseudo-elements are not supported"},
+          {"p:before", "pseudo-elements are not supported"},
+          {"p:BEFORE", "pseudo-elements are not supported"},
+          {~S(p:\62 efore), "pseudo-elements are not supported"},
+          {"p:after", "pseudo-elements are not supported"},
+          {"p:first-line", "pseudo-elements are not supported"},
+          {"p:first-letter", "pseudo-elements are not supported"},
+          {"p||td", "the column combinator is not supported"},
+          {"[class~=a]", "the ~= operator is not supported"},
+          {"[lang|=en]", "the |= operator is not supported"},
+          {"[type=text i]", "attribute selector flags are not supported"},
+          {"[type=text S]", "attribute selector flags are not supported"},
+          {~s([type="text"i]), "attribute selector flags are not supported"},
+          {"*|a", "the *| and | namespace forms are not supported"},
+          {"*|*", "the *| and | namespace forms are not supported"},
+          {"|a", "the *| and | namespace forms are not supported"},
+          {"[*|href]", "the *| and | namespace forms are not supported"},
+          {"[|href]", "the *| and | namespace forms are not supported"},
+          {"[ |href]", "the *| and | namespace forms are not supported"},
+          {"[lang |= en]", "the |= operator is not supported"}
+        ] do
+      test "the error for #{selector} names the feature" do
+        selector = unquote(selector)
+        feature = unquote(feature)
+        html = PureHTML.parse("<p>x</p>")
+
+        error = assert_raise ArgumentError, fn -> PureHTML.query!(html, selector) end
+
+        assert error.message =~ feature
+      end
+    end
+
+    # Each of these is malformed, whatever PureHTML supports: a flag needs a
+    # value before it, and a pseudo-class an identifier or a function right
+    # after the colon. A namespace prefix starts a compound selector or an
+    # attribute name and needs a name after its "|", and "white space is
+    # forbidden" between the components of a <wq-name>.
+    for selector <- [
+          "[a==i]",
+          "[a=]i]",
+          "p:",
+          "p:1",
+          "p: hover",
+          "::",
+          ".x|a",
+          "#x|a",
+          "[a]|b",
+          "div|",
+          "*|",
+          "[*|=x]",
+          "[|=x]",
+          "[a |b]",
+          "[a| b]"
+        ] do
+      test "the error for #{selector} names no unsupported feature" do
+        selector = unquote(selector)
+        html = PureHTML.parse("<p>x</p>")
+
+        error = assert_raise ArgumentError, fn -> PureHTML.query!(html, selector) end
+
+        refute error.message =~ ~r/not supported|undeclared/
+      end
+    end
+
+    # Outside an attribute selector, ~ is the subsequent-sibling combinator.
+    test "~ without whitespace is a combinator" do
+      html = PureHTML.parse("<h1></h1><p>x</p>")
+
+      assert PureHTML.query!(html, "h1~p") == [{"p", [], ["x"]}]
+    end
+  end
+
+  # "A simple selector containing an undeclared namespace prefix is
+  # invalid", and a query declares no prefixes.
+  describe "query!/2 namespace prefixes" do
+    for selector <- ~w(svg|a [xlink|href]) do
+      test "raises ArgumentError on the undeclared prefix in #{selector}" do
+        selector = unquote(selector)
+        html = PureHTML.parse("<p>x</p>")
+
+        assert_raise ArgumentError, ~r/undeclared namespace prefix/, fn ->
+          PureHTML.query!(html, selector)
+        end
       end
     end
   end

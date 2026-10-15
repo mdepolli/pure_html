@@ -1,6 +1,6 @@
 # Querying HTML
 
-PureHTML provides a CSS selector-based querying API for finding and traversing HTML nodes. The API is designed to be familiar to users of [Floki](https://hex.pm/packages/floki).
+PureHTML provides a CSS selector-based querying API for finding and traversing HTML nodes. Its functions are shaped like [Floki](https://hex.pm/packages/floki)'s, and its selectors follow the CSS Syntax and Selectors specifications.
 
 ## Basic Usage
 
@@ -81,7 +81,7 @@ PureHTML.query(html, "[type='text']")    # Same, with quotes
 PureHTML.query(html, "[href^=https]")    # href starts with "https"
 
 # Suffix match ($=)
-PureHTML.query(html, "[href$=.pdf]")     # href ends with ".pdf"
+PureHTML.query(html, ~s([href$=".pdf"])) # href ends with ".pdf"
 
 # Substring match (*=)
 PureHTML.query(html, "[href*=example]")  # href contains "example"
@@ -156,6 +156,21 @@ PureHTML.query(html, "article > section > p")
 # Mix combinators as needed
 PureHTML.query(html, "article section > h2 + p")
 ```
+
+### Selector Syntax
+
+An unquoted attribute value must be a CSS identifier: it cannot start with a digit, or with a hyphen and a digit, and it cannot hold punctuation such as `.`, `/`, or `:`. Quote any other value. `[href$=.pdf]` is an invalid selector, and the error says to quote it. An empty value after `^=`, `$=`, or `*=` matches nothing, while `[href=""]` matches an empty attribute.
+
+Any non-ASCII character can appear unescaped in a class, an ID, or another identifier, as in browsers. A class or ID that starts with a digit, or holds punctuation, needs an escape, and so does a colon in an attribute name. A backslash and one to six hex digits name a code point, and one whitespace character after them ends the escape. A backslash before any other character makes it literal, except before a newline, where it ends an identifier, and inside a quoted value joins the two lines.
+
+```elixir
+PureHTML.query(html, ~S(.md\:flex))      # class="md:flex"
+PureHTML.query(html, ~S([x-on\:click]))  # the x-on:click attribute
+PureHTML.query(html, ~S(#\31 0))         # id="10"
+PureHTML.query(html, ~s([id="10"]))      # the same element
+```
+
+Comments (`/* ... */`) are allowed and are not whitespace, so `div /* c */ p` is a descendant selector and `div/**/p` is invalid. A quoted value or an attribute selector left open at the end of the selector is closed there, as CSS does: `[title="a` means `[title="a"]`.
 
 ### Case Sensitivity
 
@@ -378,9 +393,19 @@ html
 #=> "<p class=\"keep\">Keep</p>"
 ```
 
-## Selectors Not Yet Supported
+## Unsupported Selectors
 
-Pseudo-classes such as `:first-child`, `:last-child`, `:nth-child(n)`, and `:not(selector)` are on the [roadmap](../ROADMAP.md). A selector using one is invalid today and matches nothing. Pseudo-elements (`::before`, `::after`) do not apply to a static tree.
+These are on the [roadmap](../ROADMAP.md). A selector using one is invalid today: `query/2` matches nothing, and `query!/2` raises with an error that names the feature.
+
+- Pseudo-classes such as `:first-child`, `:last-child`, `:nth-child(n)`, and `:not(selector)`.
+- The `~=` and `|=` attribute operators, and the `i` and `s` case flags.
+- The any-namespace and no-namespace forms (`*|a`, `[*|href]`, `[|href]`). Without them, a namespaced attribute on an SVG or MathML element, such as `xlink:href`, cannot be selected.
+
+These are invalid too, and are not planned:
+
+- The column combinator (`||`). Its error names it.
+- Pseudo-elements (`::before`, and the older `:before`), which do not apply to a static tree. Their error names them.
+- A named namespace prefix, as in `svg|a` or `[xlink|href]`. A query declares no namespace prefixes, so the error says the prefix is undeclared.
 
 ## API Reference
 

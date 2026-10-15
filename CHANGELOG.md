@@ -10,9 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `to_html/2` accepts a single node, such as a `query_one/2` result
+- CSS escapes in selector identifiers and quoted values (`.md\:flex`, `#\31 0`)
+- Selectors may hold CSS comments (`div /* c */ p`)
 
 ### Changed
 
+- An unquoted attribute value in a selector must be a CSS identifier, so `[href$=.pdf]`, `[data-n=1]`, and `[href^=http://]` are invalid selectors; quote the value (`[href$=".pdf"]`)
+- Selectors that CSS makes invalid raise in `query!/2` and match nothing in `query/2`, where they used to be read leniently: a class, ID, or type selector that starts with a digit or a hyphen and a digit (`.1foo`, `#1foo`, `.-1foo`; escape the digit, as in `#\31 0`, or use `[id="1foo"]`), an unescaped newline in a quoted value, and a colon in an attribute name (`[x-on:click]`; escape the colon, as in `[x-on\:click]`, to match an HTML element's attribute)
+- A backslash in a quoted selector value starts a CSS escape, so `[title="\41"]` matches `title="A"` instead of `title="41"`
+- The error for a selector that uses an unsupported feature names it: pseudo-classes, pseudo-elements, the column combinator, the `~=` and `|=` operators, attribute selector flags, and the `*|` and `|` namespace forms. A named namespace prefix (`svg|a`, `[xlink|href]`) is reported as undeclared
 - The html5lib serializer runner treats `strip_whitespace` as a no-op when every character token sits under html5lib's space-preserve elements, so the `pre` / `textarea` / `script` / `style` cases run through `to_html/2`
 - The html5lib serializer runner reports one test per fixture file for the fragment-algorithm cases, and one skipped test per file (with counts) for the rest, instead of one skipped test per inapplicable case
 - html5lib encoding tests compare `Encoding.sniff/2` to the Encoding Standard name with no case fold on the actual
@@ -56,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[att^=""]`, `[att$=""]`, and `[att*=""]` match nothing
 - A compound selector with two different IDs (`#a#b`) matches nothing, instead of matching the last ID
 - A class selector splits the class attribute on ASCII whitespace only
+- A quoted value or an attribute selector left open at the end of a selector is closed there, as CSS does, instead of making the selector invalid (`[title="a`)
 - A failing chain of descendant combinators over a deep tree no longer takes exponential time
 
 ### Security

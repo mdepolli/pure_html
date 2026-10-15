@@ -341,7 +341,8 @@ defmodule PureHTML do
   Finds elements matching a selector and extracts an attribute from them.
 
   Combines `query/2` and `attribute/2` into a single call for convenience.
-  This is the most common pattern for scraping.
+  This is the most common pattern for scraping. An invalid selector matches
+  nothing: the result is `[]`.
 
   ## Examples
 

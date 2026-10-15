@@ -7,7 +7,7 @@ defmodule PureHTML.Query.Selector do
   defstruct type: nil, ids: [], classes: [], attributes: []
 
   @type t :: %__MODULE__{
-          type: String.t() | nil,
+          type: String.t() | :universal | nil,
           ids: [String.t()],
           classes: [String.t()],
           attributes: [AttributeSelector.t()]
@@ -60,7 +60,7 @@ defmodule PureHTML.Query.Selector do
   # before it is compared to the name of an HTML element, and compared as
   # written to the name of any other element.
   defp type_matches?(_node, nil), do: true
-  defp type_matches?(_node, "*"), do: true
+  defp type_matches?(_node, :universal), do: true
   defp type_matches?({{_ns, tag}, _, _}, type), do: tag == type
   defp type_matches?({tag, _, _}, type), do: tag == String.downcase(type, :ascii)
 

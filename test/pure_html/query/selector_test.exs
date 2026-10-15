@@ -13,7 +13,7 @@ defmodule PureHTML.Query.SelectorTest do
     end
 
     test "matches universal selector" do
-      selector = %Selector{type: "*"}
+      selector = %Selector{type: :universal}
 
       assert Selector.match?({"div", [], []}, selector)
       assert Selector.match?({"p", [], []}, selector)

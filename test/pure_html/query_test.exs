@@ -97,7 +97,7 @@ defmodule PureHTML.QueryTest do
     test "finds elements by attribute suffix" do
       html = PureHTML.parse("<a href='doc.pdf'>PDF</a><a href='doc.txt'>Text</a>")
 
-      assert Query.find(html, "[href$=.pdf]") == [{"a", [{"href", "doc.pdf"}], ["PDF"]}]
+      assert Query.find(html, "[href$=\".pdf\"]") == [{"a", [{"href", "doc.pdf"}], ["PDF"]}]
     end
 
     test "finds elements by attribute substring" do
@@ -145,10 +145,10 @@ defmodule PureHTML.QueryTest do
       assert Query.find(html, "div >") == []
     end
 
-    test "an unterminated attribute selector matches nothing without raising" do
-      html = PureHTML.parse("<p>x</p>")
+    test "an attribute selector open at the end of the selector is closed there" do
+      html = PureHTML.parse("<p data-x>x</p>")
 
-      assert Query.find(html, "[unterminated") == []
+      assert Query.find(html, "[data-x") == [{"p", [{"data-x", ""}], ["x"]}]
     end
 
     test "a selector list with an invalid member matches nothing" do

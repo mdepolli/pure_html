@@ -16,7 +16,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
     end
 
     test "universal selector" do
-      assert Parser.parse("*") == chain(%Selector{type: "*"})
+      assert Parser.parse("*") == chain(%Selector{type: :universal})
     end
 
     test "class selector" do
@@ -62,7 +62,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
     end
 
     test "attribute selector - suffix match" do
-      assert Parser.parse("[href$=.pdf]") ==
+      assert Parser.parse("[href$=\".pdf\"]") ==
                chain(%Selector{
                  attributes: [
                    %AttributeSelector{name: "href", value: ".pdf", match_type: :suffix}
@@ -189,7 +189,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
 
     test "a malformed attribute selector is invalid" do
       assert {:error, {:invalid_selector, _}} = Parser.parse("[")
-      assert {:error, {:invalid_selector, _}} = Parser.parse("[href")
+      assert {:error, {:invalid_selector, _}} = Parser.parse("[href=")
       assert {:error, {:invalid_selector, _}} = Parser.parse("[href=]")
     end
 
