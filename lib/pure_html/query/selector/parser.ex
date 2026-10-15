@@ -107,25 +107,28 @@ defmodule PureHTML.Query.Selector.Parser do
   # selector, i.e. one that contains no compound selector, is invalid", and "a
   # selector list containing an invalid selector is invalid".
   defp parse_list(tokens, acc) do
-    with {:ok, chain, rest} <- parse_complex_selector(tokens) do
-      case rest do
-        [] -> {:ok, [chain | acc]}
-        [:comma | rest] -> parse_list(rest, [chain | acc])
-      end
+    case parse_complex_selector(tokens) do
+      {:ok, chain, rest} -> continue_list(rest, [chain | acc])
+      {:error, _reason} = error -> error
     end
   end
+
+  defp continue_list([], acc), do: {:ok, acc}
+  defp continue_list([:comma | rest], acc), do: parse_list(rest, acc)
 
   # A complex selector: compound selectors joined by combinators, every
   # combinator followed by a compound selector.
   defp parse_complex_selector(tokens) do
-    with {:ok, selector, rest} <- parse_compound_selector(tokens) do
-      parse_combinators(rest, [{nil, selector}])
+    case parse_compound_selector(tokens) do
+      {:ok, selector, rest} -> parse_combinators(rest, [{nil, selector}])
+      {:error, _reason} = error -> error
     end
   end
 
   defp parse_combinators([combinator | rest], chain) when combinator in @combinators do
-    with {:ok, selector, rest} <- parse_compound_selector(rest) do
-      parse_combinators(rest, [{combinator, selector} | chain])
+    case parse_compound_selector(rest) do
+      {:ok, selector, rest} -> parse_combinators(rest, [{combinator, selector} | chain])
+      {:error, _reason} = error -> error
     end
   end
 
@@ -156,9 +159,9 @@ defmodule PureHTML.Query.Selector.Parser do
     do: parse_simple_selectors(rest, %{selector | ids: selector.ids ++ [id]}, n + 1)
 
   defp parse_simple_selectors([:open_bracket | rest], selector, n) do
-    with {:ok, attribute, rest} <- parse_attribute_selector(rest) do
-      attributes = selector.attributes ++ [attribute]
-      parse_simple_selectors(rest, %{selector | attributes: attributes}, n + 1)
+    case parse_attribute_selector(rest) do
+      {:ok, attribute, rest} -> add_attribute(rest, selector, attribute, n)
+      {:error, _reason} = error -> error
     end
   end
 
@@ -170,6 +173,14 @@ defmodule PureHTML.Query.Selector.Parser do
 
   defp parse_simple_selectors([token | _], _selector, _n),
     do: invalid("unexpected " <> token_text(token))
+
+  defp add_attribute(rest, selector, attribute, n),
+    do:
+      parse_simple_selectors(
+        rest,
+        %{selector | attributes: selector.attributes ++ [attribute]},
+        n + 1
+      )
 
   @token_text %{
     star: "*",
