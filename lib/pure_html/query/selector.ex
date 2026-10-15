@@ -49,12 +49,16 @@ defmodule PureHTML.Query.Selector do
       attributes_match?(node, selector.attributes)
   end
 
-  defp element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
+  @doc """
+  Checks if a node is an element: an HTML element or a foreign one.
+  """
+  @spec element?(term()) :: boolean()
+  def element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
 
-  defp element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
+  def element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
     do: true
 
-  defp element?(_), do: false
+  def element?(_), do: false
 
   # HTML, case-sensitivity of selectors: a type selector is ASCII lowercased
   # before it is compared to the name of an HTML element, and compared as

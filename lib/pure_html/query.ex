@@ -147,7 +147,7 @@ defmodule PureHTML.Query do
   defp next_element([{[], _parent, _prev} | frames]), do: next_element(frames)
 
   defp next_element([{[node | siblings], parent, prev} | frames]) do
-    if element?(node) do
+    if Selector.element?(node) do
       cursor = %{node: node, parent: parent, prev: prev}
       {[cursor], [{element_children(node), cursor, nil}, {siblings, parent, cursor} | frames]}
     else
@@ -265,16 +265,9 @@ defmodule PureHTML.Query do
     if include_text do
       children
     else
-      Enum.filter(children, &element?/1)
+      Enum.filter(children, &Selector.element?/1)
     end
   end
-
-  defp element?({tag, attrs, _children}) when is_binary(tag) and is_list(attrs), do: true
-
-  defp element?({{_ns, tag}, attrs, _children}) when is_binary(tag) and is_list(attrs),
-    do: true
-
-  defp element?(_), do: false
 
   @doc """
   Extracts text content from an HTML tree or node.
