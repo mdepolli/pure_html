@@ -208,23 +208,22 @@ defmodule PureHTML.Query.Selector.Parser do
   defp parse_attribute_selector([{:ident, name}, :close_bracket | rest]),
     do: {:ok, %AttributeSelector{name: name, match_type: :exists}, rest}
 
-  defp parse_attribute_selector([{:ident, name}, operator, value, :close_bracket | rest])
-       when is_map_key(@attribute_operators, operator) and
-              (elem(value, 0) == :string or elem(value, 0) == :ident) do
+  defp parse_attribute_selector([{:ident, name}, operator, {kind, value}, :close_bracket | rest])
+       when is_map_key(@attribute_operators, operator) and kind in [:string, :ident] do
     match_type = Map.fetch!(@attribute_operators, operator)
-    {:ok, %AttributeSelector{name: name, value: elem(value, 1), match_type: match_type}, rest}
+    {:ok, %AttributeSelector{name: name, value: value, match_type: match_type}, rest}
   end
 
   # Selectors 4: an <attr-modifier>, i or s, may follow the value.
   defp parse_attribute_selector([
          {:ident, _name},
          operator,
-         value,
+         {kind, _value},
          {:ident, flag},
          :close_bracket | _
        ])
-       when is_map_key(@attribute_operators, operator) and
-              (elem(value, 0) == :string or elem(value, 0) == :ident) and flag in ~w(i s I S),
+       when is_map_key(@attribute_operators, operator) and kind in [:string, :ident] and
+              flag in ~w(i s I S),
        do: invalid("attribute selector flags are not supported")
 
   defp parse_attribute_selector(_tokens), do: invalid("malformed attribute selector")
