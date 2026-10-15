@@ -199,8 +199,6 @@ defmodule PureHTML.Query.Selector.Parser do
   # The text a token stands for, so an error shows the selector as written.
   defp token_text({:string, string}), do: "string " <> inspect(string)
   defp token_text({:ident, ident}), do: inspect(ident)
-  defp token_text({:class, class}), do: inspect("." <> class)
-  defp token_text({:id, id}), do: inspect("#" <> id)
   defp token_text(token), do: inspect(Map.fetch!(@token_text, token))
 
   # An attribute selector after its opening bracket: a name, then either the
