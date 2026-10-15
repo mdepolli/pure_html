@@ -20,7 +20,7 @@ defmodule PureHTML.Query do
   - Class: `.class`
   - ID: `#id`
   - Attribute: `[attr]`, `[attr=value]`, `[attr^=prefix]`, `[attr$=suffix]`, `[attr*=substring]`
-  - Combinators: `div p` (descendant), `div > p` (child), `h1 + p` (adjacent sibling), `h1 ~ p` (general sibling)
+  - Combinators: `div p` (descendant), `div > p` (child), `h1 + p` (next sibling), `h1 ~ p` (subsequent sibling)
   - Selector list: `.a, .b`
 
   An invalid selector represents, and therefore matches, nothing: the result

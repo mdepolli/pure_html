@@ -135,11 +135,11 @@ PureHTML.query(html, "article > p")
 PureHTML.query(html, "section > p")
 #=> [{"p", [{"class", "intro"}], ["First paragraph"]}, {"p", [], ["Second paragraph"]}]
 
-# Adjacent sibling (+) - matches the next sibling
+# Next-sibling (+) - matches the element right after
 PureHTML.query(html, "h2 + p")
 #=> [{"p", [{"class", "intro"}], ["First paragraph"]}]
 
-# General sibling (~) - matches any following sibling
+# Subsequent-sibling (~) - matches any later sibling
 PureHTML.query(html, "h2 ~ p")
 #=> [{"p", [{"class", "intro"}], ["First paragraph"]}, {"p", [], ["Second paragraph"]}]
 ```
