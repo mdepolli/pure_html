@@ -203,6 +203,24 @@ PureHTML.children("text node")           #=> nil
 PureHTML.children({:comment, "comment"}) #=> nil
 ```
 
+### Template Contents
+
+A `<template>` element's contents sit in a `{:content, nodes}` wrapper, its only child. `children/2` returns the wrapper, the query functions search inside it as if the nodes were the template's children, and `text/2` skips it.
+
+```elixir
+html = PureHTML.parse("<template><p>x</p></template>")
+[template] = PureHTML.query(html, "template")
+
+PureHTML.children(template)
+#=> [{:content, [{"p", [], ["x"]}]}]
+
+PureHTML.query(html, "template > p")
+#=> [{"p", [], ["x"]}]
+
+PureHTML.text(html)
+#=> ""
+```
+
 ## Working with Results
 
 Query results are lists of nodes in the same format as `PureHTML.parse/1` output.
@@ -227,6 +245,13 @@ html = PureHTML.parse("""
 PureHTML.query(content, "a")
 #=> [{"a", [{"href", "/about"}], ["About"]}, {"a", [{"href", "/contact"}], ["Contact"]}]
 ```
+
+A query searches the nodes it is given and their descendants, and sees nothing outside them:
+
+- The given nodes can match themselves: `PureHTML.query(content, "div")` returns `[content]`.
+- Combinators cannot reach their ancestors: `PureHTML.query(content, "body a")` returns `[]`.
+- A list of nodes is searched as siblings, in order, so `div + div` can match two results that were never siblings in the document.
+- A node inside two of the given nodes is found once for each. Querying `"p"` in the results of `"div"` on `<div><div><p>x</p></div></div>` returns the `p` twice.
 
 ## Extracting Text
 
