@@ -3398,6 +3398,26 @@ defmodule PureHTMLTest do
 
       assert PureHTML.query!(html, ".A") == []
     end
+
+    # A class selector is [class~=identifier], and the class attribute is a
+    # set of space-separated tokens, split on ASCII whitespace.
+    for {name, char} <- [{"U+0085", "\u0085"}, {"U+3000", "\u3000"}] do
+      test "a class value is not split on #{name}" do
+        char = unquote(char)
+        html = PureHTML.parse("<p class=\"a#{char}b\">x</p>")
+
+        assert PureHTML.query!(html, ".a") == []
+      end
+    end
+
+    for {name, char} <- [{"a tab", "\t"}, {"a line feed", "\n"}, {"a form feed", "\f"}] do
+      test "a class value is split on #{name}" do
+        char = unquote(char)
+        html = PureHTML.parse("<p class=\"a#{char}b\">x</p>")
+
+        assert PureHTML.query!(html, ".b") == [{"p", [{"class", "a#{char}b"}], ["x"]}]
+      end
+    end
   end
 
   describe "query_one/2" do

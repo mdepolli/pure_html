@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A type selector and an attribute name are ASCII lowercased before they are compared to an HTML element (`DIV`, `[HREF]`), and the values of the attributes the HTML standard lists (`type`, `lang`, `rel`, …) match ASCII case-insensitively on HTML elements
 - `[att^=""]`, `[att$=""]`, and `[att*=""]` match nothing
 - A compound selector with two different IDs (`#a#b`) matches nothing, instead of matching the last ID
+- A class selector splits the class attribute on ASCII whitespace only
 
 ### Security
 

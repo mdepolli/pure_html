@@ -24,6 +24,8 @@ defmodule PureHTML.Query.Selector do
     shape target text type valign valuetype vlink
   )
 
+  @ascii_whitespace [" ", "\t", "\n", "\f", "\r"]
+
   @doc """
   Checks if a node matches this selector.
 
@@ -73,16 +75,18 @@ defmodule PureHTML.Query.Selector do
   defp classes_match?(_node, []), do: true
 
   defp classes_match?(node, required_classes) do
-    node_classes =
+    class_names =
       node
       |> attr_value("class")
-      |> case do
-        nil -> MapSet.new()
-        class_str -> class_str |> String.split() |> MapSet.new()
-      end
+      |> split_class_names()
 
-    Enum.all?(required_classes, &MapSet.member?(node_classes, &1))
+    Enum.all?(required_classes, &(&1 in class_names))
   end
+
+  # The class attribute is a set of space-separated tokens, split on ASCII
+  # whitespace.
+  defp split_class_names(nil), do: []
+  defp split_class_names(value), do: String.split(value, @ascii_whitespace, trim: true)
 
   defp attributes_match?(_node, []), do: true
 
