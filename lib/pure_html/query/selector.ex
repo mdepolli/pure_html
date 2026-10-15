@@ -4,11 +4,11 @@ defmodule PureHTML.Query.Selector do
 
   alias PureHTML.Query.Selector.AttributeSelector
 
-  defstruct type: nil, id: nil, classes: [], attributes: []
+  defstruct type: nil, ids: [], classes: [], attributes: []
 
   @type t :: %__MODULE__{
           type: String.t() | nil,
-          id: String.t() | nil,
+          ids: [String.t()],
           classes: [String.t()],
           attributes: [AttributeSelector.t()]
         }
@@ -42,7 +42,7 @@ defmodule PureHTML.Query.Selector do
   def match?(node, %__MODULE__{} = selector) do
     element?(node) and
       type_matches?(node, selector.type) and
-      id_matches?(node, selector.id) and
+      ids_match?(node, selector.ids) and
       classes_match?(node, selector.classes) and
       attributes_match?(node, selector.attributes)
   end
@@ -62,10 +62,12 @@ defmodule PureHTML.Query.Selector do
   defp type_matches?({{_ns, tag}, _, _}, type), do: tag == type
   defp type_matches?({tag, _, _}, type), do: tag == String.downcase(type, :ascii)
 
-  defp id_matches?(_node, nil), do: true
+  defp ids_match?(_node, []), do: true
 
-  defp id_matches?(node, id) do
-    attr_value(node, "id") == id
+  # An element has one ID, so every ID selector of a compound must name it.
+  defp ids_match?(node, ids) do
+    id = attr_value(node, "id")
+    Enum.all?(ids, &(&1 == id))
   end
 
   defp classes_match?(_node, []), do: true

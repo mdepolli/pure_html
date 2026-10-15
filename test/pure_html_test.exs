@@ -3369,6 +3369,21 @@ defmodule PureHTMLTest do
   end
 
   describe "query!/2 ID and class selectors" do
+    # An ID selector "represents an element instance that has an identifier
+    # that matches the identifier in the ID selector", and an element has one.
+    test "two different ID selectors match nothing" do
+      html = PureHTML.parse("<p id=b>x</p>")
+
+      assert PureHTML.query!(html, "#a#b") == []
+      assert PureHTML.query!(html, "#b#a") == []
+    end
+
+    test "the same ID selector twice matches its element" do
+      html = PureHTML.parse("<p id=b>x</p>")
+
+      assert PureHTML.query!(html, "#b#b") == [{"p", [{"id", "b"}], ["x"]}]
+    end
+
     # IDs and classes keep their case in a no-quirks document. The tree does
     # not record the mode, so they are always compared exactly; the doctype
     # keeps these inputs no-quirks either way.

@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The package includes `ROADMAP.md` and `guides/`, so its README links resolve and `mix docs` builds from it
 - A type selector and an attribute name are ASCII lowercased before they are compared to an HTML element (`DIV`, `[HREF]`), and the values of the attributes the HTML standard lists (`type`, `lang`, `rel`, …) match ASCII case-insensitively on HTML elements
 - `[att^=""]`, `[att$=""]`, and `[att*=""]` match nothing
+- A compound selector with two different IDs (`#a#b`) matches nothing, instead of matching the last ID
 
 ### Security
 

@@ -46,7 +46,7 @@ defmodule PureHTML.Query.SelectorTest do
     end
 
     test "matches id selector" do
-      selector = %Selector{id: "main"}
+      selector = %Selector{ids: ["main"]}
 
       assert Selector.match?({"div", [{"id", "main"}], []}, selector)
       refute Selector.match?({"div", [{"id", "other"}], []}, selector)
@@ -54,7 +54,7 @@ defmodule PureHTML.Query.SelectorTest do
     end
 
     test "matches compound selector" do
-      selector = %Selector{type: "div", id: "main", classes: ["foo"]}
+      selector = %Selector{type: "div", ids: ["main"], classes: ["foo"]}
 
       assert Selector.match?({"div", [{"class", "foo"}, {"id", "main"}], []}, selector)
       refute Selector.match?({"p", [{"class", "foo"}, {"id", "main"}], []}, selector)

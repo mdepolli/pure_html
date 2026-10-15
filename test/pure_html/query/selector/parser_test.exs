@@ -25,15 +25,15 @@ defmodule PureHTML.Query.Selector.ParserTest do
     end
 
     test "id selector" do
-      assert Parser.parse("#bar") == chain(%Selector{id: "bar"})
+      assert Parser.parse("#bar") == chain(%Selector{ids: ["bar"]})
     end
 
     test "compound selector" do
       assert Parser.parse("div.foo") == chain(%Selector{type: "div", classes: ["foo"]})
-      assert Parser.parse("div#bar") == chain(%Selector{type: "div", id: "bar"})
+      assert Parser.parse("div#bar") == chain(%Selector{type: "div", ids: ["bar"]})
 
       assert Parser.parse("div.foo#bar") ==
-               chain(%Selector{type: "div", id: "bar", classes: ["foo"]})
+               chain(%Selector{type: "div", ids: ["bar"], classes: ["foo"]})
     end
 
     test "attribute selector - existence" do
@@ -91,7 +91,7 @@ defmodule PureHTML.Query.Selector.ParserTest do
       assert Parser.parse("div.foo#bar[data-id]") ==
                chain(%Selector{
                  type: "div",
-                 id: "bar",
+                 ids: ["bar"],
                  classes: ["foo"],
                  attributes: [%AttributeSelector{name: "data-id", match_type: :exists}]
                })

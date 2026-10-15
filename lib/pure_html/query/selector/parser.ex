@@ -151,7 +151,7 @@ defmodule PureHTML.Query.Selector.Parser do
     do: parse_simple_selectors(rest, %{selector | classes: selector.classes ++ [class]}, n + 1)
 
   defp parse_simple_selectors([{:id, id} | rest], selector, n),
-    do: parse_simple_selectors(rest, %{selector | id: id}, n + 1)
+    do: parse_simple_selectors(rest, %{selector | ids: selector.ids ++ [id]}, n + 1)
 
   defp parse_simple_selectors([:open_bracket | rest], selector, n) do
     with {:ok, attribute, rest} <- parse_attribute_selector(rest) do
