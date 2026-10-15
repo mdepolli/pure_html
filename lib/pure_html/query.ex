@@ -49,9 +49,11 @@ defmodule PureHTML.Query do
   end
 
   def find(html, chains) when is_list(chains) do
+    reversed_chains = right_to_left(chains)
+
     html
     |> elements()
-    |> Stream.filter(&matches_any?(&1, right_to_left(chains)))
+    |> Stream.filter(&matches_any?(&1, reversed_chains))
     |> Enum.map(& &1.node)
   end
 
@@ -100,9 +102,11 @@ defmodule PureHTML.Query do
   end
 
   def find_one(html, chains) when is_list(chains) do
+    reversed_chains = right_to_left(chains)
+
     html
     |> elements()
-    |> Enum.find(&matches_any?(&1, right_to_left(chains)))
+    |> Enum.find(&matches_any?(&1, reversed_chains))
     |> cursor_node()
   end
 
@@ -160,30 +164,68 @@ defmodule PureHTML.Query do
     end)
   end
 
-  defp matches_any?(cursor, chains), do: Enum.any?(chains, &matches?(cursor, &1))
+  defp matches_any?(cursor, chains), do: Enum.any?(chains, &(match(cursor, &1) == :matched))
 
-  defp matches?(cursor, [{combinator, selector} | rest]) do
-    Selector.match?(cursor.node, selector) and context_matches?(combinator, cursor, rest)
+  # Matching a chain returns how it failed as well as whether it matched, as
+  # Servo's selector matching does, so a failure that no other candidate can
+  # repair stops the search instead of trying every ancestor again:
+  #
+  # - `:restart_from_sibling`: a compound did not match its element. A `~` or
+  #   descendant combinator that led there tries its next candidate, and a `+`
+  #   passes the status on unchanged.
+  # - `:restart_from_descendant`: a `+` or `~` found no sibling, or the chain
+  #   failed from the parent a `>` led to. Siblings share that parent, so a
+  #   `~` gives up as well; only a descendant combinator tries its next
+  #   ancestor.
+  # - `:not_matched_globally`: a `>` or descendant combinator found no
+  #   parent. A higher ancestor has fewer ancestors still, so the chain fails
+  #   for this element.
+  defp match(cursor, [{combinator, selector} | rest]) do
+    cursor.node
+    |> Selector.match?(selector)
+    |> match_combinator(combinator, cursor, rest)
   end
 
-  defp context_matches?(nil, _cursor, []), do: true
+  defp match_combinator(false, _combinator, _cursor, _rest), do: :restart_from_sibling
+  defp match_combinator(true, nil, _cursor, []), do: :matched
 
-  defp context_matches?(:child, %{parent: nil}, _rest), do: false
-  defp context_matches?(:child, %{parent: parent}, rest), do: matches?(parent, rest)
-
-  defp context_matches?(:descendant, %{parent: nil}, _rest), do: false
-
-  defp context_matches?(:descendant, %{parent: parent}, rest) do
-    matches?(parent, rest) or context_matches?(:descendant, parent, rest)
+  defp match_combinator(true, combinator, cursor, rest) do
+    combinator
+    |> next_candidate(cursor)
+    |> match_candidate(combinator, rest)
   end
 
-  defp context_matches?(:adjacent_sibling, %{prev: nil}, _rest), do: false
-  defp context_matches?(:adjacent_sibling, %{prev: prev}, rest), do: matches?(prev, rest)
+  defp next_candidate(combinator, cursor) when combinator in [:child, :descendant],
+    do: cursor.parent
 
-  defp context_matches?(:general_sibling, %{prev: nil}, _rest), do: false
+  defp next_candidate(_sibling_combinator, cursor), do: cursor.prev
 
-  defp context_matches?(:general_sibling, %{prev: prev}, rest) do
-    matches?(prev, rest) or context_matches?(:general_sibling, prev, rest)
+  defp match_candidate(nil, combinator, _rest) when combinator in [:child, :descendant],
+    do: :not_matched_globally
+
+  defp match_candidate(nil, _sibling_combinator, _rest), do: :restart_from_descendant
+
+  defp match_candidate(candidate, combinator, rest) do
+    candidate
+    |> match(rest)
+    |> after_candidate(combinator, candidate, rest)
+  end
+
+  defp after_candidate(:matched, _combinator, _candidate, _rest), do: :matched
+
+  defp after_candidate(:not_matched_globally, _combinator, _candidate, _rest),
+    do: :not_matched_globally
+
+  defp after_candidate(result, :adjacent_sibling, _candidate, _rest), do: result
+  defp after_candidate(_result, :child, _candidate, _rest), do: :restart_from_descendant
+
+  defp after_candidate(:restart_from_descendant, :general_sibling, _candidate, _rest),
+    do: :restart_from_descendant
+
+  defp after_candidate(_result, combinator, candidate, rest) do
+    combinator
+    |> next_candidate(candidate)
+    |> match_candidate(combinator, rest)
   end
 
   @doc """

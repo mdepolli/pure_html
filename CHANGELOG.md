@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[att^=""]`, `[att$=""]`, and `[att*=""]` match nothing
 - A compound selector with two different IDs (`#a#b`) matches nothing, instead of matching the last ID
 - A class selector splits the class attribute on ASCII whitespace only
+- A failing chain of descendant combinators over a deep tree no longer takes exponential time
 
 ### Security
 

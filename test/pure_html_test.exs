@@ -3420,6 +3420,49 @@ defmodule PureHTMLTest do
     end
   end
 
+  describe "query!/2 descendant combinators" do
+    # The query runs in a task it bounds itself, because mix test --trace
+    # turns the ExUnit test timeout off. The p before the divs gives the
+    # leftmost compound a match in the document.
+    test "a failing descendant chain over a deep tree stays fast" do
+      # Arrange
+      html = PureHTML.parse("<p></p>" <> String.duplicate("<div>", 60))
+      selector = "p" <> String.duplicate(" div", 8)
+
+      # Act
+      task = Task.async(fn -> PureHTML.query!(html, selector) end)
+      result = Task.yield(task, 1_000) || Task.shutdown(task, :brutal_kill)
+
+      # Assert
+      assert result == {:ok, []}
+    end
+
+    # The nearest span is not a child of the div; the next one up is.
+    test "a descendant combinator after a child combinator tries every ancestor" do
+      # Arrange
+      html = PureHTML.parse("<div><span><span><span>x</span></span></span></div>")
+
+      # Act
+      result = PureHTML.query!(html, "div > span span")
+
+      # Assert
+      assert result == [{"span", [], [{"span", [], ["x"]}]}, {"span", [], ["x"]}]
+    end
+
+    # A + that finds no sibling fails only for the ancestor it started from;
+    # the descendant combinator to its right still tries a higher one.
+    test "a descendant combinator after a sibling combinator tries every ancestor" do
+      # Arrange
+      html = PureHTML.parse("<h1></h1><div><div><p>x</p></div></div>")
+
+      # Act
+      result = PureHTML.query!(html, "h1 + div p")
+
+      # Assert
+      assert result == [{"p", [], ["x"]}]
+    end
+  end
+
   describe "query_one/2" do
     test "delegates to Query.find_one/2" do
       # Arrange
